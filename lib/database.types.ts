@@ -10,6 +10,16 @@ export type Goal = "lose_fat" | "maintain" | "gain_muscle";
 export type Sex = "male" | "female";
 export type Experience = "beginner" | "intermediate" | "advanced";
 export type FoodLogSource = "llm" | "manual" | "corrected";
+export type Lang = "en" | "roman_urdu";
+
+// One answered onboarding step: the structured value we keep AND the original
+// message the user gave (button label tapped or text typed), plus the language.
+export interface OnboardingEntry {
+  key: string;
+  value: string | number;
+  message: string;
+  lang: Lang;
+}
 
 // public.profiles — one row per user
 export interface Profile {
@@ -24,6 +34,8 @@ export interface Profile {
   experience: Experience | null;
   calorie_target: number | null;
   protein_target_g: number | null;
+  preferred_language: Lang;
+  onboarding_raw: OnboardingEntry[] | null;
   onboarded: boolean;
   created_at: string;
   updated_at: string;

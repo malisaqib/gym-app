@@ -47,7 +47,9 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   // Protect private routes. Add more prefixes here as the app grows.
-  const isProtected = request.nextUrl.pathname.startsWith("/dashboard");
+  const path = request.nextUrl.pathname;
+  const isProtected =
+    path.startsWith("/dashboard") || path.startsWith("/onboarding");
 
   if (isProtected && !user) {
     const url = request.nextUrl.clone();
