@@ -1,4 +1,4 @@
-# Build Plan — Desi Fitness Coach MVP
+# Build Plan — FitCoach MVP
 
 ## MVP scope (only these four things)
 1. Onboarding chatbot → collects goal, age, weight, height, training days, experience → outputs daily calorie + protein target and a basic workout plan.

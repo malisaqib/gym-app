@@ -1,5 +1,5 @@
 -- =============================================================================
--- Desi Fitness Coach — Phase 1: initial database schema
+-- FitCoach — Phase 1: initial database schema
 -- =============================================================================
 -- HOW TO RUN: open Supabase -> SQL Editor -> New query -> paste this whole
 -- file -> Run. It is safe to run more than once (it uses IF NOT EXISTS / drops

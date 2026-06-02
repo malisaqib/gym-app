@@ -21,13 +21,13 @@ const fraunces = Fraunces({
 });
 
 export const metadata: Metadata = {
-  title: "Desi Fitness Coach",
+  title: "FitCoach",
   description:
-    "A simple fitness coach for beginners — calorie & protein targets and easy food logging, desi-first.",
+    "A simple fitness coach for beginners — calorie & protein targets and easy food logging.",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Fit Coach",
+    title: "FitCoach",
   },
   icons: {
     icon: "/icon-192.png",

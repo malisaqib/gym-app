@@ -4,10 +4,10 @@ import type { MetadataRoute } from "next";
 // This is what makes the app installable ("Add to Home Screen").
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Desi Fitness Coach",
-    short_name: "Fit Coach",
+    name: "FitCoach",
+    short_name: "FitCoach",
     description:
-      "A friendly desi fitness coach: calorie & protein targets, easy food logging, workouts and weight tracking.",
+      "A friendly fitness coach: calorie & protein targets, easy food logging, workouts and weight tracking.",
     start_url: "/dashboard",
     display: "standalone",
     orientation: "portrait",

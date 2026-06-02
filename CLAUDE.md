@@ -1,4 +1,4 @@
-# Project: Desi Fitness Coach (working name)
+# Project: FitCoach (working name)
 
 ## What this is
 A PWA (mobile-first, installable web app) that helps fitness beginners. It removes the two biggest beginner pains: "I don't know what to do" and "logging food is too tedious." The app works for ANY user and ANY cuisine (western or South Asian), but its focus, accuracy edge, and positioning are desi-first: it understands Pakistani/South Asian food and portions (roti, pyali, gravies, ghee) better than western apps do, and offers an optional Roman Urdu/Urdu mode. Western food and English are fully supported by default.
