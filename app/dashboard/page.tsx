@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "@/app/auth/actions";
@@ -32,15 +33,23 @@ export default async function DashboardPage() {
     <main className="mx-auto flex min-h-screen max-w-md flex-col gap-6 px-6 py-12">
       <header className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Dashboard</h1>
-        {/* Sign out posts to the signOut Server Action. */}
-        <form action={signOut}>
-          <button
-            type="submit"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+        <div className="flex items-center gap-3">
+          <Link
+            href="/workout"
+            className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-emerald-700"
           >
-            Sign out
-          </button>
-        </form>
+            Workout
+          </Link>
+          {/* Sign out posts to the signOut Server Action. */}
+          <form action={signOut}>
+            <button
+              type="submit"
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+            >
+              Sign out
+            </button>
+          </form>
+        </div>
       </header>
 
       {/* The core loop: progress vs target + text food logging + corrections. */}

@@ -49,7 +49,9 @@ export async function updateSession(request: NextRequest) {
   // Protect private routes. Add more prefixes here as the app grows.
   const path = request.nextUrl.pathname;
   const isProtected =
-    path.startsWith("/dashboard") || path.startsWith("/onboarding");
+    path.startsWith("/dashboard") ||
+    path.startsWith("/onboarding") ||
+    path.startsWith("/workout");
 
   if (isProtected && !user) {
     const url = request.nextUrl.clone();
