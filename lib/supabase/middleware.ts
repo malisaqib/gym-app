@@ -52,7 +52,8 @@ export async function updateSession(request: NextRequest) {
     path.startsWith("/dashboard") ||
     path.startsWith("/onboarding") ||
     path.startsWith("/workout") ||
-    path.startsWith("/coach");
+    path.startsWith("/coach") ||
+    path.startsWith("/weight");
 
   if (isProtected && !user) {
     const url = request.nextUrl.clone();
