@@ -1,0 +1,58 @@
+import { cn } from "@/lib/cn";
+
+type Variant = "primary" | "secondary" | "ghost" | "destructive";
+type Size = "sm" | "md" | "lg";
+
+const variants: Record<Variant, string> = {
+  primary: "bg-primary text-primary-foreground hover:bg-primary/90 active:bg-primary/95",
+  secondary: "border border-border bg-card text-foreground hover:bg-muted",
+  ghost: "text-foreground hover:bg-muted",
+  destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+};
+
+// md/lg meet the 44px tap-target minimum; sm (36px) is for compact secondary use.
+const sizes: Record<Size, string> = {
+  sm: "h-9 px-3 text-sm",
+  md: "h-11 px-4 text-sm",
+  lg: "h-12 px-5 text-base",
+};
+
+interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: Variant;
+  size?: Size;
+  fullWidth?: boolean;
+  loading?: boolean;
+}
+
+export function Button({
+  variant = "primary",
+  size = "md",
+  fullWidth,
+  loading,
+  className,
+  children,
+  disabled,
+  ...props
+}: ButtonProps) {
+  return (
+    <button
+      {...props}
+      disabled={disabled || loading}
+      className={cn(
+        "inline-flex items-center justify-center gap-2 rounded-field font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50",
+        variants[variant],
+        sizes[size],
+        fullWidth && "w-full",
+        className
+      )}
+    >
+      {loading && (
+        <span
+          className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
+          aria-hidden
+        />
+      )}
+      {children}
+    </button>
+  );
+}

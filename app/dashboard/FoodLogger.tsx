@@ -2,8 +2,15 @@
 
 import { useEffect, useState } from "react";
 import type { FoodLog } from "@/lib/database.types";
-import { sumMacros, remaining, percent } from "@/lib/food/totals";
+import { sumMacros } from "@/lib/food/totals";
 import { getFoodLogs, logFood, correctFoodItem, deleteFoodItem } from "./actions";
+import { Card } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { Badge } from "@/components/ui/Badge";
+import { Alert } from "@/components/ui/Alert";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { ProgressRing } from "@/components/ui/ProgressRing";
 
 // Today's date in the USER's local timezone as YYYY-MM-DD (DB runs in UTC, so
 // we never derive "today" on the server).
@@ -41,7 +48,6 @@ export default function FoodLogger({
     if (!text.trim() || !date) return;
     setIsLogging(true);
     setError(null);
-
     try {
       const res = await logFood({ text, date });
       if (res.ok) {
@@ -51,8 +57,6 @@ export default function FoodLogger({
         setError(res.error);
       }
     } catch (err) {
-      // The server action itself failed/rejected — surface it instead of
-      // leaving the button stuck on "Logging…".
       setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
     } finally {
       setIsLogging(false);
@@ -60,57 +64,39 @@ export default function FoodLogger({
   }
 
   return (
-    <div className="flex flex-col gap-5">
-      {/* Progress vs target */}
-      <div className="grid grid-cols-2 gap-3">
-        <ProgressCard
-          label="Calories"
-          eaten={eaten.calories}
-          target={calorieTarget}
-          unit="kcal"
-        />
-        <ProgressCard
-          label="Protein"
-          eaten={eaten.protein_g}
-          target={proteinTarget}
-          unit="g"
-        />
-      </div>
+    <div className="flex flex-col gap-6">
+      {/* Progress vs target — the calm hero of the screen */}
+      <Card className="p-5">
+        <div className="grid grid-cols-2 gap-2">
+          <ProgressRing label="Calories" value={eaten.calories} max={calorieTarget} unit="kcal" tone="primary" />
+          <ProgressRing label="Protein" value={eaten.protein_g} max={proteinTarget} unit="g" tone="accent" />
+        </div>
+      </Card>
 
       {/* Log food by text */}
       <form onSubmit={handleLog} className="flex flex-col gap-2">
-        <label className="text-sm font-medium text-slate-700">
-          What did you eat?
-        </label>
+        <label className="text-sm font-medium text-foreground">What did you eat?</label>
         <div className="flex gap-2">
-          <input
-            type="text"
+          <Input
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="e.g. do roti, ek pyali daal"
-            className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-base focus:border-emerald-500 focus:outline-none"
+            placeholder="do roti, ek pyali daal"
             disabled={isLogging}
           />
-          <button
-            type="submit"
-            disabled={isLogging || !text.trim()}
-            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:opacity-40"
-          >
-            {isLogging ? "Logging…" : "Log"}
-          </button>
+          <Button type="submit" loading={isLogging} disabled={!text.trim()}>
+            Log
+          </Button>
         </div>
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <Alert tone="error">{error}</Alert>}
       </form>
 
       {/* Today's items */}
-      <div className="flex flex-col gap-2">
-        <h2 className="text-sm font-semibold text-slate-700">
-          Today{items.length > 0 ? ` (${items.length})` : ""}
+      <section className="flex flex-col gap-3">
+        <h2 className="font-display text-lg font-semibold text-foreground">
+          Today{items.length > 0 ? ` · ${items.length}` : ""}
         </h2>
         {items.length === 0 ? (
-          <p className="text-sm text-slate-400">
-            Nothing logged yet. Type a meal above to get started.
-          </p>
+          <EmptyState icon="🍽️" title="Nothing logged yet" hint="Type a meal above to get started." />
         ) : (
           items.map((item) => (
             <FoodItemRow
@@ -123,42 +109,7 @@ export default function FoodLogger({
             />
           ))
         )}
-      </div>
-    </div>
-  );
-}
-
-// --- progress card ---------------------------------------------------------
-
-function ProgressCard({
-  label,
-  eaten,
-  target,
-  unit,
-}: {
-  label: string;
-  eaten: number;
-  target: number;
-  unit: string;
-}) {
-  const left = remaining(target, eaten);
-  const over = left < 0;
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4">
-      <p className="text-xs text-slate-500">{label}</p>
-      <p className="text-2xl font-bold text-slate-800">
-        {Math.round(eaten)}
-        <span className="text-sm font-normal text-slate-400"> / {target} {unit}</span>
-      </p>
-      <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
-        <div
-          className={`h-full ${over ? "bg-amber-500" : "bg-emerald-500"}`}
-          style={{ width: `${percent(eaten, target)}%` }}
-        />
-      </div>
-      <p className={`mt-1 text-xs ${over ? "text-amber-600" : "text-slate-500"}`}>
-        {over ? `${Math.abs(left)} ${unit} over` : `${left} ${unit} left`}
-      </p>
+      </section>
     </div>
   );
 }
@@ -206,68 +157,64 @@ function FoodItemRow({
   }
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+    <Card className="p-3">
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-slate-800">
+          <p className="truncate text-sm font-medium text-foreground">
             {item.food_name}
             {item.quantity ? (
-              <span className="text-slate-400">
+              <span className="text-muted-foreground">
                 {" "}
                 · {item.quantity} {item.unit}
               </span>
             ) : null}
           </p>
-          <p className="text-xs text-slate-500">
+          <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
             {item.calories} kcal · {item.protein_g}g protein
-            {item.source === "corrected" && (
-              <span className="ml-1 text-emerald-600">· edited</span>
-            )}
+            {item.source === "corrected" && <Badge tone="primary">edited</Badge>}
           </p>
         </div>
-        <div className="flex shrink-0 gap-2 text-xs">
-          <button
-            onClick={() => setEditing((v) => !v)}
-            className="text-slate-500 underline"
-            disabled={busy}
-          >
+        <div className="flex shrink-0 gap-1">
+          <Button variant="ghost" size="sm" onClick={() => setEditing((v) => !v)} disabled={busy}>
             {editing ? "Close" : "Edit"}
-          </button>
-          <button onClick={remove} className="text-red-500" disabled={busy}>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={remove}
+            disabled={busy}
+            className="text-destructive hover:bg-destructive/10"
+          >
             Delete
-          </button>
+          </Button>
         </div>
       </div>
 
       {editing && (
-        <div className="mt-2 flex items-end gap-2">
-          <label className="flex flex-col text-xs text-slate-500">
+        <div className="mt-3 flex items-end gap-2">
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
             Calories
-            <input
+            <Input
               type="number"
               value={cal}
               onChange={(e) => setCal(e.target.value)}
-              className="w-24 rounded border border-slate-300 px-2 py-1 text-sm"
+              className="h-9 w-24"
             />
           </label>
-          <label className="flex flex-col text-xs text-slate-500">
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
             Protein (g)
-            <input
+            <Input
               type="number"
               value={protein}
               onChange={(e) => setProtein(e.target.value)}
-              className="w-24 rounded border border-slate-300 px-2 py-1 text-sm"
+              className="h-9 w-24"
             />
           </label>
-          <button
-            onClick={save}
-            disabled={busy}
-            className="rounded bg-emerald-600 px-3 py-1 text-sm font-medium text-white disabled:opacity-40"
-          >
+          <Button size="sm" onClick={save} loading={busy}>
             Save
-          </button>
+          </Button>
         </div>
       )}
-    </div>
+    </Card>
   );
 }

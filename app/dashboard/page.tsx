@@ -3,8 +3,11 @@ import { createClient } from "@/lib/supabase/server";
 import { signOut } from "@/app/auth/actions";
 import type { Lang, Profile } from "@/lib/database.types";
 import { RELATABLE_GOALS } from "@/lib/onboarding/goals";
-import FoodLogger from "./FoodLogger";
+import { Screen } from "@/components/ui/Screen";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { Button } from "@/components/ui/Button";
 import BottomNav from "@/components/BottomNav";
+import FoodLogger from "./FoodLogger";
 
 // Protected page. The middleware already blocks logged-out users, but we
 // re-check here (defense in depth) and to actually get the user's data.
@@ -37,21 +40,18 @@ export default async function DashboardPage() {
 
   return (
     <>
-      <main className="mx-auto flex min-h-screen max-w-md flex-col gap-6 px-4 pb-24 pt-8">
-        <header className="flex items-start justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold">Today</h1>
-            {goalLabel && <p className="mt-0.5 text-xs text-slate-500">🎯 {goalLabel}</p>}
-          </div>
-          <form action={signOut}>
-            <button
-              type="submit"
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 transition active:bg-slate-100"
-            >
-              Sign out
-            </button>
-          </form>
-        </header>
+      <Screen>
+        <PageHeader
+          title="Today"
+          subtitle={goalLabel ? `🎯 ${goalLabel}` : undefined}
+          action={
+            <form action={signOut}>
+              <Button type="submit" variant="ghost" size="sm">
+                Sign out
+              </Button>
+            </form>
+          }
+        />
 
         {/* The core loop: progress vs target + text food logging + corrections. */}
         <FoodLogger
@@ -59,8 +59,8 @@ export default async function DashboardPage() {
           proteinTarget={profile.protein_target_g ?? 0}
         />
 
-        <p className="text-center text-xs text-slate-400 break-all">{user.email}</p>
-      </main>
+        <p className="text-center text-xs text-muted-foreground break-all">{user.email}</p>
+      </Screen>
       <BottomNav />
     </>
   );

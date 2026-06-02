@@ -1,6 +1,23 @@
 import type { Metadata, Viewport } from "next";
+import { Fraunces, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import ServiceWorkerRegister from "./ServiceWorkerRegister";
+
+// Body / UI / numbers — clean humanist sans with tabular figures.
+const jakarta = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  variable: "--font-jakarta",
+  display: "swap",
+  weight: ["400", "500", "600", "700", "800"],
+});
+
+// Headlines / greetings — soft serif for warmth and identity.
+const fraunces = Fraunces({
+  subsets: ["latin"],
+  variable: "--font-fraunces",
+  display: "swap",
+  weight: ["500", "600"],
+});
 
 export const metadata: Metadata = {
   title: "Desi Fitness Coach",
@@ -31,8 +48,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body className="min-h-screen bg-slate-50 text-slate-900 antialiased">
+    <html lang="en" className={`${jakarta.variable} ${fraunces.variable}`}>
+      <body className="min-h-screen font-sans antialiased">
         {children}
         <ServiceWorkerRegister />
       </body>
