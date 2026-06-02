@@ -22,6 +22,13 @@ A PWA (mobile-first, installable web app) that helps fitness beginners. It remov
 ## Current phase
 Phase 0 — Foundation. See PLANNING.md.
 
+## Product voice
+- The app is a friendly desi fitness coach — not a strict medical app or western bodybuilding tracker.
+- Tone: friendly, simple, no shame, beginner-first, real Pakistani food examples, Roman Urdu supported.
+- Onboarding uses relatable goals (wedding, look good in a shirt, belly fat, skinny→bulk, sports, confidence) mapped internally to a practical goal.
+- An AI meal coach ("What should I eat next?") recommends meals from the user's remaining calories/protein + the options they have. Never invent exact nutrition — use ranges.
+- LLM split: Groq (Llama) for high-frequency food parsing; the coaching/meal-advice LLM is the "quality" slot (Gemini/Claude per stack; currently runs on Groq until a Gemini key is wired).
+
 ## Important
 - Explain what you're doing as you go; I want to understand every piece, not just run it.
 - Make one phase work end-to-end (even if ugly) before polishing anything.
