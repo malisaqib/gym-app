@@ -1,61 +1,66 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { BodyweightLog } from "@/lib/database.types";
 import { toSeries, weightChange, latestWeight } from "@/lib/weight/series";
-import { getWeightLogs, logWeight, deleteWeight } from "./actions";
+import { logWeight, deleteWeight } from "./actions";
 import WeightChart from "./WeightChart";
 import BottomNav from "@/components/BottomNav";
 
-function localDateString(d = new Date()): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-export default function WeightTracker({ startWeight }: { startWeight: number | null }) {
-  const [logs, setLogs] = useState<BodyweightLog[]>([]);
+export default function WeightTracker({
+  startWeight,
+  initialLogs,
+  today,
+}: {
+  startWeight: number | null;
+  initialLogs: BodyweightLog[];
+  today: string;
+}) {
+  // Seeded from the server — no mount fetch.
+  const [logs, setLogs] = useState<BodyweightLog[]>(initialLogs);
   const [weight, setWeight] = useState("");
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    getWeightLogs().then(setLogs);
-  }, []);
 
   const series = toSeries(logs);
   const latest = latestWeight(series) ?? startWeight;
   const change = weightChange(series);
 
+  // OPTIMISTIC: chart + current weight update on tap, then reconcile / roll back.
   async function add(e: React.FormEvent) {
     e.preventDefault();
+    const value = Number(weight);
     if (!weight.trim()) return;
-    setBusy(true);
+
+    const snapshot = logs;
+    const tempId = crypto.randomUUID();
+    const optimistic: BodyweightLog = {
+      id: tempId,
+      user_id: "",
+      weight_kg: value,
+      logged_on: today,
+      created_at: new Date().toISOString(),
+    };
+    // One entry per day: drop any existing entry for today, then add this one.
+    setLogs((prev) => [...prev.filter((l) => l.logged_on !== today), optimistic]);
+    setWeight("");
     setError(null);
-    try {
-      const res = await logWeight({ weight: Number(weight), date: localDateString() });
-      if (res.ok) {
-        // Replace any existing entry for the same day, then append.
-        setLogs((prev) => [...prev.filter((l) => l.logged_on !== res.item.logged_on), res.item]);
-        setWeight("");
-      } else {
-        setError(res.error);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
-    } finally {
-      setBusy(false);
+
+    const res = await logWeight({ weight: value, date: today });
+    if (res.ok) {
+      setLogs((prev) => prev.map((l) => (l.id === tempId ? res.item : l)));
+    } else {
+      setLogs(snapshot);
+      setError(res.error);
     }
   }
 
   async function remove(id: string) {
-    setBusy(true);
-    try {
-      const res = await deleteWeight(id);
-      if (res.ok) setLogs((prev) => prev.filter((l) => l.id !== id));
-    } finally {
-      setBusy(false);
+    const snapshot = logs;
+    setLogs((prev) => prev.filter((l) => l.id !== id));
+    const res = await deleteWeight(id);
+    if (!res.ok) {
+      setLogs(snapshot);
+      setError(res.error ?? "Couldn't delete that.");
     }
   }
 
@@ -102,12 +107,11 @@ export default function WeightTracker({ startWeight }: { startWeight: number | n
           onChange={(e) => setWeight(e.target.value)}
           placeholder={startWeight ? `e.g. ${startWeight}` : "Today's weight (kg)"}
           className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-base focus:border-emerald-500 focus:outline-none"
-          disabled={busy}
         />
         <button
           type="submit"
-          disabled={busy || !weight.trim()}
-          className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:opacity-40"
+          disabled={!weight.trim()}
+          className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-40"
         >
           Log
         </button>
@@ -127,8 +131,7 @@ export default function WeightTracker({ startWeight }: { startWeight: number | n
               <span className="font-medium text-slate-800">{l.weight_kg} kg</span>
               <button
                 onClick={() => remove(l.id)}
-                disabled={busy}
-                className="text-xs text-red-500"
+                className="text-xs text-red-500 active:scale-95"
               >
                 Delete
               </button>

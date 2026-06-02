@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Fraunces, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import ServiceWorkerRegister from "./ServiceWorkerRegister";
+import TimezoneCookie from "@/components/TimezoneCookie";
 
 // Body / UI / numbers — clean humanist sans with tabular figures.
 const jakarta = Plus_Jakarta_Sans({
@@ -52,6 +53,7 @@ export default function RootLayout({
       <body className="min-h-screen font-sans antialiased">
         {children}
         <ServiceWorkerRegister />
+        <TimezoneCookie />
       </body>
     </html>
   );

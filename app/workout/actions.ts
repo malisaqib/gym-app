@@ -5,65 +5,8 @@ import type { WorkoutLog } from "@/lib/database.types";
 
 const isDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s);
 
-// Per-exercise history: what was logged today, and the previous session's sets.
-export interface ExerciseHistory {
-  today: WorkoutLog[];
-  lastSessionDate: string | null;
-  lastSessionSets: WorkoutLog[];
-}
-
-/**
- * Fetch recent logs for the given exercises and split them, per exercise, into
- * "today" and "the most recent earlier session" (used for progression hints).
- */
-export async function getExerciseHistory(
-  exerciseNames: string[],
-  date: string
-): Promise<Record<string, ExerciseHistory>> {
-  const empty: Record<string, ExerciseHistory> = {};
-  for (const name of exerciseNames) {
-    empty[name] = { today: [], lastSessionDate: null, lastSessionSets: [] };
-  }
-  if (!isDate(date) || exerciseNames.length === 0) return empty;
-
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return empty;
-
-  const { data } = await supabase
-    .from("workout_logs")
-    .select("*")
-    .eq("user_id", user.id)
-    .in("exercise_name", exerciseNames)
-    .order("performed_on", { ascending: false })
-    .order("set_number", { ascending: true })
-    .limit(300)
-    .returns<WorkoutLog[]>();
-
-  const rows = data ?? [];
-  const result = { ...empty };
-
-  for (const name of exerciseNames) {
-    const forExercise = rows.filter((r) => r.exercise_name === name);
-    const today = forExercise
-      .filter((r) => r.performed_on === date)
-      .sort((a, b) => (a.set_number ?? 0) - (b.set_number ?? 0));
-
-    // The newest date that isn't today = the "last session" for progression.
-    const lastDate = forExercise.find((r) => r.performed_on !== date)?.performed_on ?? null;
-    const lastSets = lastDate
-      ? forExercise
-          .filter((r) => r.performed_on === lastDate)
-          .sort((a, b) => (a.set_number ?? 0) - (b.set_number ?? 0))
-      : [];
-
-    result[name] = { today, lastSessionDate: lastDate, lastSessionSets: lastSets };
-  }
-
-  return result;
-}
+// Initial workout history is now fetched on the server (see app/workout/page.tsx)
+// and grouped with lib/workouts/history.ts, so there's no client mount-fetch.
 
 type LogResult = { ok: true; item: WorkoutLog } | { ok: false; error: string };
 

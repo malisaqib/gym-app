@@ -1,36 +1,29 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { WORKOUTS, ALL_EXERCISE_NAMES, type Exercise, type WorkoutDay } from "@/lib/workouts/program";
+import { useState } from "react";
+import { WORKOUTS, type Exercise, type WorkoutDay } from "@/lib/workouts/program";
 import { suggestProgression } from "@/lib/workouts/progression";
 import type { WorkoutLog } from "@/lib/database.types";
-import { getExerciseHistory, logSet, deleteSet, type ExerciseHistory } from "./actions";
+import { type ExerciseHistory } from "@/lib/workouts/history";
+import { logSet, deleteSet } from "./actions";
 import BottomNav from "@/components/BottomNav";
-
-function localDateString(d = new Date()): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
 
 const emptyHistory: ExerciseHistory = { today: [], lastSessionDate: null, lastSessionSets: [] };
 
-export default function WorkoutLogger() {
-  const [date, setDate] = useState<string | null>(null);
+export default function WorkoutLogger({
+  initialHistory,
+  today,
+}: {
+  initialHistory: Record<string, ExerciseHistory>;
+  today: string;
+}) {
   const [day, setDay] = useState<WorkoutDay>("A");
-  const [history, setHistory] = useState<Record<string, ExerciseHistory>>({});
-
-  // Load history for all exercises (both days) once we know the local date.
-  useEffect(() => {
-    const today = localDateString();
-    setDate(today);
-    getExerciseHistory(ALL_EXERCISE_NAMES, today).then(setHistory);
-  }, []);
+  // Seeded from the server — no mount fetch.
+  const [history, setHistory] = useState<Record<string, ExerciseHistory>>(initialHistory);
 
   const workout = WORKOUTS[day];
 
-  // Update one exercise's today-list after a log/delete.
+  // Update one exercise's today-list after an optimistic add/replace/remove.
   function setToday(name: string, updater: (sets: WorkoutLog[]) => WorkoutLog[]) {
     setHistory((prev) => {
       const entry = prev[name] ?? emptyHistory;
@@ -43,33 +36,36 @@ export default function WorkoutLogger() {
       <main className="mx-auto flex min-h-screen max-w-md flex-col gap-5 px-4 pb-24 pt-8">
         <h1 className="text-2xl font-bold">Workout</h1>
 
-      {/* A / B day switch */}
-      <div className="flex overflow-hidden rounded-lg border border-slate-300 text-sm">
-        {(["A", "B"] as WorkoutDay[]).map((d) => (
-          <button
-            key={d}
-            onClick={() => setDay(d)}
-            className={`flex-1 px-3 py-2 font-medium ${
-              day === d ? "bg-emerald-600 text-white" : "text-slate-600"
-            }`}
-          >
-            {WORKOUTS[d].title}
-          </button>
-        ))}
-      </div>
+        {/* A / B day switch */}
+        <div className="flex overflow-hidden rounded-lg border border-slate-300 text-sm">
+          {(["A", "B"] as WorkoutDay[]).map((d) => (
+            <button
+              key={d}
+              onClick={() => setDay(d)}
+              className={`flex-1 px-3 py-2 font-medium transition active:scale-[0.98] ${
+                day === d ? "bg-emerald-600 text-white" : "text-slate-600"
+              }`}
+            >
+              {WORKOUTS[d].title}
+            </button>
+          ))}
+        </div>
 
-      <div className="flex flex-col gap-4">
-        {workout.exercises.map((ex) => (
-          <ExerciseCard
-            key={ex.key}
-            exercise={ex}
-            date={date}
-            history={history[ex.name] ?? emptyHistory}
-            onLogged={(item) => setToday(ex.name, (s) => [...s, item])}
-            onDeleted={(id) => setToday(ex.name, (s) => s.filter((x) => x.id !== id))}
-          />
-        ))}
-      </div>
+        <div className="flex flex-col gap-4">
+          {workout.exercises.map((ex) => (
+            <ExerciseCard
+              key={ex.key}
+              exercise={ex}
+              today={today}
+              history={history[ex.name] ?? emptyHistory}
+              onAdd={(item) => setToday(ex.name, (s) => [...s, item])}
+              onReplace={(tempId, item) =>
+                setToday(ex.name, (s) => s.map((x) => (x.id === tempId ? item : x)))
+              }
+              onRemove={(id) => setToday(ex.name, (s) => s.filter((x) => x.id !== id))}
+            />
+          ))}
+        </div>
       </main>
       <BottomNav />
     </>
@@ -78,19 +74,20 @@ export default function WorkoutLogger() {
 
 function ExerciseCard({
   exercise,
-  date,
+  today,
   history,
-  onLogged,
-  onDeleted,
+  onAdd,
+  onReplace,
+  onRemove,
 }: {
   exercise: Exercise;
-  date: string | null;
+  today: string;
   history: ExerciseHistory;
-  onLogged: (item: WorkoutLog) => void;
-  onDeleted: (id: string) => void;
+  onAdd: (item: WorkoutLog) => void;
+  onReplace: (tempId: string, item: WorkoutLog) => void;
+  onRemove: (id: string) => void;
 }) {
   const [reps, setReps] = useState("");
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const unit = exercise.repUnit === "seconds" ? "sec" : "reps";
@@ -99,40 +96,43 @@ function ExerciseCard({
     { sets: exercise.sets, repMax: exercise.repMax, repUnit: exercise.repUnit, harder: exercise.harder }
   );
 
+  // OPTIMISTIC: the set chip appears instantly, then reconciles / rolls back.
   async function addSet() {
     const n = Number(reps);
-    if (!Number.isFinite(n) || n <= 0 || !date) {
+    if (!Number.isFinite(n) || n <= 0) {
       setError(`Enter ${unit}.`);
       return;
     }
-    setBusy(true);
+    const tempId = crypto.randomUUID();
+    const setNumber = history.today.length + 1;
+    const optimistic: WorkoutLog = {
+      id: tempId,
+      user_id: "",
+      workout_id: null,
+      exercise_name: exercise.name,
+      performed_on: today,
+      set_number: setNumber,
+      reps: n,
+      weight_kg: null,
+      created_at: new Date().toISOString(),
+    };
+    onAdd(optimistic);
+    setReps("");
     setError(null);
-    try {
-      const res = await logSet({
-        exerciseName: exercise.name,
-        reps: n,
-        setNumber: history.today.length + 1,
-        date,
-      });
-      if (res.ok) {
-        onLogged(res.item);
-        setReps("");
-      } else {
-        setError(res.error);
-      }
-    } finally {
-      setBusy(false);
+
+    const res = await logSet({ exerciseName: exercise.name, reps: n, setNumber, date: today });
+    if (res.ok) onReplace(tempId, res.item);
+    else {
+      onRemove(tempId);
+      setError(res.error);
     }
   }
 
   async function removeSet(id: string) {
-    setBusy(true);
-    try {
-      const res = await deleteSet(id);
-      if (res.ok) onDeleted(id);
-    } finally {
-      setBusy(false);
-    }
+    const snapshot = history.today.find((s) => s.id === id);
+    onRemove(id);
+    const res = await deleteSet(id);
+    if (!res.ok && snapshot) onAdd(snapshot); // roll back
   }
 
   return (
@@ -173,8 +173,7 @@ function ExerciseCard({
               Set {i + 1}: {s.reps} {unit}
               <button
                 onClick={() => removeSet(s.id)}
-                disabled={busy}
-                className="text-red-500"
+                className="text-red-500 active:scale-90"
                 aria-label="Delete set"
               >
                 ×
@@ -193,12 +192,11 @@ function ExerciseCard({
           onChange={(e) => setReps(e.target.value)}
           placeholder={unit}
           className="w-24 rounded-lg border border-slate-300 px-3 py-2 text-base focus:border-emerald-500 focus:outline-none"
-          disabled={busy}
         />
         <button
           onClick={addSet}
-          disabled={busy || !reps}
-          className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:opacity-40"
+          disabled={!reps}
+          className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-40"
         >
           Add set
         </button>

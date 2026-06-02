@@ -39,7 +39,9 @@ export function Button({
       {...props}
       disabled={disabled || loading}
       className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-field font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50",
+        // `active:scale` gives an instant pressed feel; touch-manipulation removes
+        // the 300ms mobile tap delay. transition covers colour + transform.
+        "inline-flex select-none touch-manipulation items-center justify-center gap-2 rounded-field font-semibold transition duration-150 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 disabled:active:scale-100",
         variants[variant],
         sizes[size],
         fullWidth && "w-full",

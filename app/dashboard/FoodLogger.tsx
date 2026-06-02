@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { FoodLog } from "@/lib/database.types";
 import { sumMacros } from "@/lib/food/totals";
-import { getFoodLogs, logFood, correctFoodItem, deleteFoodItem } from "./actions";
+import { logFood, correctFoodItem, deleteFoodItem } from "./actions";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -12,56 +12,85 @@ import { Alert } from "@/components/ui/Alert";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ProgressRing } from "@/components/ui/ProgressRing";
 
-// Today's date in the USER's local timezone as YYYY-MM-DD (DB runs in UTC, so
-// we never derive "today" on the server).
-function localDateString(d = new Date()): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+// A meal being parsed by the LLM — shown immediately so logging feels instant.
+interface PendingLog {
+  tempId: string;
+  text: string;
 }
 
 export default function FoodLogger({
   calorieTarget,
   proteinTarget,
+  initialItems,
+  today,
 }: {
   calorieTarget: number;
   proteinTarget: number;
+  initialItems: FoodLog[];
+  today: string;
 }) {
-  const [date, setDate] = useState<string | null>(null);
-  const [items, setItems] = useState<FoodLog[]>([]);
+  // Seeded from the server — no mount fetch, so the list is there on first paint.
+  const [items, setItems] = useState<FoodLog[]>(initialItems);
+  const [pending, setPending] = useState<PendingLog[]>([]);
   const [text, setText] = useState("");
-  const [isLogging, setIsLogging] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Load today's items once we know the local date (client-only).
-  useEffect(() => {
-    const today = localDateString();
-    setDate(today);
-    getFoodLogs(today).then(setItems);
-  }, []);
 
   const eaten = sumMacros(items);
 
   async function handleLog(e: React.FormEvent) {
     e.preventDefault();
-    if (!text.trim() || !date) return;
-    setIsLogging(true);
+    const meal = text.trim();
+    if (!meal) return;
+
+    // OPTIMISTIC: show a "reading…" row and clear the input right away.
+    const tempId = crypto.randomUUID();
+    setPending((p) => [...p, { tempId, text: meal }]);
+    setText("");
     setError(null);
+
     try {
-      const res = await logFood({ text, date });
+      const res = await logFood({ text: meal, date: today });
       if (res.ok) {
         setItems((prev) => [...prev, ...res.items]);
-        setText("");
       } else {
         setError(res.error);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
     } finally {
-      setIsLogging(false);
+      setPending((p) => p.filter((x) => x.tempId !== tempId));
     }
   }
+
+  // OPTIMISTIC edit: apply locally, reconcile with the server, roll back on error.
+  async function correctItem(id: string, patch: { calories: number; protein_g: number }) {
+    const snapshot = items;
+    setItems((prev) =>
+      prev.map((i) =>
+        i.id === id ? { ...i, calories: patch.calories, protein_g: patch.protein_g, source: "corrected" } : i
+      )
+    );
+    const res = await correctFoodItem(id, patch);
+    if (!res.ok) {
+      setItems(snapshot);
+      setError(res.error);
+    } else {
+      setItems((prev) => prev.map((i) => (i.id === id ? res.item : i)));
+    }
+  }
+
+  // OPTIMISTIC delete: remove now, restore on error.
+  async function removeItem(id: string) {
+    const snapshot = items;
+    setItems((prev) => prev.filter((i) => i.id !== id));
+    const res = await deleteFoodItem(id);
+    if (!res.ok) {
+      setItems(snapshot);
+      setError(res.error ?? "Couldn't delete that.");
+    }
+  }
+
+  const count = items.length + pending.length;
 
   return (
     <div className="flex flex-col gap-6">
@@ -81,9 +110,8 @@ export default function FoodLogger({
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="do roti, ek pyali daal"
-            disabled={isLogging}
           />
-          <Button type="submit" loading={isLogging} disabled={!text.trim()}>
+          <Button type="submit" disabled={!text.trim()}>
             Log
           </Button>
         </div>
@@ -93,24 +121,36 @@ export default function FoodLogger({
       {/* Today's items */}
       <section className="flex flex-col gap-3">
         <h2 className="font-display text-lg font-semibold text-foreground">
-          Today{items.length > 0 ? ` · ${items.length}` : ""}
+          Today{count > 0 ? ` · ${count}` : ""}
         </h2>
-        {items.length === 0 ? (
+
+        {count === 0 ? (
           <EmptyState icon="🍽️" title="Nothing logged yet" hint="Type a meal above to get started." />
         ) : (
-          items.map((item) => (
-            <FoodItemRow
-              key={item.id}
-              item={item}
-              onUpdate={(updated) =>
-                setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)))
-              }
-              onDelete={(id) => setItems((prev) => prev.filter((i) => i.id !== id))}
-            />
-          ))
+          <>
+            {items.map((item) => (
+              <FoodItemRow key={item.id} item={item} onCorrect={correctItem} onDelete={removeItem} />
+            ))}
+            {pending.map((p) => (
+              <PendingRow key={p.tempId} text={p.text} />
+            ))}
+          </>
         )}
       </section>
     </div>
+  );
+}
+
+// A meal still being parsed — instant feedback while the LLM works.
+function PendingRow({ text }: { text: string }) {
+  return (
+    <Card className="flex items-center gap-3 p-3 opacity-70">
+      <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium text-foreground">{text}</p>
+        <p className="text-xs text-muted-foreground">Reading…</p>
+      </div>
+    </Card>
   );
 }
 
@@ -118,42 +158,20 @@ export default function FoodLogger({
 
 function FoodItemRow({
   item,
-  onUpdate,
+  onCorrect,
   onDelete,
 }: {
   item: FoodLog;
-  onUpdate: (item: FoodLog) => void;
+  onCorrect: (id: string, patch: { calories: number; protein_g: number }) => void;
   onDelete: (id: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [cal, setCal] = useState(String(item.calories));
   const [protein, setProtein] = useState(String(item.protein_g));
-  const [busy, setBusy] = useState(false);
 
-  async function save() {
-    setBusy(true);
-    try {
-      const res = await correctFoodItem(item.id, {
-        calories: Number(cal),
-        protein_g: Number(protein),
-      });
-      if (res.ok) {
-        onUpdate(res.item);
-        setEditing(false);
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function remove() {
-    setBusy(true);
-    try {
-      const res = await deleteFoodItem(item.id);
-      if (res.ok) onDelete(item.id);
-    } finally {
-      setBusy(false);
-    }
+  function save() {
+    onCorrect(item.id, { calories: Number(cal), protein_g: Number(protein) });
+    setEditing(false); // optimistic — close immediately
   }
 
   return (
@@ -175,14 +193,13 @@ function FoodItemRow({
           </p>
         </div>
         <div className="flex shrink-0 gap-1">
-          <Button variant="ghost" size="sm" onClick={() => setEditing((v) => !v)} disabled={busy}>
+          <Button variant="ghost" size="sm" onClick={() => setEditing((v) => !v)}>
             {editing ? "Close" : "Edit"}
           </Button>
           <Button
             variant="ghost"
             size="sm"
-            onClick={remove}
-            disabled={busy}
+            onClick={() => onDelete(item.id)}
             className="text-destructive hover:bg-destructive/10"
           >
             Delete
@@ -194,12 +211,7 @@ function FoodItemRow({
         <div className="mt-3 flex items-end gap-2">
           <label className="flex flex-col gap-1 text-xs text-muted-foreground">
             Calories
-            <Input
-              type="number"
-              value={cal}
-              onChange={(e) => setCal(e.target.value)}
-              className="h-9 w-24"
-            />
+            <Input type="number" value={cal} onChange={(e) => setCal(e.target.value)} className="h-9 w-24" />
           </label>
           <label className="flex flex-col gap-1 text-xs text-muted-foreground">
             Protein (g)
@@ -210,7 +222,7 @@ function FoodItemRow({
               className="h-9 w-24"
             />
           </label>
-          <Button size="sm" onClick={save} loading={busy}>
+          <Button size="sm" onClick={save}>
             Save
           </Button>
         </div>

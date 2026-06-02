@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getLocalToday } from "@/lib/date";
 import { signOut } from "@/app/auth/actions";
-import type { Lang, Profile } from "@/lib/database.types";
+import type { FoodLog, Lang, Profile } from "@/lib/database.types";
 import { RELATABLE_GOALS } from "@/lib/onboarding/goals";
 import { Screen } from "@/components/ui/Screen";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -21,12 +22,20 @@ export default async function DashboardPage() {
     redirect("/login");
   }
 
-  // Load the profile to read targets and decide whether onboarding is done.
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", user.id)
-    .single<Profile>();
+  const today = await getLocalToday();
+
+  // Fetch the profile AND today's food in parallel (server-side) so the screen
+  // arrives populated — no extra client round-trip after load.
+  const [{ data: profile }, { data: foodRows }] = await Promise.all([
+    supabase.from("profiles").select("*").eq("id", user.id).single<Profile>(),
+    supabase
+      .from("food_logs")
+      .select("*")
+      .eq("user_id", user.id)
+      .eq("logged_on", today)
+      .order("created_at", { ascending: true })
+      .returns<FoodLog[]>(),
+  ]);
 
   // First-time users haven't set their targets yet — send them to onboarding.
   if (!profile?.onboarded) {
@@ -57,6 +66,8 @@ export default async function DashboardPage() {
         <FoodLogger
           calorieTarget={profile.calorie_target ?? 0}
           proteinTarget={profile.protein_target_g ?? 0}
+          initialItems={foodRows ?? []}
+          today={today}
         />
 
         <p className="text-center text-xs text-muted-foreground break-all">{user.email}</p>
