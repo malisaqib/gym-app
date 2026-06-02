@@ -42,14 +42,21 @@ export default function FoodLogger({
     setIsLogging(true);
     setError(null);
 
-    const res = await logFood({ text, date });
-    if (res.ok) {
-      setItems((prev) => [...prev, ...res.items]);
-      setText("");
-    } else {
-      setError(res.error);
+    try {
+      const res = await logFood({ text, date });
+      if (res.ok) {
+        setItems((prev) => [...prev, ...res.items]);
+        setText("");
+      } else {
+        setError(res.error);
+      }
+    } catch (err) {
+      // The server action itself failed/rejected — surface it instead of
+      // leaving the button stuck on "Logging…".
+      setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setIsLogging(false);
     }
-    setIsLogging(false);
   }
 
   return (
@@ -174,22 +181,28 @@ function FoodItemRow({
 
   async function save() {
     setBusy(true);
-    const res = await correctFoodItem(item.id, {
-      calories: Number(cal),
-      protein_g: Number(protein),
-    });
-    setBusy(false);
-    if (res.ok) {
-      onUpdate(res.item);
-      setEditing(false);
+    try {
+      const res = await correctFoodItem(item.id, {
+        calories: Number(cal),
+        protein_g: Number(protein),
+      });
+      if (res.ok) {
+        onUpdate(res.item);
+        setEditing(false);
+      }
+    } finally {
+      setBusy(false);
     }
   }
 
   async function remove() {
     setBusy(true);
-    const res = await deleteFoodItem(item.id);
-    setBusy(false);
-    if (res.ok) onDelete(item.id);
+    try {
+      const res = await deleteFoodItem(item.id);
+      if (res.ok) onDelete(item.id);
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (

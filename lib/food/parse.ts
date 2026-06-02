@@ -82,22 +82,37 @@ export async function parseFoodText(text: string): Promise<ParsedFoodItem[]> {
     throw new Error("Food AI is not configured (missing GROQ_API_KEY).");
   }
 
-  const res = await fetch(GROQ_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      temperature: 0.2,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: buildSystemPrompt() },
-        { role: "user", content: text },
-      ],
-    }),
-  });
+  // Abort the request if Groq doesn't respond in time, so the UI never hangs.
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30_000);
+
+  let res: Response;
+  try {
+    res = await fetch(GROQ_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        temperature: 0.2,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: buildSystemPrompt() },
+          { role: "user", content: text },
+        ],
+      }),
+      signal: controller.signal,
+    });
+  } catch (e) {
+    if (e instanceof Error && e.name === "AbortError") {
+      throw new Error("The food AI took too long to respond. Please try again.");
+    }
+    throw new Error("Couldn't reach the food AI. Check your connection and try again.");
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
