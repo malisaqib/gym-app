@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "@/app/auth/actions";
 import type { Profile } from "@/lib/database.types";
+import FoodLogger from "./FoodLogger";
 
 // Protected page. The middleware already blocks logged-out users, but we
 // re-check here (defense in depth) and to actually get the user's data.
@@ -42,33 +43,13 @@ export default async function DashboardPage() {
         </form>
       </header>
 
-      {/* Daily targets from onboarding. Food-vs-target tracking comes in Phase 4. */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-center">
-          <p className="text-sm text-emerald-700">Daily calories</p>
-          <p className="text-3xl font-bold text-emerald-800">
-            {profile.calorie_target}
-            <span className="ml-1 text-sm font-normal">kcal</span>
-          </p>
-        </div>
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-center">
-          <p className="text-sm text-emerald-700">Daily protein</p>
-          <p className="text-3xl font-bold text-emerald-800">
-            {profile.protein_target_g}
-            <span className="ml-1 text-sm font-normal">g</span>
-          </p>
-        </div>
-      </div>
+      {/* The core loop: progress vs target + text food logging + corrections. */}
+      <FoodLogger
+        calorieTarget={profile.calorie_target ?? 0}
+        proteinTarget={profile.protein_target_g ?? 0}
+      />
 
-      <div className="rounded-xl border border-slate-200 bg-white p-5">
-        <p className="text-sm text-slate-500">Logged in as</p>
-        <p className="font-medium break-all">{user.email}</p>
-      </div>
-
-      <p className="text-sm text-slate-500">
-        Next up: log what you eat in plain language and watch these targets fill
-        up.
-      </p>
+      <p className="text-center text-xs text-slate-400 break-all">{user.email}</p>
     </main>
   );
 }
