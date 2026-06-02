@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import type { BodyweightLog } from "@/lib/database.types";
 import { toSeries, weightChange, latestWeight } from "@/lib/weight/series";
 import { getWeightLogs, logWeight, deleteWeight } from "./actions";
 import WeightChart from "./WeightChart";
+import BottomNav from "@/components/BottomNav";
 
 function localDateString(d = new Date()): string {
   const y = d.getFullYear();
@@ -67,13 +67,9 @@ export default function WeightTracker({ startWeight }: { startWeight: number | n
   );
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col gap-5 px-6 py-8">
-      <header className="flex items-center justify-between">
+    <>
+      <main className="mx-auto flex min-h-screen max-w-md flex-col gap-5 px-4 pb-24 pt-8">
         <h1 className="text-2xl font-bold">Weight</h1>
-        <Link href="/dashboard" className="text-sm text-emerald-700 underline">
-          Dashboard
-        </Link>
-      </header>
 
       {/* Summary */}
       <div className="flex items-end gap-4">
@@ -140,6 +136,8 @@ export default function WeightTracker({ startWeight }: { startWeight: number | n
           ))}
         </div>
       )}
-    </main>
+      </main>
+      <BottomNav />
+    </>
   );
 }

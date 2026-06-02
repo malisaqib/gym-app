@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { WORKOUTS, ALL_EXERCISE_NAMES, type Exercise, type WorkoutDay } from "@/lib/workouts/program";
 import { suggestProgression } from "@/lib/workouts/progression";
 import type { WorkoutLog } from "@/lib/database.types";
 import { getExerciseHistory, logSet, deleteSet, type ExerciseHistory } from "./actions";
+import BottomNav from "@/components/BottomNav";
 
 function localDateString(d = new Date()): string {
   const y = d.getFullYear();
@@ -39,13 +39,9 @@ export default function WorkoutLogger() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col gap-5 px-6 py-8">
-      <header className="flex items-center justify-between">
+    <>
+      <main className="mx-auto flex min-h-screen max-w-md flex-col gap-5 px-4 pb-24 pt-8">
         <h1 className="text-2xl font-bold">Workout</h1>
-        <Link href="/dashboard" className="text-sm text-emerald-700 underline">
-          Dashboard
-        </Link>
-      </header>
 
       {/* A / B day switch */}
       <div className="flex overflow-hidden rounded-lg border border-slate-300 text-sm">
@@ -74,7 +70,9 @@ export default function WorkoutLogger() {
           />
         ))}
       </div>
-    </main>
+      </main>
+      <BottomNav />
+    </>
   );
 }
 

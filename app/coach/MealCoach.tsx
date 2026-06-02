@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import type { Lang } from "@/lib/database.types";
 import type { MealSuggestion } from "@/lib/coach/mealCoach";
 import { suggestMeal } from "./actions";
+import BottomNav from "@/components/BottomNav";
 
 function localDateString(d = new Date()): string {
   const y = d.getFullYear();
@@ -63,13 +63,9 @@ export default function MealCoach({ lang }: { lang: Lang }) {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col gap-5 px-6 py-8">
-      <header className="flex items-center justify-between">
+    <>
+      <main className="mx-auto flex min-h-screen max-w-md flex-col gap-5 px-4 pb-24 pt-8">
         <h1 className="text-2xl font-bold">{t("title")}</h1>
-        <Link href="/dashboard" className="text-sm text-emerald-700 underline">
-          Dashboard
-        </Link>
-      </header>
 
       {remaining.cal !== null && (
         <p className="text-sm text-slate-500">
@@ -109,7 +105,9 @@ export default function MealCoach({ lang }: { lang: Lang }) {
           )}
         </div>
       )}
-    </main>
+      </main>
+      <BottomNav />
+    </>
   );
 }
 
