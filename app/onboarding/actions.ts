@@ -4,24 +4,25 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { calculateTargets, type TargetResult } from "@/lib/nutrition/engine";
 import type { OnboardingInput } from "@/lib/onboarding/questions";
-import type { Experience, Goal, Sex } from "@/lib/database.types";
+import { mapRelatableGoal, buildPlanGuidance, type PlanGuidance } from "@/lib/onboarding/goals";
+import type { Experience, Sex } from "@/lib/database.types";
 
 // Allowed values, used to validate the client input on the server (never trust
 // the client). These mirror the CHECK constraints in the SQL schema.
-const GOALS: Goal[] = ["lose_fat", "maintain", "gain_muscle"];
 const SEXES: Sex[] = ["male", "female"];
 const EXPERIENCES: Experience[] = ["beginner", "intermediate", "advanced"];
 
 type SaveResult =
-  | { ok: true; result: TargetResult }
+  | { ok: true; result: TargetResult; guidance: PlanGuidance }
   | { ok: false; error: string };
 
 /**
  * Saves a completed onboarding flow:
  *   1. validate the structured input,
- *   2. run the pure calorie/protein engine,
- *   3. write the inputs, the targets, the language and the raw transcript to
- *      the user's profile and mark them onboarded.
+ *   2. map the relatable goal -> a practical goal, then run the calorie engine,
+ *   3. write inputs, targets, language, relatable fields and the raw transcript
+ *      to the profile and mark the user onboarded,
+ *   4. return targets + friendly plan guidance for the final screen.
  */
 export async function saveOnboarding(input: OnboardingInput): Promise<SaveResult> {
   const supabase = await createClient();
@@ -40,7 +41,6 @@ export async function saveOnboarding(input: OnboardingInput): Promise<SaveResult
   const trainingDays = Number(input.trainingDays);
 
   const valid =
-    GOALS.includes(input.goal) &&
     SEXES.includes(input.sex) &&
     EXPERIENCES.includes(input.experience) &&
     Number.isFinite(age) && age >= 13 && age <= 99 &&
@@ -52,21 +52,35 @@ export async function saveOnboarding(input: OnboardingInput): Promise<SaveResult
     return { ok: false, error: "Some answers looked off. Please try again." };
   }
 
-  // --- Run the engine (pure function, no AI) --------------------------------
+  // --- Map relatable goal -> practical goal, then run the engine ------------
+  const goalDef = mapRelatableGoal(input.relatableGoal);
+
   const result = calculateTargets({
     sex: input.sex,
     age,
     heightCm,
     weightKg,
     trainingDays,
-    goal: input.goal,
+    goal: goalDef.goal,
+  });
+
+  const guidance = buildPlanGuidance({
+    relatableGoalKey: input.relatableGoal,
+    timeline: input.timeline,
+    foodPreference: input.foodPreference,
+    trainingLocation: input.trainingLocation,
+    lang: input.preferredLanguage,
   });
 
   // --- Save to the user's profile -------------------------------------------
   const { error } = await supabase
     .from("profiles")
     .update({
-      goal: input.goal,
+      goal: goalDef.goal,
+      relatable_goal: input.relatableGoal,
+      timeline: input.timeline,
+      training_location: input.trainingLocation,
+      food_preference: input.foodPreference,
       sex: input.sex,
       age,
       height_cm: heightCm,
@@ -87,5 +101,5 @@ export async function saveOnboarding(input: OnboardingInput): Promise<SaveResult
 
   // The dashboard reads the profile, so refresh its cached render.
   revalidatePath("/dashboard");
-  return { ok: true, result };
+  return { ok: true, result, guidance };
 }

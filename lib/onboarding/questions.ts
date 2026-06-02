@@ -1,10 +1,14 @@
 import type {
   Experience,
-  Goal,
+  FoodPreference,
   Lang,
   OnboardingEntry,
+  RelatableGoalKey,
   Sex,
+  Timeline,
+  TrainingLocation,
 } from "@/lib/database.types";
+import { RELATABLE_GOALS } from "@/lib/onboarding/goals";
 
 /**
  * Phase 3 — Onboarding content & shape.
@@ -59,28 +63,27 @@ const trainingDayOptions: Choice[] = Array.from({ length: 8 }, (_, n) => ({
 
 export const STEPS: Step[] = [
   {
-    key: "goal",
+    // Relatable goal (Phase 8) — mapped to a practical goal on the server.
+    key: "relatableGoal",
     kind: "choice",
     prompt: {
-      en: "What's your main goal right now?",
-      roman_urdu: "Abhi aap ka main goal kya hai?",
+      en: "What are you really here for?",
+      roman_urdu: "Aap asal mein kis liye aaye hain?",
     },
-    options: [
-      { value: "lose_fat", label: { en: "Lose fat", roman_urdu: "Wazan/charbi kam karni hai" } },
-      { value: "maintain", label: { en: "Stay the same", roman_urdu: "Wazan maintain karna hai" } },
-      { value: "gain_muscle", label: { en: "Build muscle", roman_urdu: "Muscle banana hai" } },
-    ],
+    options: RELATABLE_GOALS.map((g) => ({ value: g.key, label: g.label })),
   },
   {
-    key: "sex",
+    key: "timeline",
     kind: "choice",
     prompt: {
-      en: "What's your biological sex? (needed for the calorie math)",
-      roman_urdu: "Aap ka biological sex kya hai? (calorie hisaab ke liye zaroori)",
+      en: "Any timeline in mind?",
+      roman_urdu: "Koi timeline hai zehan mein?",
     },
     options: [
-      { value: "male", label: { en: "Male", roman_urdu: "Mard" } },
-      { value: "female", label: { en: "Female", roman_urdu: "Aurat" } },
+      { value: "no_deadline", label: { en: "No deadline", roman_urdu: "Koi deadline nahi" } },
+      { value: "4_weeks", label: { en: "4 weeks", roman_urdu: "4 hafte" } },
+      { value: "8_weeks", label: { en: "8 weeks", roman_urdu: "8 hafte" } },
+      { value: "12_weeks", label: { en: "12 weeks", roman_urdu: "12 hafte" } },
     ],
   },
   {
@@ -90,6 +93,18 @@ export const STEPS: Step[] = [
     placeholder: { en: "Years, e.g. 24", roman_urdu: "Saal, masalan 24" },
     min: 13,
     max: 99,
+  },
+  {
+    key: "sex",
+    kind: "choice",
+    prompt: {
+      en: "Gender? (needed for the calorie math)",
+      roman_urdu: "Gender? (calorie hisaab ke liye zaroori)",
+    },
+    options: [
+      { value: "male", label: { en: "Male", roman_urdu: "Mard" } },
+      { value: "female", label: { en: "Female", roman_urdu: "Aurat" } },
+    ],
   },
   {
     key: "heightCm",
@@ -114,6 +129,19 @@ export const STEPS: Step[] = [
     max: 250,
   },
   {
+    key: "trainingLocation",
+    kind: "choice",
+    prompt: {
+      en: "Where will you train?",
+      roman_urdu: "Aap kahan train karenge?",
+    },
+    options: [
+      { value: "home", label: { en: "Home", roman_urdu: "Ghar" } },
+      { value: "gym", label: { en: "Gym", roman_urdu: "Gym" } },
+      { value: "both", label: { en: "Both", roman_urdu: "Dono" } },
+    ],
+  },
+  {
     key: "trainingDays",
     kind: "select",
     prompt: {
@@ -126,8 +154,8 @@ export const STEPS: Step[] = [
     key: "experience",
     kind: "choice",
     prompt: {
-      en: "How much gym experience do you have?",
-      roman_urdu: "Aap ko gym ka kitna tajurba hai?",
+      en: "How much training experience do you have?",
+      roman_urdu: "Aap ko training ka kitna tajurba hai?",
     },
     options: [
       { value: "beginner", label: { en: "New to this", roman_urdu: "Bilkul naya" } },
@@ -136,14 +164,29 @@ export const STEPS: Step[] = [
     ],
   },
   {
+    key: "foodPreference",
+    kind: "choice",
+    prompt: {
+      en: "What's your food style?",
+      roman_urdu: "Aap ka khane ka style kya hai?",
+    },
+    options: [
+      { value: "normal_desi", label: { en: "Normal desi", roman_urdu: "Normal desi" } },
+      { value: "high_protein", label: { en: "High protein", roman_urdu: "High protein" } },
+      { value: "budget", label: { en: "Budget", roman_urdu: "Budget" } },
+      { value: "hostel_student", label: { en: "Hostel / student", roman_urdu: "Hostel / student" } },
+      { value: "veg_limited", label: { en: "Veg / little meat", roman_urdu: "Veg / kam meat" } },
+    ],
+  },
+  {
     // The one free-text step: open-ended, so the user can explain in detail.
     key: "notes",
     kind: "text",
     optional: true,
     prompt: {
-      en: "Anything I should know? Injuries, health issues, or foods you avoid. (Optional)",
+      en: "Any foods you usually eat or avoid? Injuries or health notes? (Optional)",
       roman_urdu:
-        "Koi aisi baat jo mujhe pata honi chahiye? Injury, sehat ka masla, ya jo khana avoid karte hain. (Optional)",
+        "Koi khana jo aksar khate ya avoid karte hain? Injury ya sehat ki baat? (Optional)",
     },
     placeholder: { en: "Type here, or skip", roman_urdu: "Yahan likhein, ya skip karein" },
   },
@@ -186,13 +229,16 @@ export const UI: Record<string, Localized> = {
 
 // The structured payload the chat UI sends to the server action.
 export interface OnboardingInput {
-  goal: Goal;
+  relatableGoal: RelatableGoalKey;
+  timeline: Timeline;
   sex: Sex;
   age: number;
   heightCm: number;
   weightKg: number;
+  trainingLocation: TrainingLocation;
   trainingDays: number;
   experience: Experience;
+  foodPreference: FoodPreference;
   notes: string;
   preferredLanguage: Lang;
   transcript: OnboardingEntry[];

@@ -10,12 +10,16 @@ import {
 } from "@/lib/onboarding/questions";
 import type {
   Experience,
-  Goal,
+  FoodPreference,
   Lang,
   OnboardingEntry,
+  RelatableGoalKey,
   Sex,
+  Timeline,
+  TrainingLocation,
 } from "@/lib/database.types";
 import type { TargetResult } from "@/lib/nutrition/engine";
+import type { PlanGuidance } from "@/lib/onboarding/goals";
 import { saveOnboarding } from "./actions";
 
 type Status = "asking" | "submitting" | "done" | "error";
@@ -32,6 +36,7 @@ export default function Onboarding({ initialLang }: { initialLang: Lang }) {
   const [inputError, setInputError] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>("asking");
   const [result, setResult] = useState<TargetResult | null>(null);
+  const [guidance, setGuidance] = useState<PlanGuidance | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   // Translate a localized string into the current language.
@@ -70,13 +75,16 @@ export default function Onboarding({ initialLang }: { initialLang: Lang }) {
     setSubmitError(null);
 
     const payload: OnboardingInput = {
-      goal: a.goal as Goal,
+      relatableGoal: a.relatableGoal as RelatableGoalKey,
+      timeline: a.timeline as Timeline,
       sex: a.sex as Sex,
       age: Number(a.age),
       heightCm: Number(a.heightCm),
       weightKg: Number(a.weightKg),
+      trainingLocation: a.trainingLocation as TrainingLocation,
       trainingDays: Number(a.trainingDays),
       experience: a.experience as Experience,
+      foodPreference: a.foodPreference as FoodPreference,
       notes: typeof a.notes === "string" ? a.notes : "",
       preferredLanguage: lang,
       transcript: t,
@@ -85,6 +93,7 @@ export default function Onboarding({ initialLang }: { initialLang: Lang }) {
     const res = await saveOnboarding(payload);
     if (res.ok) {
       setResult(res.result);
+      setGuidance(res.guidance);
       setStatus("done");
     } else {
       setSubmitError(res.error || tr(UI.genericError));
@@ -167,6 +176,16 @@ export default function Onboarding({ initialLang }: { initialLang: Lang }) {
             {result.safetyFloorApplied && (
               <p className="mt-2 text-xs text-amber-700">{tr(UI.safetyNote)}</p>
             )}
+          </BotBubble>
+        )}
+
+        {/* Friendly plan guidance tied to the user's relatable goal */}
+        {status === "done" && guidance && (
+          <BotBubble>
+            <p className="font-medium">{guidance.headline}</p>
+            <p className="mt-2 text-slate-700">{guidance.explanation}</p>
+            <p className="mt-2 text-slate-700">🍽️ {guidance.diet}</p>
+            <p className="mt-1 text-slate-700">🏋️ {guidance.workout}</p>
           </BotBubble>
         )}
 

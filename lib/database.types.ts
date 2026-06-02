@@ -12,6 +12,24 @@ export type Experience = "beginner" | "intermediate" | "advanced";
 export type FoodLogSource = "llm" | "manual" | "corrected";
 export type Lang = "en" | "roman_urdu";
 
+// Relatable onboarding (Phase 8)
+export type RelatableGoalKey =
+  | "wedding_event"
+  | "shirt_look"
+  | "belly_fat"
+  | "skinny_bulk"
+  | "sports"
+  | "general"
+  | "gym_start";
+export type Timeline = "no_deadline" | "4_weeks" | "8_weeks" | "12_weeks";
+export type TrainingLocation = "home" | "gym" | "both";
+export type FoodPreference =
+  | "normal_desi"
+  | "high_protein"
+  | "budget"
+  | "hostel_student"
+  | "veg_limited";
+
 // One answered onboarding step: the structured value we keep AND the original
 // message the user gave (button label tapped or text typed), plus the language.
 export interface OnboardingEntry {
@@ -35,6 +53,10 @@ export interface Profile {
   calorie_target: number | null;
   protein_target_g: number | null;
   preferred_language: Lang;
+  relatable_goal: RelatableGoalKey | null;
+  timeline: Timeline | null;
+  training_location: TrainingLocation | null;
+  food_preference: FoodPreference | null;
   onboarding_raw: OnboardingEntry[] | null;
   onboarded: boolean;
   created_at: string;
