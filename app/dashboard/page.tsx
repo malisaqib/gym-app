@@ -33,7 +33,13 @@ export default async function DashboardPage() {
     <main className="mx-auto flex min-h-screen max-w-md flex-col gap-6 px-6 py-12">
       <header className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Dashboard</h1>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          <Link
+            href="/coach"
+            className="rounded-lg border border-emerald-600 px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-50"
+          >
+            What to eat?
+          </Link>
           <Link
             href="/workout"
             className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-emerald-700"
