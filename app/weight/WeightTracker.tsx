@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import type { BodyweightLog } from "@/lib/database.types";
+import { listContainer, listItem } from "@/lib/motion";
 import { toSeries, weightChange, latestWeight } from "@/lib/weight/series";
 import { logWeight, deleteWeight } from "./actions";
 import WeightChart from "./WeightChart";
@@ -40,7 +42,6 @@ export default function WeightTracker({
       logged_on: today,
       created_at: new Date().toISOString(),
     };
-    // One entry per day: drop any existing entry for today, then add this one.
     setLogs((prev) => [...prev.filter((l) => l.logged_on !== today), optimistic]);
     setWeight("");
     setError(null);
@@ -74,71 +75,80 @@ export default function WeightTracker({
   return (
     <>
       <main className="mx-auto flex min-h-screen max-w-md flex-col gap-5 px-4 pb-24 pt-8">
-        <h1 className="text-2xl font-bold">Weight</h1>
+        <h1 className="font-display text-2xl font-semibold text-foreground">Weight</h1>
 
-      {/* Summary */}
-      <div className="flex items-end gap-4">
-        <div>
-          <p className="text-xs text-slate-500">Current</p>
-          <p className="text-3xl font-bold text-slate-800">
-            {latest ?? "—"}
-            <span className="ml-1 text-sm font-normal text-slate-400">kg</span>
-          </p>
+        {/* Summary */}
+        <div className="flex items-end gap-4">
+          <div>
+            <p className="text-xs text-muted-foreground">Current</p>
+            <p className="text-3xl font-bold tabular-nums text-foreground">
+              {latest ?? "—"}
+              <span className="ml-1 text-sm font-normal text-muted-foreground">kg</span>
+            </p>
+          </div>
+          {change !== null && (
+            <p className={`pb-1 text-sm font-medium ${change <= 0 ? "text-success" : "text-warning"}`}>
+              {change <= 0 ? "▼" : "▲"} {Math.abs(change)} kg since start
+            </p>
+          )}
         </div>
-        {change !== null && (
-          <p className={`pb-1 text-sm font-medium ${change <= 0 ? "text-emerald-600" : "text-amber-600"}`}>
-            {change <= 0 ? "▼" : "▲"} {Math.abs(change)} kg since start
-          </p>
-        )}
-      </div>
 
-      {/* Chart */}
-      <div className="rounded-xl border border-slate-200 bg-white p-3">
-        <WeightChart series={series} />
-      </div>
+        {/* Chart */}
+        <div className="rounded-card border border-border bg-card p-3 shadow-soft">
+          <WeightChart series={series} />
+        </div>
 
-      {/* Log today's weight */}
-      <form onSubmit={add} className="flex gap-2">
-        <input
-          type="number"
-          inputMode="decimal"
-          step="0.1"
-          value={weight}
-          onChange={(e) => setWeight(e.target.value)}
-          placeholder={startWeight ? `e.g. ${startWeight}` : "Today's weight (kg)"}
-          className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-base focus:border-emerald-500 focus:outline-none"
-        />
-        <button
-          type="submit"
-          disabled={!weight.trim()}
-          className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-40"
-        >
-          Log
-        </button>
-      </form>
-      {error && <p className="text-sm text-red-600">{error}</p>}
+        {/* Log today's weight */}
+        <form onSubmit={add} className="flex gap-2">
+          <input
+            type="number"
+            inputMode="decimal"
+            step="0.1"
+            value={weight}
+            onChange={(e) => setWeight(e.target.value)}
+            placeholder={startWeight ? `e.g. ${startWeight}` : "Today's weight (kg)"}
+            className="flex-1 rounded-field border border-input bg-card px-3 py-2 text-base text-foreground focus:border-ring focus:outline-none"
+          />
+          <button
+            type="submit"
+            disabled={!weight.trim()}
+            className="rounded-field bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 active:scale-[0.97] disabled:opacity-40"
+          >
+            Log
+          </button>
+        </form>
+        {error && <p className="text-sm text-destructive">{error}</p>}
 
-      {/* History */}
-      {history.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <h2 className="text-sm font-semibold text-slate-700">History</h2>
-          {history.map((l) => (
-            <div
-              key={l.id}
-              className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+        {/* History */}
+        {history.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <h2 className="text-sm font-semibold text-foreground">History</h2>
+            <motion.div
+              variants={listContainer}
+              initial="hidden"
+              animate="show"
+              className="flex flex-col gap-2"
             >
-              <span className="text-slate-500">{l.logged_on}</span>
-              <span className="font-medium text-slate-800">{l.weight_kg} kg</span>
-              <button
-                onClick={() => remove(l.id)}
-                className="text-xs text-red-500 active:scale-95"
-              >
-                Delete
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
+              <AnimatePresence initial={false} mode="popLayout">
+                {history.map((l) => (
+                  <motion.div
+                    key={l.id}
+                    variants={listItem}
+                    exit="exit"
+                    layout
+                    className="flex items-center justify-between rounded-card border border-border bg-card px-3 py-2 text-sm"
+                  >
+                    <span className="text-muted-foreground">{l.logged_on}</span>
+                    <span className="font-medium tabular-nums text-foreground">{l.weight_kg} kg</span>
+                    <button onClick={() => remove(l.id)} className="text-xs text-destructive active:scale-95">
+                      Delete
+                    </button>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </motion.div>
+          </div>
+        )}
       </main>
       <BottomNav />
     </>

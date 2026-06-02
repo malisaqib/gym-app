@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import type { FoodLog } from "@/lib/database.types";
+import { listContainer, listItem } from "@/lib/motion";
 import { sumMacros } from "@/lib/food/totals";
 import { logFood, correctFoodItem, deleteFoodItem } from "./actions";
 import { Card } from "@/components/ui/Card";
@@ -127,14 +129,25 @@ export default function FoodLogger({
         {count === 0 ? (
           <EmptyState icon="🍽️" title="Nothing logged yet" hint="Type a meal above to get started." />
         ) : (
-          <>
-            {items.map((item) => (
-              <FoodItemRow key={item.id} item={item} onCorrect={correctItem} onDelete={removeItem} />
-            ))}
-            {pending.map((p) => (
-              <PendingRow key={p.tempId} text={p.text} />
-            ))}
-          </>
+          <motion.div
+            variants={listContainer}
+            initial="hidden"
+            animate="show"
+            className="flex flex-col gap-2"
+          >
+            <AnimatePresence initial={false} mode="popLayout">
+              {items.map((item) => (
+                <motion.div key={item.id} variants={listItem} exit="exit" layout>
+                  <FoodItemRow item={item} onCorrect={correctItem} onDelete={removeItem} />
+                </motion.div>
+              ))}
+              {pending.map((p) => (
+                <motion.div key={p.tempId} variants={listItem} exit="exit" layout>
+                  <PendingRow text={p.text} />
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </motion.div>
         )}
       </section>
     </div>

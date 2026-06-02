@@ -51,6 +51,13 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${jakarta.variable} ${fraunces.variable}`}>
       <body className="min-h-screen font-sans antialiased">
+        {/* Follow the OS light/dark setting (and react to live changes). Runs
+            during parse so the theme is set before content paints. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var m=window.matchMedia('(prefers-color-scheme: dark)');function a(){document.documentElement.classList.toggle('dark',m.matches);}a();m.addEventListener?m.addEventListener('change',a):m.addListener(a);}catch(e){}})();`,
+          }}
+        />
         {children}
         <ServiceWorkerRegister />
         <TimezoneCookie />

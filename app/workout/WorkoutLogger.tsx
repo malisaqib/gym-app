@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import { WORKOUTS, type Exercise, type WorkoutDay } from "@/lib/workouts/program";
 import { suggestProgression } from "@/lib/workouts/progression";
 import type { WorkoutLog } from "@/lib/database.types";
 import { type ExerciseHistory } from "@/lib/workouts/history";
+import { listContainer, listItem, spring } from "@/lib/motion";
 import { logSet, deleteSet } from "./actions";
 import BottomNav from "@/components/BottomNav";
 
@@ -34,16 +36,16 @@ export default function WorkoutLogger({
   return (
     <>
       <main className="mx-auto flex min-h-screen max-w-md flex-col gap-5 px-4 pb-24 pt-8">
-        <h1 className="text-2xl font-bold">Workout</h1>
+        <h1 className="font-display text-2xl font-semibold text-foreground">Workout</h1>
 
         {/* A / B day switch */}
-        <div className="flex overflow-hidden rounded-lg border border-slate-300 text-sm">
+        <div className="flex overflow-hidden rounded-field border border-border text-sm">
           {(["A", "B"] as WorkoutDay[]).map((d) => (
             <button
               key={d}
               onClick={() => setDay(d)}
               className={`flex-1 px-3 py-2 font-medium transition active:scale-[0.98] ${
-                day === d ? "bg-emerald-600 text-white" : "text-slate-600"
+                day === d ? "bg-primary text-primary-foreground" : "text-muted-foreground"
               }`}
             >
               {WORKOUTS[d].title}
@@ -51,21 +53,29 @@ export default function WorkoutLogger({
           ))}
         </div>
 
-        <div className="flex flex-col gap-4">
+        {/* Cards re-stagger when you switch day (keyed by day). */}
+        <motion.div
+          key={day}
+          variants={listContainer}
+          initial="hidden"
+          animate="show"
+          className="flex flex-col gap-4"
+        >
           {workout.exercises.map((ex) => (
-            <ExerciseCard
-              key={ex.key}
-              exercise={ex}
-              today={today}
-              history={history[ex.name] ?? emptyHistory}
-              onAdd={(item) => setToday(ex.name, (s) => [...s, item])}
-              onReplace={(tempId, item) =>
-                setToday(ex.name, (s) => s.map((x) => (x.id === tempId ? item : x)))
-              }
-              onRemove={(id) => setToday(ex.name, (s) => s.filter((x) => x.id !== id))}
-            />
+            <motion.div key={ex.key} variants={listItem}>
+              <ExerciseCard
+                exercise={ex}
+                today={today}
+                history={history[ex.name] ?? emptyHistory}
+                onAdd={(item) => setToday(ex.name, (s) => [...s, item])}
+                onReplace={(tempId, item) =>
+                  setToday(ex.name, (s) => s.map((x) => (x.id === tempId ? item : x)))
+                }
+                onRemove={(id) => setToday(ex.name, (s) => s.filter((x) => x.id !== id))}
+              />
+            </motion.div>
           ))}
-        </div>
+        </motion.div>
       </main>
       <BottomNav />
     </>
@@ -136,50 +146,57 @@ function ExerciseCard({
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4">
+    <div className="rounded-card border border-border bg-card p-4 shadow-soft">
       <div className="flex items-start justify-between gap-2">
         <div>
-          <p className="font-semibold text-slate-800">{exercise.name}</p>
-          <p className="text-xs text-slate-500">{exercise.muscle}</p>
+          <p className="font-semibold text-foreground">{exercise.name}</p>
+          <p className="text-xs text-muted-foreground">{exercise.muscle}</p>
         </div>
         <a
           href={exercise.youtube}
           target="_blank"
           rel="noopener noreferrer"
-          className="shrink-0 text-xs font-medium text-emerald-700 underline"
+          className="shrink-0 text-xs font-medium text-primary underline"
         >
           ▶ Form
         </a>
       </div>
 
-      <p className="mt-2 text-xs text-slate-500">
+      <p className="mt-2 text-xs text-muted-foreground">
         Target: {exercise.sets} sets × {exercise.repMin}–{exercise.repMax} {unit}
         {exercise.perSide ? " per side" : ""}
       </p>
 
       {/* Progression hint from last session */}
-      <p className={`mt-1 text-xs ${advice.graduate ? "text-emerald-700" : "text-slate-500"}`}>
+      <p className={`mt-1 text-xs ${advice.graduate ? "text-primary" : "text-muted-foreground"}`}>
         {advice.message}
       </p>
 
       {/* Today's sets */}
       {history.today.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-2">
-          {history.today.map((s, i) => (
-            <span
-              key={s.id}
-              className="flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700"
-            >
-              Set {i + 1}: {s.reps} {unit}
-              <button
-                onClick={() => removeSet(s.id)}
-                className="text-red-500 active:scale-90"
-                aria-label="Delete set"
+          <AnimatePresence initial={false} mode="popLayout">
+            {history.today.map((s, i) => (
+              <motion.span
+                key={s.id}
+                layout
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                transition={spring}
+                className="flex items-center gap-1 rounded-pill bg-muted px-2 py-1 text-xs text-foreground"
               >
-                ×
-              </button>
-            </span>
-          ))}
+                Set {i + 1}: {s.reps} {unit}
+                <button
+                  onClick={() => removeSet(s.id)}
+                  className="text-destructive active:scale-90"
+                  aria-label="Delete set"
+                >
+                  ×
+                </button>
+              </motion.span>
+            ))}
+          </AnimatePresence>
         </div>
       )}
 
@@ -191,17 +208,17 @@ function ExerciseCard({
           value={reps}
           onChange={(e) => setReps(e.target.value)}
           placeholder={unit}
-          className="w-24 rounded-lg border border-slate-300 px-3 py-2 text-base focus:border-emerald-500 focus:outline-none"
+          className="w-24 rounded-field border border-input bg-card px-3 py-2 text-base text-foreground focus:border-ring focus:outline-none"
         />
         <button
           onClick={addSet}
           disabled={!reps}
-          className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-40"
+          className="rounded-field bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 active:scale-[0.97] disabled:opacity-40"
         >
           Add set
         </button>
       </div>
-      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+      {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
     </div>
   );
 }

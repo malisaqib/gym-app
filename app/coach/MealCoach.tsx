@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { motion } from "motion/react";
+import { sheetUp } from "@/lib/motion";
 import type { Lang } from "@/lib/database.types";
 import type { MealSuggestion } from "@/lib/coach/mealCoach";
 import { suggestMeal } from "./actions";
@@ -37,6 +39,7 @@ export default function MealCoach({ lang }: { lang: Lang }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [suggestion, setSuggestion] = useState<MealSuggestion | null>(null);
+  const [seq, setSeq] = useState(0); // bumps each answer so the card re-animates
   const [remaining, setRemaining] = useState<{ cal: number | null; protein: number | null }>({
     cal: null,
     protein: null,
@@ -52,6 +55,7 @@ export default function MealCoach({ lang }: { lang: Lang }) {
       if (res.ok) {
         setSuggestion(res.suggestion);
         setRemaining({ cal: res.remainingCalories, protein: res.remainingProtein });
+        setSeq((n) => n + 1);
       } else {
         setError(res.error);
       }
@@ -65,46 +69,55 @@ export default function MealCoach({ lang }: { lang: Lang }) {
   return (
     <>
       <main className="mx-auto flex min-h-screen max-w-md flex-col gap-5 px-4 pb-24 pt-8">
-        <h1 className="text-2xl font-bold">{t("title")}</h1>
+        <h1 className="font-display text-2xl font-semibold text-foreground">{t("title")}</h1>
 
-      {remaining.cal !== null && (
-        <p className="text-sm text-slate-500">
-          {Math.max(0, remaining.cal)} kcal · {Math.max(0, remaining.protein ?? 0)} g protein {t("remaining")}
-        </p>
-      )}
+        {remaining.cal !== null && (
+          <p className="text-sm text-muted-foreground">
+            {Math.max(0, remaining.cal)} kcal · {Math.max(0, remaining.protein ?? 0)} g protein {t("remaining")}
+          </p>
+        )}
 
-      <form onSubmit={ask} className="flex flex-col gap-2">
-        <textarea
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-          placeholder={t("placeholder")}
-          rows={3}
-          className="rounded-lg border border-slate-300 px-3 py-2 text-base focus:border-emerald-500 focus:outline-none"
-          disabled={busy}
-        />
-        <button
-          type="submit"
-          disabled={busy || !question.trim()}
-          className="self-start rounded-lg bg-emerald-600 px-5 py-2 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:opacity-40"
-        >
-          {busy ? t("thinking") : t("ask")}
-        </button>
-        {error && <p className="text-sm text-red-600">{error}</p>}
-      </form>
+        <form onSubmit={ask} className="flex flex-col gap-2">
+          <textarea
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            placeholder={t("placeholder")}
+            rows={3}
+            className="rounded-field border border-input bg-card px-3 py-2 text-base text-foreground focus:border-ring focus:outline-none"
+            disabled={busy}
+          />
+          <button
+            type="submit"
+            disabled={busy || !question.trim()}
+            className="inline-flex items-center justify-center gap-2 self-start rounded-field bg-primary px-5 py-2 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 active:scale-[0.97] disabled:opacity-40"
+          >
+            {busy && (
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            )}
+            {busy ? t("thinking") : t("ask")}
+          </button>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+        </form>
 
-      {suggestion && (
-        <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4">
-          <Field label={t("best")} value={suggestion.best_option} strong />
-          {suggestion.approx && <Field label={t("approx")} value={suggestion.approx} />}
-          {suggestion.why && <Field label={t("why")} value={suggestion.why} />}
-          {suggestion.avoid && <Field label={t("avoid")} value={suggestion.avoid} />}
-          {suggestion.coach_note && (
-            <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-              💪 {suggestion.coach_note}
-            </p>
-          )}
-        </div>
-      )}
+        {suggestion && (
+          <motion.div
+            key={seq}
+            variants={sheetUp}
+            initial="hidden"
+            animate="show"
+            className="flex flex-col gap-3 rounded-card border border-border bg-card p-4 shadow-soft"
+          >
+            <Field label={t("best")} value={suggestion.best_option} strong />
+            {suggestion.approx && <Field label={t("approx")} value={suggestion.approx} />}
+            {suggestion.why && <Field label={t("why")} value={suggestion.why} />}
+            {suggestion.avoid && <Field label={t("avoid")} value={suggestion.avoid} />}
+            {suggestion.coach_note && (
+              <p className="rounded-field bg-primary-soft px-3 py-2 text-sm text-primary">
+                💪 {suggestion.coach_note}
+              </p>
+            )}
+          </motion.div>
+        )}
       </main>
       <BottomNav />
     </>
@@ -114,8 +127,8 @@ export default function MealCoach({ lang }: { lang: Lang }) {
 function Field({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
     <div>
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-400">{label}</p>
-      <p className={strong ? "text-lg font-semibold text-slate-800" : "text-sm text-slate-700"}>
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className={strong ? "text-lg font-semibold text-foreground" : "text-sm text-foreground"}>
         {value}
       </p>
     </div>

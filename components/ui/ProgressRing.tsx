@@ -1,4 +1,8 @@
+"use client";
+
+import { motion, useReducedMotion } from "motion/react";
 import { cn } from "@/lib/cn";
+import { Counter } from "@/components/ui/Counter";
 
 interface ProgressRingProps {
   value: number; // eaten so far
@@ -10,9 +14,9 @@ interface ProgressRingProps {
 }
 
 /**
- * Circular progress for a daily metric. The arc fills toward the target; going
- * over turns it amber (warning) so it reads at a glance, with text backing up
- * the colour (accessibility — never colour alone).
+ * Circular progress for a daily metric. The arc springs to fill (from empty on
+ * first paint, smoothly when the value changes) and the centre number counts to
+ * its value. Going over turns it amber, backed by text (never colour alone).
  */
 export function ProgressRing({
   value,
@@ -22,6 +26,7 @@ export function ProgressRing({
   tone = "primary",
   size = 128,
 }: ProgressRingProps) {
+  const reduce = useReducedMotion();
   const stroke = 12;
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
@@ -50,8 +55,8 @@ export function ProgressRing({
             stroke="currentColor"
             className="text-border"
           />
-          {/* value arc */}
-          <circle
+          {/* value arc — springs to fill */}
+          <motion.circle
             cx={size / 2}
             cy={size / 2}
             r={radius}
@@ -60,15 +65,15 @@ export function ProgressRing({
             stroke="currentColor"
             strokeLinecap="round"
             strokeDasharray={circumference}
-            strokeDashoffset={dashOffset}
-            className={cn("transition-[stroke-dashoffset] duration-500", arcColor)}
+            initial={{ strokeDashoffset: circumference }}
+            animate={{ strokeDashoffset: dashOffset }}
+            transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 90, damping: 20 }}
+            className={cn(arcColor)}
           />
         </svg>
 
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-2xl font-extrabold tabular-nums text-foreground">
-            {Math.round(value)}
-          </span>
+          <Counter value={value} className="text-2xl font-extrabold tabular-nums text-foreground" />
           <span className="text-[11px] text-muted-foreground">
             / {max} {unit}
           </span>
