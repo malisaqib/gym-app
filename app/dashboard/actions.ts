@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { parseFoodText } from "@/lib/food/parse";
+import { logEvent } from "@/lib/analytics";
 import type { FoodLog } from "@/lib/database.types";
 
 // Basic YYYY-MM-DD shape check for the client-supplied local date.
@@ -77,6 +78,8 @@ export async function logFood(input: { text: string; date: string }): Promise<Lo
     .returns<FoodLog[]>();
 
   if (error) return { ok: false, error: error.message };
+
+  await logEvent(supabase, user.id, "food_logged", { items: (data ?? []).length });
   return { ok: true, items: data ?? [] };
 }
 

@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { calculateTargets, type TargetResult } from "@/lib/nutrition/engine";
 import type { OnboardingInput } from "@/lib/onboarding/questions";
 import { mapRelatableGoal, buildPlanGuidance, type PlanGuidance } from "@/lib/onboarding/goals";
+import { logEvent } from "@/lib/analytics";
 import type { Experience, Sex } from "@/lib/database.types";
 
 // Allowed values, used to validate the client input on the server (never trust
@@ -98,6 +99,14 @@ export async function saveOnboarding(input: OnboardingInput): Promise<SaveResult
   if (error) {
     return { ok: false, error: error.message };
   }
+
+  // Seed the weight chart with their starting weight + record the event.
+  // Both are best-effort and must not block a successful onboarding.
+  await supabase.from("bodyweight_logs").insert({ user_id: user.id, weight_kg: weightKg });
+  await logEvent(supabase, user.id, "onboarding_completed", {
+    goal: goalDef.goal,
+    relatable_goal: input.relatableGoal,
+  });
 
   // The dashboard reads the profile, so refresh its cached render.
   revalidatePath("/dashboard");

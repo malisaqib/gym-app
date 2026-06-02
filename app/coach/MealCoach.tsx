@@ -22,10 +22,10 @@ const T = {
   },
   ask: { en: "Ask", roman_urdu: "Poochein" },
   thinking: { en: "Thinking…", roman_urdu: "Soch raha hoon…" },
-  best: { en: "Best option", roman_urdu: "Best option" },
+  best: { en: "Best option", roman_urdu: "Behtareen option" },
   approx: { en: "Approx", roman_urdu: "Takriban" },
-  why: { en: "Why", roman_urdu: "Kyun" },
-  avoid: { en: "Avoid", roman_urdu: "Avoid karein" },
+  why: { en: "Why", roman_urdu: "Kyun behtar hai" },
+  avoid: { en: "Avoid", roman_urdu: "Kya avoid karein" },
   note: { en: "Coach", roman_urdu: "Coach" },
   remaining: { en: "left today", roman_urdu: "aaj baqi" },
 } satisfies Record<string, Record<Lang, string>>;

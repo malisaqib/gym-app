@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { sumMacros } from "@/lib/food/totals";
 import { suggestMealCoach, type MealSuggestion } from "@/lib/coach/mealCoach";
+import { logEvent } from "@/lib/analytics";
 import type { FoodLog, Lang, Profile } from "@/lib/database.types";
 
 const isDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s);
@@ -60,6 +61,7 @@ export async function suggestMeal(input: { question: string; date: string }): Pr
       remainingProtein,
       lang,
     });
+    await logEvent(supabase, user.id, "coach_asked", { hasTargets });
     return { ok: true, suggestion, remainingCalories, remainingProtein };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Couldn't get a suggestion." };
