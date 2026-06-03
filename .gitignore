@@ -29,3 +29,6 @@ next-env.d.ts
 
 # vercel
 .vercel
+
+# local USDA dataset download (not committed — re-download via the import script)
+.usda/
