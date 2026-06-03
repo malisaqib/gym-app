@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import BottomNav from "@/components/BottomNav";
 import MealCoach from "./MealCoach";
 import EmotionalGoalOnboarding from "./EmotionalGoalOnboarding";
+import DesiFoodEstimator from "./DesiFoodEstimator";
 import type { Lang } from "@/lib/database.types";
 
 /**
@@ -114,6 +115,11 @@ export default function CoachDashboard({ lang, name }: { lang: Lang; name: strin
         {/* Goal — Phase 2: motivation/emotional goal (self-contained, localStorage) */}
         <section id="goal" className="scroll-mt-4">
           <EmotionalGoalOnboarding lang={lang} />
+        </section>
+
+        {/* Estimate — Phase 3: desi food estimator (static, dataset-driven) */}
+        <section id="estimate" className="scroll-mt-4">
+          <DesiFoodEstimator lang={lang} />
         </section>
 
         {/* Weekly check-in — wired in Phase 6 */}
