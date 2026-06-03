@@ -1,14 +1,16 @@
-import { formatFoodTableForPrompt } from "@/lib/food/pakistaniFoods";
+import { retrieveFoods, type RetrievedFood } from "@/lib/food/retrieve";
 
 /**
- * Phase 4 — Food text parser (Groq / Llama).
+ * Phase 4 + RAG R3 — Food text parser (Groq / Llama, grounded by retrieval).
  *
- * SERVER ONLY. Uses GROQ_API_KEY, which must never reach the browser. We call
- * Groq's OpenAI-compatible REST endpoint with plain fetch (no SDK dependency).
+ * SERVER ONLY. Uses GROQ_API_KEY (Groq) and, via retrieveFoods, GEMINI_API_KEY
+ * (embeddings). Neither must reach the browser.
  *
- * The model turns a free-text meal ("do roti, ek pyali daal") into structured
- * per-item macros. It is grounded by the curated Pakistani food table for desi
- * dishes and falls back to its own knowledge for everything else.
+ * Flow: retrieve the few most relevant catalog foods for THIS meal (hybrid
+ * lexical + vector), inject only those into the prompt as grounded candidates,
+ * then let Llama map the user's words to them and scale by quantity. If
+ * retrieval fails (e.g. embedding quota), we degrade gracefully — the LLM still
+ * parses unaided, so logging never breaks.
  */
 
 export interface ParsedFoodItem {
@@ -24,24 +26,32 @@ export interface ParsedFoodItem {
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const MODEL = process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile";
 
-function buildSystemPrompt(): string {
-  return `You are a nutrition parser for a Pakistan-focused fitness app.
+function formatCandidates(candidates: RetrievedFood[]): string {
+  if (candidates.length === 0) {
+    return "(no database matches for this meal — use your own reliable nutrition knowledge for every item)";
+  }
+  return candidates
+    .map((c) => {
+      const names = [c.name, ...c.aliases].join(", ");
+      return `- ${names} | ${c.portion} = ${c.calories} kcal, ${c.protein_g}g protein, ${c.carbs_g}g carbs, ${c.fat_g}g fat`;
+    })
+    .join("\n");
+}
 
-Turn the user's meal description into structured food items with estimated
-calories and macros. The text may be English, Roman Urdu, or a mix.
+function buildSystemPrompt(candidates: RetrievedFood[]): string {
+  return `You are a nutrition parser for a fitness app used by BOTH Western and South Asian users.
+
+Turn the user's meal description into structured food items with calories and macros. The text may be English, Roman Urdu, or a mix.
+
+CANDIDATE FOODS (retrieved from our database for THIS meal). When something the user mentions matches a candidate, USE that candidate's numbers and scale them by the quantity eaten. If an item matches NO candidate, use your own reliable nutrition knowledge.
+${formatCandidates(candidates)}
 
 RULES:
-- Do NOT assume the food is Pakistani. Handle ANY cuisine (desi, western, etc.).
-- For South Asian dishes, use the REFERENCE TABLE below for accuracy. Match by
-  name or alias, then scale by the quantity the user ate.
-- For foods NOT in the table, use your own nutrition knowledge.
+- Do NOT assume a cuisine. Handle Western and South Asian foods equally well.
 - Interpret Roman Urdu quantities: ek/aik=1, do=2, teen=3, char=4, adha=half,
   pyali/katori=small bowl, plate=plate, glass=glass.
 - Every item's macros must be the TOTAL for the amount eaten, not per unit.
 - Round all numbers to integers. If no food is found, return an empty list.
-
-REFERENCE TABLE (per stated portion):
-${formatFoodTableForPrompt()}
 
 Respond with ONLY valid JSON in this exact shape:
 {"items":[{"food_name":string,"quantity":number,"unit":string,"calories":number,"protein_g":number,"carbs_g":number,"fat_g":number}]}`;
@@ -82,7 +92,15 @@ export async function parseFoodText(text: string): Promise<ParsedFoodItem[]> {
     throw new Error("Food AI is not configured (missing GROQ_API_KEY).");
   }
 
-  // Abort the request if Groq doesn't respond in time, so the UI never hangs.
+  // RAG: pull grounded candidates for this meal. Degrade gracefully on failure.
+  let candidates: RetrievedFood[] = [];
+  try {
+    candidates = await retrieveFoods(text, 12);
+  } catch {
+    candidates = [];
+  }
+
+  // Abort if Groq doesn't respond in time, so the UI never hangs.
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30_000);
 
@@ -99,7 +117,7 @@ export async function parseFoodText(text: string): Promise<ParsedFoodItem[]> {
         temperature: 0.2,
         response_format: { type: "json_object" },
         messages: [
-          { role: "system", content: buildSystemPrompt() },
+          { role: "system", content: buildSystemPrompt(candidates) },
           { role: "user", content: text },
         ],
       }),
