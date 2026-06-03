@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { motion } from "motion/react";
-import { sheetUp } from "@/lib/motion";
+import { AnimatePresence, motion } from "motion/react";
+import { listContainer, listItem, springSoft } from "@/lib/motion";
+import { Button } from "@/components/ui/Button";
+import { Skeleton } from "@/components/ui/Skeleton";
 import type { Lang } from "@/lib/database.types";
 import type { MealSuggestion } from "@/lib/coach/mealCoach";
 import { suggestMeal } from "./actions";
@@ -15,22 +17,39 @@ function localDateString(d = new Date()): string {
   return `${y}-${m}-${day}`;
 }
 
-// Tiny EN / Roman Urdu label helper for the static chrome.
+// EN / Roman Urdu copy for the static chrome.
 const T = {
   title: { en: "What should I eat?", roman_urdu: "Kya khaon?" },
+  intro: {
+    en: "Tell me what you've got — I'll pick the best next meal.",
+    roman_urdu: "Bataiye aap ke paas kya hai — main best meal chunta hoon.",
+  },
   placeholder: {
     en: "e.g. Mere paas anda, roti, daal, chicken hai. Kya khaon?",
     roman_urdu: "e.g. Mere paas anda, roti, daal, chicken hai. Kya khaon?",
   },
   ask: { en: "Ask", roman_urdu: "Poochein" },
   thinking: { en: "Thinking…", roman_urdu: "Soch raha hoon…" },
+  tryThese: { en: "Try one of these", roman_urdu: "In mein se koshish karein" },
   best: { en: "Best option", roman_urdu: "Behtareen option" },
-  approx: { en: "Approx", roman_urdu: "Takriban" },
   why: { en: "Why", roman_urdu: "Kyun behtar hai" },
   avoid: { en: "Avoid", roman_urdu: "Kya avoid karein" },
-  note: { en: "Coach", roman_urdu: "Coach" },
   remaining: { en: "left today", roman_urdu: "aaj baqi" },
+  sendHint: { en: "⌘ + Enter to send", roman_urdu: "⌘ + Enter se bhejein" },
 } satisfies Record<string, Record<Lang, string>>;
+
+const EXAMPLES: Record<Lang, string[]> = {
+  en: [
+    "I have eggs, roti, daal and chicken — what should I eat?",
+    "I have 500 calories left and need protein",
+    "What's a light dinner?",
+  ],
+  roman_urdu: [
+    "Mere paas anda, roti, daal aur chicken hai",
+    "500 calories bachi hain, protein chahiye",
+    "Halka dinner kya ho?",
+  ],
+};
 
 export default function MealCoach({ lang }: { lang: Lang }) {
   const t = (k: keyof typeof T) => T[k][lang];
@@ -45,13 +64,14 @@ export default function MealCoach({ lang }: { lang: Lang }) {
     protein: null,
   });
 
-  async function ask(e: React.FormEvent) {
-    e.preventDefault();
-    if (!question.trim()) return;
+  async function runAsk(q: string) {
+    const query = q.trim();
+    if (!query || busy) return;
+    setQuestion(query);
     setBusy(true);
     setError(null);
     try {
-      const res = await suggestMeal({ question, date: localDateString() });
+      const res = await suggestMeal({ question: query, date: localDateString() });
       if (res.ok) {
         setSuggestion(res.suggestion);
         setRemaining({ cal: res.remainingCalories, protein: res.remainingProtein });
@@ -66,71 +86,181 @@ export default function MealCoach({ lang }: { lang: Lang }) {
     }
   }
 
+  const showExamples = !busy && !suggestion && !error;
+
   return (
     <>
-      <main className="mx-auto flex min-h-screen max-w-md flex-col gap-5 px-4 pb-24 pt-8">
-        <h1 className="font-display text-2xl font-semibold text-foreground">{t("title")}</h1>
+      <main className="mx-auto flex min-h-screen max-w-md flex-col gap-6 px-4 pb-28 pt-8">
+        <header className="space-y-2">
+          <h1 className="font-display text-3xl font-semibold tracking-tight text-foreground">
+            {t("title")}
+          </h1>
+          {remaining.cal !== null ? (
+            <div className="inline-flex items-center gap-1.5 rounded-pill bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
+              <span className="tabular-nums">{Math.max(0, remaining.cal)} kcal</span>
+              <span className="opacity-40">·</span>
+              <span className="tabular-nums">{Math.max(0, remaining.protein ?? 0)} g protein</span>
+              <span className="opacity-70">{t("remaining")}</span>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">{t("intro")}</p>
+          )}
+        </header>
 
-        {remaining.cal !== null && (
-          <p className="text-sm text-muted-foreground">
-            {Math.max(0, remaining.cal)} kcal · {Math.max(0, remaining.protein ?? 0)} g protein {t("remaining")}
-          </p>
-        )}
-
-        <form onSubmit={ask} className="flex flex-col gap-2">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            runAsk(question);
+          }}
+          className="flex flex-col gap-2"
+        >
           <textarea
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                runAsk(question);
+              }
+            }}
             placeholder={t("placeholder")}
             rows={3}
-            className="rounded-field border border-input bg-card px-3 py-2 text-base text-foreground focus:border-ring focus:outline-none"
             disabled={busy}
+            className="resize-none rounded-field border border-input bg-card px-4 py-3 text-base text-foreground placeholder:text-muted-foreground transition focus:border-ring focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-60"
           />
-          <button
-            type="submit"
-            disabled={busy || !question.trim()}
-            className="inline-flex items-center justify-center gap-2 self-start rounded-field bg-primary px-5 py-2 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 active:scale-[0.97] disabled:opacity-40"
-          >
-            {busy && (
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-            )}
-            {busy ? t("thinking") : t("ask")}
-          </button>
+          <div className="flex items-center justify-between gap-3">
+            <span className="hidden text-xs text-muted-foreground sm:block">{t("sendHint")}</span>
+            <Button type="submit" loading={busy} disabled={busy || !question.trim()} className="ml-auto">
+              {busy ? t("thinking") : t("ask")}
+            </Button>
+          </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
         </form>
 
-        {suggestion && (
-          <motion.div
-            key={seq}
-            variants={sheetUp}
-            initial="hidden"
-            animate="show"
-            className="flex flex-col gap-3 rounded-card border border-border bg-card p-4 shadow-soft"
-          >
-            <Field label={t("best")} value={suggestion.best_option} strong />
-            {suggestion.approx && <Field label={t("approx")} value={suggestion.approx} />}
-            {suggestion.why && <Field label={t("why")} value={suggestion.why} />}
-            {suggestion.avoid && <Field label={t("avoid")} value={suggestion.avoid} />}
-            {suggestion.coach_note && (
-              <p className="rounded-field bg-primary-soft px-3 py-2 text-sm text-primary">
-                💪 {suggestion.coach_note}
-              </p>
-            )}
-          </motion.div>
-        )}
+        {/* One area that cross-fades between examples → loading → result */}
+        <AnimatePresence mode="wait">
+          {busy && <LoadingCard key="loading" />}
+
+          {!busy && suggestion && (
+            <ResultCard key={`result-${seq}`} suggestion={suggestion} t={t} />
+          )}
+
+          {showExamples && (
+            <motion.div
+              key="examples"
+              variants={listContainer}
+              initial="hidden"
+              animate="show"
+              exit={{ opacity: 0, transition: { duration: 0.12 } }}
+              className="flex flex-col gap-2"
+            >
+              <motion.p variants={listItem} className="text-xs font-medium text-muted-foreground">
+                {t("tryThese")}
+              </motion.p>
+              {EXAMPLES[lang].map((ex) => (
+                <motion.button
+                  key={ex}
+                  variants={listItem}
+                  type="button"
+                  onClick={() => runAsk(ex)}
+                  className="rounded-field border border-border bg-card px-4 py-3 text-left text-sm text-foreground shadow-soft transition hover:border-primary/40 hover:bg-muted active:scale-[0.99]"
+                >
+                  {ex}
+                </motion.button>
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
       <BottomNav />
     </>
   );
 }
 
-function Field({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+// Calm "thinking" placeholder that cross-fades into the answer.
+function LoadingCard() {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, transition: { duration: 0.12 } }}
+      transition={springSoft}
+      className="space-y-4 rounded-card border border-border bg-card p-5 shadow-soft"
+    >
+      <div className="space-y-2">
+        <Skeleton className="h-3 w-20" />
+        <Skeleton className="h-6 w-2/3" />
+        <Skeleton className="h-5 w-40 rounded-pill" />
+      </div>
+      <div className="space-y-2">
+        <Skeleton className="h-3 w-16" />
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-5/6" />
+      </div>
+    </motion.div>
+  );
+}
+
+function ResultCard({
+  suggestion,
+  t,
+}: {
+  suggestion: MealSuggestion;
+  t: (k: keyof typeof T) => string;
+}) {
+  return (
+    <motion.div
+      variants={listContainer}
+      initial="hidden"
+      animate="show"
+      exit={{ opacity: 0, y: 8, transition: { duration: 0.12 } }}
+      className="overflow-hidden rounded-card border border-border bg-card shadow-soft"
+    >
+      <div className="space-y-4 p-5">
+        {/* hero: the recommendation */}
+        <motion.div variants={listItem}>
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            {t("best")}
+          </p>
+          <p className="mt-1 font-display text-xl font-semibold leading-snug text-foreground">
+            {suggestion.best_option}
+          </p>
+          {suggestion.approx && (
+            <span className="mt-2 inline-block rounded-pill bg-muted px-3 py-1 text-xs font-medium tabular-nums text-muted-foreground">
+              ≈ {suggestion.approx}
+            </span>
+          )}
+        </motion.div>
+
+        {suggestion.why && (
+          <motion.div variants={listItem}>
+            <Field label={t("why")} value={suggestion.why} />
+          </motion.div>
+        )}
+        {suggestion.avoid && (
+          <motion.div variants={listItem}>
+            <Field label={t("avoid")} value={suggestion.avoid} />
+          </motion.div>
+        )}
+      </div>
+
+      {suggestion.coach_note && (
+        <motion.p
+          variants={listItem}
+          className="border-t border-border bg-primary-soft px-5 py-3 text-sm text-primary"
+        >
+          💪 {suggestion.coach_note}
+        </motion.p>
+      )}
+    </motion.div>
+  );
+}
+
+function Field({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className={strong ? "text-lg font-semibold text-foreground" : "text-sm text-foreground"}>
-        {value}
-      </p>
+      <p className="mt-0.5 text-sm leading-relaxed text-foreground">{value}</p>
     </div>
   );
 }
