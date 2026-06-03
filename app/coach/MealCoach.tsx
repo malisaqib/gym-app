@@ -8,7 +8,6 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import type { Lang } from "@/lib/database.types";
 import type { MealSuggestion } from "@/lib/coach/mealCoach";
 import { suggestMeal } from "./actions";
-import BottomNav from "@/components/BottomNav";
 
 function localDateString(d = new Date()): string {
   const y = d.getFullYear();
@@ -89,8 +88,7 @@ export default function MealCoach({ lang }: { lang: Lang }) {
   const showExamples = !busy && !suggestion && !error;
 
   return (
-    <>
-      <main className="mx-auto flex min-h-screen max-w-md flex-col gap-6 px-4 pb-28 pt-8">
+    <div className="flex flex-col gap-6">
         <header className="space-y-2">
           <h1 className="font-display text-3xl font-semibold tracking-tight text-foreground">
             {t("title")}
@@ -171,9 +169,7 @@ export default function MealCoach({ lang }: { lang: Lang }) {
             </motion.div>
           )}
         </AnimatePresence>
-      </main>
-      <BottomNav />
-    </>
+    </div>
   );
 }
 
