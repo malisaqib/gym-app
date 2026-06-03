@@ -1,4 +1,4 @@
-import { formatFoodTableForPrompt } from "@/lib/food/pakistaniFoods";
+import { retrieveFoods, type RetrievedFood } from "@/lib/food/retrieve";
 import type { Lang } from "@/lib/database.types";
 
 /**
@@ -25,12 +25,24 @@ export interface MealSuggestion {
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const MODEL = process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile";
 
-function buildSystemPrompt(input: {
-  hasTargets: boolean;
-  remainingCalories: number | null;
-  remainingProtein: number | null;
-  lang: Lang;
-}): string {
+function formatCandidates(candidates: RetrievedFood[]): string {
+  if (candidates.length === 0) {
+    return "(no database matches — use your own reliable, approximate nutrition knowledge)";
+  }
+  return candidates
+    .map((c) => `- ${[c.name, ...c.aliases].join(", ")} | ${c.portion} ≈ ${c.calories} kcal, ${c.protein_g}g protein`)
+    .join("\n");
+}
+
+function buildSystemPrompt(
+  input: {
+    hasTargets: boolean;
+    remainingCalories: number | null;
+    remainingProtein: number | null;
+    lang: Lang;
+  },
+  candidates: RetrievedFood[]
+): string {
   const langName = input.lang === "roman_urdu" ? "Roman Urdu" : "English";
 
   const context = input.hasTargets
@@ -44,20 +56,20 @@ function buildSystemPrompt(input: {
       }`
     : `The user has NOT set daily targets yet — give a general, beginner-friendly suggestion (don't ask for their numbers).`;
 
-  return `You are a friendly Pakistani fitness coach. The user will tell you what food options they have, and you recommend the single best thing to eat next.
+  return `You are a friendly fitness coach for BOTH Western and South Asian users. The user tells you what food options they have, and you recommend the single best thing to eat next.
 
 CONTEXT: ${context}
 
+REFERENCE (retrieved from our database for rough nutrition — use these numbers when an option matches; otherwise use your own knowledge):
+${formatCandidates(candidates)}
+
 RULES:
-- Be warm, simple and encouraging. No shame. Use real Pakistani food.
+- Be warm, simple and encouraging. No shame. Don't assume a cuisine — handle Western and desi foods equally.
 - NEVER invent exact nutrition. Use approximate RANGES (e.g. "450–550 kcal").
 - If protein is low, prefer the higher-protein option.
 - If calories are nearly used up, prefer the lighter option.
 - Recommend mainly from the options the user actually mentions.
-- Reply in ${langName}. The "coach_note" must always be one friendly Roman Urdu line.
-
-Use this reference table for rough nutrition (per stated portion):
-${formatFoodTableForPrompt()}
+- Reply in ${langName}, including the "coach_note" (one friendly, encouraging line).
 
 Respond with ONLY valid JSON in this exact shape:
 {"best_option":string,"approx":string,"why":string,"avoid":string,"coach_note":string}`;
@@ -77,6 +89,15 @@ export async function suggestMealCoach(input: {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) throw new Error("Coach AI is not configured (missing GROQ_API_KEY).");
 
+  // RAG: ground the coach's nutrition in retrieved catalog rows for the options
+  // the user mentions. Degrade gracefully if retrieval/embeddings are down.
+  let candidates: RetrievedFood[] = [];
+  try {
+    candidates = await retrieveFoods(input.question, 12);
+  } catch {
+    candidates = [];
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30_000);
 
@@ -90,7 +111,7 @@ export async function suggestMealCoach(input: {
         temperature: 0.4,
         response_format: { type: "json_object" },
         messages: [
-          { role: "system", content: buildSystemPrompt(input) },
+          { role: "system", content: buildSystemPrompt(input, candidates) },
           { role: "user", content: input.question },
         ],
       }),
