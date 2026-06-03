@@ -12,6 +12,28 @@ export type Experience = "beginner" | "intermediate" | "advanced";
 export type FoodLogSource = "llm" | "manual" | "corrected";
 export type Lang = "en" | "roman_urdu";
 
+// RAG food knowledge base (see supabase/migrations/0005_foods_rag.sql).
+export type FoodRegion = "desi" | "western" | "global";
+
+// One row of the shared, read-only food catalog. We omit the raw `embedding`
+// vector here — it's only used inside the DB for similarity search.
+export interface Food {
+  id: string;
+  name: string;
+  aliases: string[];
+  search_text: string | null;
+  region: FoodRegion;
+  portion: string;
+  portion_grams: number | null;
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+  source: string;
+  source_id: string | null;
+  created_at: string;
+}
+
 // Relatable onboarding (Phase 8)
 export type RelatableGoalKey =
   | "wedding_event"
