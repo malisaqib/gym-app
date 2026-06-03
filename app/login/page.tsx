@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { login } from "@/app/auth/actions";
+import { SubmitButton } from "@/app/auth/SubmitButton";
+import { FadeIn } from "@/components/ui/FadeIn";
 
 // In Next.js 15, searchParams is a Promise and must be awaited.
 export default async function LoginPage({
@@ -10,7 +12,8 @@ export default async function LoginPage({
   const { error, message } = await searchParams;
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 px-6 py-12">
+    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-12">
+      <FadeIn className="flex flex-col gap-6">
       <div className="space-y-1 text-center">
         <h1 className="font-display text-2xl font-semibold text-foreground">Log in</h1>
         <p className="text-sm text-muted-foreground">Welcome back.</p>
@@ -51,12 +54,7 @@ export default async function LoginPage({
             className="rounded-field border border-input bg-card px-3 py-2 text-base text-foreground focus:border-ring focus:outline-none"
           />
         </label>
-        <button
-          type="submit"
-          className="rounded-field bg-primary px-4 py-3 font-medium text-primary-foreground transition hover:bg-primary/90 active:scale-[0.98]"
-        >
-          Log in
-        </button>
+        <SubmitButton>Log in</SubmitButton>
       </form>
 
       <p className="text-center text-sm text-muted-foreground">
@@ -65,6 +63,7 @@ export default async function LoginPage({
           Sign up
         </Link>
       </p>
+      </FadeIn>
     </main>
   );
 }
