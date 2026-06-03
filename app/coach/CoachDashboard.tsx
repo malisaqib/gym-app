@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import BottomNav from "@/components/BottomNav";
 import MealCoach from "./MealCoach";
+import EmotionalGoalOnboarding from "./EmotionalGoalOnboarding";
 import type { Lang } from "@/lib/database.types";
 
 /**
@@ -110,10 +111,9 @@ export default function CoachDashboard({ lang, name }: { lang: Lang; name: strin
           <MealCoach lang={lang} />
         </section>
 
-        {/* Goal — wired in Phase 2 */}
-        <section id="goal" className="scroll-mt-4 space-y-2">
-          <h2 className="font-display text-lg font-semibold text-foreground">{t("goalTitle")}</h2>
-          <EmptyState icon="🎯" title={t("goalEmpty")} />
+        {/* Goal — Phase 2: motivation/emotional goal (self-contained, localStorage) */}
+        <section id="goal" className="scroll-mt-4">
+          <EmotionalGoalOnboarding lang={lang} />
         </section>
 
         {/* Weekly check-in — wired in Phase 6 */}
