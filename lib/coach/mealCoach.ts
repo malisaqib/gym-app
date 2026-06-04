@@ -40,10 +40,17 @@ function buildSystemPrompt(
     remainingCalories: number | null;
     remainingProtein: number | null;
     lang: Lang;
+    focus?: string | null;
   },
   candidates: RetrievedFood[]
 ): string {
   const langName = input.lang === "roman_urdu" ? "Roman Urdu" : "English";
+
+  // The user's personal motivation, already translated to a NEUTRAL behaviour/
+  // health focus upstream (buildCoachFocus) — never appearance wording.
+  const focusLine = input.focus?.trim()
+    ? `\n\nWHAT THEY'RE WORKING TOWARD: ${input.focus.trim()}\nGently keep your suggestion and coach_note aligned with this — but stay practical, and never mention body shape or appearance.`
+    : "";
 
   const context = input.hasTargets
     ? `The user has about ${Math.max(0, input.remainingCalories ?? 0)} kcal and ${Math.max(
@@ -58,7 +65,7 @@ function buildSystemPrompt(
 
   return `You are a friendly fitness coach for BOTH Western and South Asian users. The user tells you what food options they have, and you recommend the single best thing to eat next.
 
-CONTEXT: ${context}
+CONTEXT: ${context}${focusLine}
 
 REFERENCE (retrieved from our database for rough nutrition — use these numbers when an option matches; otherwise use your own knowledge):
 ${formatCandidates(candidates)}
@@ -85,6 +92,7 @@ export async function suggestMealCoach(input: {
   remainingCalories: number | null;
   remainingProtein: number | null;
   lang: Lang;
+  focus?: string | null;
 }): Promise<MealSuggestion> {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) throw new Error("Coach AI is not configured (missing GROQ_API_KEY).");

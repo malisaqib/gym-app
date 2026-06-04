@@ -17,7 +17,11 @@ type CoachResult =
  * Answer "what should I eat next?": work out the user's remaining calories and
  * protein for today, then ask the coach LLM for a recommendation.
  */
-export async function suggestMeal(input: { question: string; date: string }): Promise<CoachResult> {
+export async function suggestMeal(input: {
+  question: string;
+  date: string;
+  focus?: string | null; // neutral behaviour focus from the user's motivation goal (optional)
+}): Promise<CoachResult> {
   const question = input.question.trim();
   if (!question) return { ok: false, error: "Ask me what to eat (and what options you have)." };
 
@@ -61,6 +65,7 @@ export async function suggestMeal(input: { question: string; date: string }): Pr
       remainingCalories,
       remainingProtein,
       lang,
+      focus: input.focus ?? null,
     });
     await logEvent(supabase, user.id, "coach_asked", { hasTargets });
     return { ok: true, suggestion, remainingCalories, remainingProtein };

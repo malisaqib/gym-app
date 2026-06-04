@@ -1,12 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { listContainer, listItem, springSoft } from "@/lib/motion";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import type { Lang } from "@/lib/database.types";
 import type { MealSuggestion } from "@/lib/coach/mealCoach";
+import { buildCoachFocus } from "@/lib/coach/goalContext";
+import { EMOTIONAL_GOAL_KEY, readLocal } from "@/lib/coach/localStore";
+import { DEFAULT_EMOTIONAL_GOAL } from "./localCoachTypes";
 import { suggestMeal } from "./actions";
 
 function localDateString(d = new Date()): string {
@@ -63,6 +66,15 @@ export default function MealCoach({ lang }: { lang: Lang }) {
     protein: null,
   });
 
+  // The user's motivation goal (from Home), translated to a neutral behaviour
+  // focus so the coach's advice feels personal. Read from localStorage on mount.
+  const [focus, setFocus] = useState<string | null>(null);
+  useEffect(() => {
+    const goal = readLocal(EMOTIONAL_GOAL_KEY, DEFAULT_EMOTIONAL_GOAL);
+    const hasGoal = goal.selectedPreset || goal.customGoal.trim();
+    setFocus(hasGoal ? buildCoachFocus(goal) : null);
+  }, []);
+
   async function runAsk(q: string) {
     const query = q.trim();
     if (!query || busy) return;
@@ -70,7 +82,7 @@ export default function MealCoach({ lang }: { lang: Lang }) {
     setBusy(true);
     setError(null);
     try {
-      const res = await suggestMeal({ question: query, date: localDateString() });
+      const res = await suggestMeal({ question: query, date: localDateString(), focus });
       if (res.ok) {
         setSuggestion(res.suggestion);
         setRemaining({ cal: res.remainingCalories, protein: res.remainingProtein });
