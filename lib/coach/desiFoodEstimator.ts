@@ -708,10 +708,10 @@ function buildGoalFit(matches: MatchedDesiFood[], personalGoal?: string | null):
   const muscle = hasMuscleGoal(personalGoal);
 
   if (fatLoss && caloriesMax > 750) {
-    return "For fat loss or a leaner look, this can fit, but the portion needs control.";
+    return "This can fit a fat-loss focus, but the portion needs some control.";
   }
   if (fatLoss && proteinMax >= 20 && !hasFried) {
-    return "Good fit for a leaner look because it has useful protein without going too heavy.";
+    return "Good fit — useful protein without going too heavy, so it keeps you full.";
   }
   if (muscle && proteinMax >= 25) {
     return "Good fit for muscle gain because the protein is solid.";
@@ -799,7 +799,7 @@ export function adviseEatNext(input: {
     okay: okay.food.name === best.food.name ? "A smaller portion of the same option is okay." : okay.food.name,
     limit:
       limit.food.name === best.food.name
-        ? "Extra portions. Even good foods can slow progress when the serving doubles."
+        ? "Extra portions — even foods you enjoy can slow progress when the serving doubles."
         : limit.food.name,
     portion: fatLoss
       ? "Keep carbs to 1 roti or half to one plate rice, then add salad or raita if available."

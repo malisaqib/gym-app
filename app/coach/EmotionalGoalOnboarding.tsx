@@ -5,6 +5,8 @@ import { Card } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EMOTIONAL_GOAL_KEY, readLocal, writeLocal } from "@/lib/coach/localStore";
 import { buildCoachFocus } from "@/lib/coach/goalContext";
+import { suggestsSupport } from "@/lib/coach/supportSignals";
+import { SupportNudge } from "@/components/SupportNudge";
 import {
   DEFAULT_EMOTIONAL_GOAL,
   EMOTIONAL_GOAL_OPTIONS,
@@ -218,6 +220,8 @@ export default function EmotionalGoalOnboarding({ lang = "en" }: { lang?: Lang }
         <p className="text-xs font-medium uppercase tracking-wide text-primary">{t("focusLabel")}</p>
         <p className="mt-1 text-sm leading-relaxed text-primary">{buildCoachFocus(goal)}</p>
       </div>
+
+      {suggestsSupport(getGoalText(goal)) && <SupportNudge lang={lang} />}
 
       <p className="text-xs text-muted-foreground">{justSaved ? t("savedMsg") : t("deviceNote")}</p>
     </Card>

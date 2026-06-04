@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { addCheckIn, getCheckIns, lastCheckIn, daysSince } from "@/lib/coach/checkins";
+import { suggestsSupport } from "@/lib/coach/supportSignals";
+import { SupportNudge } from "@/components/SupportNudge";
 import type { WeeklyCheckInEntry } from "./localCoachTypes";
 import type { Lang } from "@/lib/database.types";
 
@@ -189,6 +191,8 @@ export default function WeeklyCheckIn({ lang = "en" }: { lang?: Lang }) {
           {t("submit")}
         </button>
       </form>
+
+      {justSaved && suggestsSupport(justSaved.biggestStruggle) && <SupportNudge lang={lang} />}
 
       {justSaved && (
         <div className="rounded-field bg-primary-soft px-3 py-2.5">

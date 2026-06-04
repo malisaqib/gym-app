@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getLocalToday } from "@/lib/date";
@@ -54,11 +55,19 @@ export default async function DashboardPage() {
           title="Today"
           subtitle={goalLabel ? `🎯 ${goalLabel}` : undefined}
           action={
-            <form action={signOut}>
-              <Button type="submit" variant="ghost" size="sm">
-                Sign out
-              </Button>
-            </form>
+            <div className="flex items-center gap-1">
+              <Link
+                href="/settings"
+                className="rounded-field px-3 py-2 text-sm font-medium text-muted-foreground transition hover:bg-muted active:scale-[0.97]"
+              >
+                Settings
+              </Link>
+              <form action={signOut}>
+                <Button type="submit" variant="ghost" size="sm">
+                  Sign out
+                </Button>
+              </form>
+            </div>
           }
         />
 

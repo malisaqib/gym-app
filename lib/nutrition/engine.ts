@@ -9,6 +9,10 @@ import type { Goal, Sex } from "@/lib/database.types";
  *
  * Flow:  inputs -> BMR -> TDEE (maintenance) -> calorie target for the goal
  *                                            -> protein target for the goal
+ *
+ * Nutrition target logic should be reviewed by a qualified dietitian before
+ * public launch. Safety floors below cap deficits to steer toward gradual,
+ * sustainable change — never extreme cuts.
  */
 
 export interface TargetInput {
