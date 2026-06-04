@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { readLocal, writeLocal } from "@/lib/coach/localStore";
+import { Button } from "@/components/ui/Button";
+import { toast } from "@/lib/toast";
 import {
   DEFAULT_TRAINING_SETUP,
   EQUIPMENT_OPTIONS,
@@ -92,12 +94,14 @@ export default function TrainingSetup({
   }
 
   async function save() {
+    if (saving) return; // guard against double-submit
     setSaving(true);
     const next = normalizeTrainingSetup({ ...draft, updatedAt: new Date().toISOString() });
     writeLocal(TRAINING_SETUP_KEY, next); // authoritative
     setSetup(next);
     setEditing(false);
     onSetupChange?.(next); // rebuild the plan from the new setup
+    toast.success("Workout plan updated");
 
     // Best-effort DB sync (works once migration 0008 is applied).
     try {
@@ -251,22 +255,13 @@ export default function TrainingSetup({
       </Field>
 
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={save}
-          disabled={!canSave || saving}
-          className="rounded-field bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 active:scale-[0.97] disabled:opacity-40"
-        >
+        <Button type="button" onClick={save} loading={saving} disabled={!canSave || saving}>
           {saving ? "Saving…" : "Build my plan"}
-        </button>
+        </Button>
         {isTrainingConfigured(setup) && (
-          <button
-            type="button"
-            onClick={() => setEditing(false)}
-            className="rounded-field border border-border bg-background px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted active:scale-[0.97]"
-          >
+          <Button type="button" variant="secondary" onClick={() => setEditing(false)} disabled={saving}>
             Cancel
-          </button>
+          </Button>
         )}
       </div>
     </Card>

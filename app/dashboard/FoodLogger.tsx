@@ -8,6 +8,7 @@ import { sumMacros } from "@/lib/food/totals";
 import { logFood, correctFoodItem, deleteFoodItem } from "./actions";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { Spinner } from "@/components/ui/Spinner";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
 import { Alert } from "@/components/ui/Alert";
@@ -158,7 +159,7 @@ export default function FoodLogger({
 function PendingRow({ text }: { text: string }) {
   return (
     <Card className="flex items-center gap-3 p-3 opacity-70">
-      <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      <Spinner size="sm" className="text-primary" label="Reading your meal" />
       <div className="min-w-0">
         <p className="truncate text-sm font-medium text-foreground">{text}</p>
         <p className="text-xs text-muted-foreground">Reading…</p>

@@ -2,12 +2,11 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getLocalToday } from "@/lib/date";
-import { signOut } from "@/app/auth/actions";
 import type { FoodLog, Lang, Profile } from "@/lib/database.types";
 import { RELATABLE_GOALS } from "@/lib/onboarding/goals";
 import { Screen } from "@/components/ui/Screen";
 import { LargeTitle } from "@/components/ui/LargeTitle";
-import { Button } from "@/components/ui/Button";
+import { SignOutGhostButton } from "@/app/auth/SignOutButton";
 import BottomNav from "@/components/BottomNav";
 import FoodLogger from "./FoodLogger";
 import EmotionalGoalOnboarding from "@/app/coach/EmotionalGoalOnboarding";
@@ -63,11 +62,7 @@ export default async function DashboardPage() {
               >
                 Settings
               </Link>
-              <form action={signOut}>
-                <Button type="submit" variant="ghost" size="sm">
-                  Sign out
-                </Button>
-              </form>
+              <SignOutGhostButton />
             </div>
           }
         />

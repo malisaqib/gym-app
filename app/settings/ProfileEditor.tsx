@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { haptic } from "@/lib/haptics";
+import { toast } from "@/lib/toast";
 import { RELATABLE_GOALS } from "@/lib/onboarding/goals";
 import type {
   Experience,
@@ -93,6 +94,7 @@ export default function ProfileEditor({ initial }: { initial: ProfileDetails }) 
   }
 
   async function save() {
+    if (saving) return; // guard against double-submit
     setSaving(true);
     setError(null);
     const input: ProfileEditInput = {
@@ -109,15 +111,24 @@ export default function ProfileEditor({ initial }: { initial: ProfileDetails }) 
       experience: draft.experience,
       preferredLanguage: draft.preferredLanguage,
     };
-    const res = await updateProfile(input);
-    setSaving(false);
-    if (!res.ok) {
-      setError(res.error);
-      return;
+    try {
+      const res = await updateProfile(input);
+      if (!res.ok) {
+        setError(res.error);
+        toast.error(res.error);
+        return;
+      }
+      haptic("success");
+      toast.success("Profile updated");
+      setDetails({ ...draft, calorieTarget: res.calorieTarget, proteinTargetG: res.proteinTargetG });
+      setEditing(false);
+    } catch {
+      const message = "Couldn't save your changes. Please try again.";
+      setError(message);
+      toast.error(message);
+    } finally {
+      setSaving(false);
     }
-    haptic("success");
-    setDetails({ ...draft, calorieTarget: res.calorieTarget, proteinTargetG: res.proteinTargetG });
-    setEditing(false);
   }
 
   if (!editing) {

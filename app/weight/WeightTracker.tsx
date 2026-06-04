@@ -5,6 +5,8 @@ import { AnimatePresence, motion } from "motion/react";
 import type { BodyweightLog } from "@/lib/database.types";
 import { listContainer, listItem } from "@/lib/motion";
 import { toSeries, weightChange, latestWeight } from "@/lib/weight/series";
+import { Button } from "@/components/ui/Button";
+import { toast } from "@/lib/toast";
 import { logWeight, deleteWeight } from "./actions";
 import WeightChart from "./WeightChart";
 
@@ -21,6 +23,7 @@ export default function WeightTracker({
   const [logs, setLogs] = useState<BodyweightLog[]>(initialLogs);
   const [weight, setWeight] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const series = toSeries(logs);
   const latest = latestWeight(series) ?? startWeight;
@@ -30,7 +33,7 @@ export default function WeightTracker({
   async function add(e: React.FormEvent) {
     e.preventDefault();
     const value = Number(weight);
-    if (!weight.trim()) return;
+    if (!weight.trim() || saving) return; // guard blocks rapid double-submits
 
     const snapshot = logs;
     const tempId = crypto.randomUUID();
@@ -44,13 +47,24 @@ export default function WeightTracker({
     setLogs((prev) => [...prev.filter((l) => l.logged_on !== today), optimistic]);
     setWeight("");
     setError(null);
+    setSaving(true);
 
-    const res = await logWeight({ weight: value, date: today });
-    if (res.ok) {
-      setLogs((prev) => prev.map((l) => (l.id === tempId ? res.item : l)));
-    } else {
+    try {
+      const res = await logWeight({ weight: value, date: today });
+      if (res.ok) {
+        setLogs((prev) => prev.map((l) => (l.id === tempId ? res.item : l)));
+      } else {
+        setLogs(snapshot);
+        setError(res.error);
+        toast.error(res.error);
+      }
+    } catch {
       setLogs(snapshot);
-      setError(res.error);
+      const message = "Couldn't save your weight. Please try again.";
+      setError(message);
+      toast.error(message);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -107,13 +121,9 @@ export default function WeightTracker({
             placeholder={startWeight ? `e.g. ${startWeight}` : "Today's weight (kg)"}
             className="flex-1 rounded-field border border-input bg-card px-3 py-2 text-base text-foreground focus:border-ring focus:outline-none"
           />
-          <button
-            type="submit"
-            disabled={!weight.trim()}
-            className="rounded-field bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 active:scale-[0.97] disabled:opacity-40"
-          >
+          <Button type="submit" loading={saving} disabled={saving || !weight.trim()}>
             Log
-          </button>
+          </Button>
         </form>
         {error && <p className="text-sm text-destructive">{error}</p>}
 

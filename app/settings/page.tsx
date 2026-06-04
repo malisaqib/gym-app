@@ -1,9 +1,8 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { signOut } from "@/app/auth/actions";
 import { Screen } from "@/components/ui/Screen";
 import { LargeTitle } from "@/components/ui/LargeTitle";
-import { Button } from "@/components/ui/Button";
+import { SignOutButton } from "@/app/auth/SignOutButton";
 import { SupportResources } from "@/components/SupportResources";
 import BudgetFitnessMode from "@/app/coach/BudgetFitnessMode";
 import ProfileEditor, { type ProfileDetails } from "./ProfileEditor";
@@ -56,11 +55,7 @@ export default async function SettingsPage() {
         {/* Budget set once here; editable anytime (self-contained, localStorage). */}
         <BudgetFitnessMode lang={lang} />
         <SupportResources />
-        <form action={signOut}>
-          <Button type="submit" variant="secondary" fullWidth>
-            Sign out
-          </Button>
-        </form>
+        <SignOutButton />
         <p className="text-center text-xs text-muted-foreground break-all">{user.email}</p>
       </Screen>
       <BottomNav />

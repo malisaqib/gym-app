@@ -9,6 +9,7 @@ import type { Lang } from "@/lib/database.types";
 import type { MealSuggestion } from "@/lib/coach/mealCoach";
 import { buildCoachFocus } from "@/lib/coach/goalContext";
 import { EMOTIONAL_GOAL_KEY, readLocal } from "@/lib/coach/localStore";
+import { withTimeout } from "@/lib/withTimeout";
 import { DEFAULT_EMOTIONAL_GOAL } from "./localCoachTypes";
 import { suggestMeal } from "./actions";
 
@@ -82,7 +83,11 @@ export default function MealCoach({ lang }: { lang: Lang }) {
     setBusy(true);
     setError(null);
     try {
-      const res = await suggestMeal({ question: query, date: localDateString(), focus });
+      // 25s ceiling so a hung AI/network request can't spin forever.
+      const res = await withTimeout(
+        suggestMeal({ question: query, date: localDateString(), focus }),
+        25000
+      );
       if (res.ok) {
         setSuggestion(res.suggestion);
         setRemaining({ cal: res.remainingCalories, protein: res.remainingProtein });

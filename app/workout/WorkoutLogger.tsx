@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import type { WorkoutLog } from "@/lib/database.types";
 import { type ExerciseHistory } from "@/lib/workouts/history";
 import { buildProgram } from "./programActions";
+import { Spinner } from "@/components/ui/Spinner";
 import BottomNav from "@/components/BottomNav";
 import TrainingSetup from "./TrainingSetup";
 import ProgramView from "./ProgramView";
@@ -75,7 +76,8 @@ export default function WorkoutLogger({
         <TrainingSetup profileDefaults={profileDefaults} onSetupChange={handleSetupChange} />
 
         {programLoading && (
-          <div className="rounded-card border border-border bg-card p-4 shadow-soft">
+          <div className="flex items-center gap-3 rounded-card border border-border bg-card p-4 shadow-soft">
+            <Spinner size="sm" className="text-primary" label="Building your plan" />
             <p className="text-sm text-muted-foreground">Building your plan…</p>
           </div>
         )}

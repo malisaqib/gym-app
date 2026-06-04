@@ -7,6 +7,9 @@ import type { WorkoutLog } from "@/lib/database.types";
 import type { ExerciseHistory } from "@/lib/workouts/history";
 import { suggestProgression } from "@/lib/workouts/progression";
 import { haptic } from "@/lib/haptics";
+import { useAsyncAction } from "@/lib/useAsyncAction";
+import { Button } from "@/components/ui/Button";
+import { toast } from "@/lib/toast";
 import { Sheet } from "@/components/ui/Sheet";
 import type { ProgramDay, ProgramExercise, WeeklyProgram } from "@/lib/workouts/generator";
 import type { TrainingEmphasis, TrainingSetup as TrainingSetupData } from "@/lib/workouts/trainingSetup";
@@ -312,7 +315,10 @@ function ExerciseCard({
     if (res.ok) {
       haptic("success");
       onSwapped(res.exercise);
-    } else setSwapError(res.error);
+    } else {
+      setSwapError(res.error);
+      toast.error(res.error);
+    }
   }
 
   return (
@@ -451,19 +457,25 @@ function AskCoach({
 }) {
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+
+  // The coach call goes through useAsyncAction: a 25s timeout (so it can't spin
+  // forever), a duplicate-click guard, and unmount-safety. We throw on a
+  // business error so the hook surfaces it as `error`.
+  const { run, pending, error } = useAsyncAction(
+    async (q: string) => {
+      const res = await askAboutExercise({ exercise, level, emphasis, question: q });
+      if (!res.ok) throw new Error(res.error);
+      return res.answer;
+    },
+    { timeoutMs: 25000 }
+  );
 
   async function ask() {
     const q = question.trim();
     if (!q) return;
-    setLoading(true);
-    setError(null);
     setAnswer(null);
-    const res = await askAboutExercise({ exercise, level, emphasis, question: q });
-    setLoading(false);
-    if (res.ok) setAnswer(res.answer);
-    else setError(res.error);
+    const result = await run(q);
+    if (result !== undefined) setAnswer(result);
   }
 
   return (
@@ -476,13 +488,9 @@ function AskCoach({
           placeholder="e.g. how do I avoid back pain on this?"
           className="min-w-0 flex-1 rounded-field border border-input bg-card px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none"
         />
-        <button
-          onClick={ask}
-          disabled={loading || !question.trim()}
-          className="shrink-0 rounded-field bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 active:scale-[0.97] disabled:opacity-40"
-        >
-          {loading ? "…" : "Ask"}
-        </button>
+        <Button size="sm" onClick={ask} loading={pending} disabled={pending || !question.trim()}>
+          Ask
+        </Button>
       </div>
       {error && <p className="text-xs text-muted-foreground">{error}</p>}
       {answer && (

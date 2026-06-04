@@ -1,7 +1,9 @@
 "use client";
 
+import { useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import { haptic } from "@/lib/haptics";
+import { Spinner } from "@/components/ui/Spinner";
 
 type Variant = "primary" | "secondary" | "ghost" | "destructive";
 type Size = "sm" | "md" | "lg";
@@ -20,6 +22,12 @@ const sizes: Record<Size, string> = {
   lg: "h-12 px-5 text-base",
 };
 
+const spinnerSize: Record<Size, "xs" | "sm" | "md"> = {
+  sm: "xs",
+  md: "sm",
+  lg: "sm",
+};
+
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
   size?: Size;
@@ -36,17 +44,43 @@ export function Button({
   children,
   disabled,
   onPointerDown,
+  onClick,
   ...props
 }: ButtonProps) {
+  // If onClick returns a promise, we drive the loading state automatically and
+  // block re-clicks until it settles — so callers get duplicate-safe async
+  // buttons for free, without wiring their own useState.
+  const [autoPending, setAutoPending] = useState(false);
+  const inFlight = useRef(false);
+
+  const isLoading = loading || autoPending;
+  const isDisabled = disabled || isLoading;
+
+  function handleClick(e: React.MouseEvent<HTMLButtonElement>) {
+    const result = onClick?.(e);
+    // Detect a thenable without assuming the exact promise type.
+    if (result && typeof (result as unknown as { then?: unknown }).then === "function") {
+      if (inFlight.current) return;
+      inFlight.current = true;
+      setAutoPending(true);
+      Promise.resolve(result).finally(() => {
+        inFlight.current = false;
+        setAutoPending(false);
+      });
+    }
+  }
+
   return (
     <button
       {...props}
+      onClick={handleClick}
       onPointerDown={(e) => {
         // Light tap on press-down for an instant, native feel (Android; iOS no-ops).
-        if (!(disabled || loading)) haptic("tap");
+        if (!isDisabled) haptic("tap");
         onPointerDown?.(e);
       }}
-      disabled={disabled || loading}
+      disabled={isDisabled}
+      aria-busy={isLoading || undefined}
       className={cn(
         // `active:scale` gives an instant pressed feel; touch-manipulation removes
         // the 300ms mobile tap delay. iOS easing makes it react fast, settle soft.
@@ -57,12 +91,7 @@ export function Button({
         className
       )}
     >
-      {loading && (
-        <span
-          className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
-          aria-hidden
-        />
-      )}
+      {isLoading && <Spinner size={spinnerSize[size]} decorative />}
       {children}
     </button>
   );

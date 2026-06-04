@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import ServiceWorkerRegister from "./ServiceWorkerRegister";
 import TimezoneCookie from "@/components/TimezoneCookie";
+import { ToastViewport } from "@/components/ui/Toast";
 
 // Typography: we deliberately use the native system font (San Francisco on
 // iOS/macOS) via the stack in tailwind.config. No web-font download — it loads
@@ -46,6 +47,7 @@ export default function RootLayout({
           }}
         />
         {children}
+        <ToastViewport />
         <ServiceWorkerRegister />
         <TimezoneCookie />
       </body>
