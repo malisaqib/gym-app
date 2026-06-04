@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node --test lib/nutrition/engine.test.ts lib/food/totals.test.ts lib/workouts/progression.test.ts lib/workouts/exerciseDb.test.ts lib/onboarding/goals.test.ts lib/weight/series.test.ts"
+    "test": "node --test lib/nutrition/engine.test.ts lib/food/totals.test.ts lib/workouts/progression.test.ts lib/workouts/exerciseDb.test.ts lib/workouts/generator.test.ts lib/onboarding/goals.test.ts lib/weight/series.test.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
