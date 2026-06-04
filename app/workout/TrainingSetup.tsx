@@ -45,7 +45,15 @@ const SESSION_CHOICES = [30, 45, 60, 90];
 
 const DAY_CHOICES = Array.from({ length: MAX_DAYS - MIN_DAYS + 1 }, (_, i) => MIN_DAYS + i);
 
-export default function TrainingSetup({ profileDefaults }: { profileDefaults: ProfileTrainingDefaults }) {
+export default function TrainingSetup({
+  profileDefaults,
+  onSetupChange,
+}: {
+  profileDefaults: ProfileTrainingDefaults;
+  // Emitted on mount (if already configured) and after each save, so the parent
+  // can (re)build the deterministic program. null = not configured yet.
+  onSetupChange?: (setup: TrainingSetupData | null) => void;
+}) {
   const [hydrated, setHydrated] = useState(false);
   const [setup, setSetup] = useState<TrainingSetupData>(DEFAULT_TRAINING_SETUP);
   const [draft, setDraft] = useState<TrainingSetupData>(DEFAULT_TRAINING_SETUP);
@@ -59,6 +67,7 @@ export default function TrainingSetup({ profileDefaults }: { profileDefaults: Pr
     setSetup(loaded);
     setDraft(loaded);
     setHydrated(true);
+    if (isTrainingConfigured(loaded)) onSetupChange?.(loaded);
     // We only want to read once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -88,6 +97,7 @@ export default function TrainingSetup({ profileDefaults }: { profileDefaults: Pr
     writeLocal(TRAINING_SETUP_KEY, next); // authoritative
     setSetup(next);
     setEditing(false);
+    onSetupChange?.(next); // rebuild the plan from the new setup
 
     // Best-effort DB sync (works once migration 0008 is applied).
     try {

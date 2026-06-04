@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { WORKOUTS, type Exercise, type WorkoutDay } from "@/lib/workouts/program";
 import { suggestProgression } from "@/lib/workouts/progression";
@@ -8,9 +8,12 @@ import type { WorkoutLog } from "@/lib/database.types";
 import { type ExerciseHistory } from "@/lib/workouts/history";
 import { listContainer, listItem, spring } from "@/lib/motion";
 import { logSet, deleteSet } from "./actions";
+import { buildProgram } from "./programActions";
 import BottomNav from "@/components/BottomNav";
 import TrainingSetup from "./TrainingSetup";
-import type { ProfileTrainingDefaults } from "@/lib/workouts/trainingSetup";
+import ProgramView from "./ProgramView";
+import type { ProfileTrainingDefaults, TrainingSetup as TrainingSetupData } from "@/lib/workouts/trainingSetup";
+import type { WeeklyProgram } from "@/lib/workouts/generator";
 
 const emptyHistory: ExerciseHistory = { today: [], lastSessionDate: null, lastSessionSets: [] };
 
@@ -27,7 +30,28 @@ export default function WorkoutLogger({
   // Seeded from the server — no mount fetch.
   const [history, setHistory] = useState<Record<string, ExerciseHistory>>(initialHistory);
 
+  // The deterministic plan, built server-side from the training setup.
+  const [program, setProgram] = useState<WeeklyProgram | null>(null);
+  const [programLoading, setProgramLoading] = useState(false);
+
   const workout = WORKOUTS[day];
+
+  // TrainingSetup emits the setup on mount (if configured) and after each save.
+  const handleSetupChange = useCallback(async (setup: TrainingSetupData | null) => {
+    if (!setup) {
+      setProgram(null);
+      return;
+    }
+    setProgramLoading(true);
+    try {
+      const res = await buildProgram(setup);
+      setProgram(res.ok ? res.program : null);
+    } catch {
+      setProgram(null);
+    } finally {
+      setProgramLoading(false);
+    }
+  }, []);
 
   // Update one exercise's today-list after an optimistic add/replace/remove.
   function setToday(name: string, updater: (sets: WorkoutLog[]) => WorkoutLog[]) {
@@ -42,9 +66,24 @@ export default function WorkoutLogger({
       <main className="mx-auto flex min-h-screen max-w-md flex-col gap-5 px-4 pb-24 pt-8">
         <h1 className="font-display text-2xl font-semibold text-foreground">Workout</h1>
 
-        {/* Phase 2 — training setup. The generated plan (Phase 3/4) will render
-            from this; for now the A/B logger below stays available. */}
-        <TrainingSetup profileDefaults={profileDefaults} />
+        {/* Phase 2 — training setup; emits to build the Phase 3 plan below. */}
+        <TrainingSetup profileDefaults={profileDefaults} onSetupChange={handleSetupChange} />
+
+        {/* Phase 4 — the generated deterministic plan. */}
+        {programLoading && (
+          <div className="rounded-card border border-border bg-card p-4 shadow-soft">
+            <p className="text-sm text-muted-foreground">Building your plan…</p>
+          </div>
+        )}
+        {program && <ProgramView program={program} />}
+
+        {/* Quick logger (manual A/B). Kept available while set-logging against the
+            generated plan is wired up in a later phase. */}
+        <div className="flex items-center gap-3 pt-2">
+          <div className="h-px flex-1 bg-border" />
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Quick log</span>
+          <div className="h-px flex-1 bg-border" />
+        </div>
 
         {/* A / B day switch */}
         <div className="flex overflow-hidden rounded-field border border-border text-sm">
