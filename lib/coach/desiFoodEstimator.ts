@@ -778,9 +778,9 @@ export function adviseEatNext(input: {
       okay: "Roti or rice can be okay if the portion is controlled.",
       limit: "Limit fried snacks, sugary drinks, and huge rice portions when you want visible progress.",
       portion: "Start with one palm-sized protein serving plus 1 roti or 1 small rice portion.",
-      reason: input.personalGoal
-        ? `I am using your goal: ${input.personalGoal}. Protein and repeatable portions matter most.`
-        : "Protein and repeatable portions matter most for beginners.",
+      // Responsible-design: don't echo the raw (often appearance-based) goal —
+      // keep guidance behaviour-based.
+      reason: "Protein and a portion you can repeat matter most — start there.",
       nextAction: "Type the exact foods you have, like: 2 roti, daal, eggs, milk.",
       matches,
     };
@@ -804,9 +804,7 @@ export function adviseEatNext(input: {
     portion: fatLoss
       ? "Keep carbs to 1 roti or half to one plate rice, then add salad or raita if available."
       : "Use a normal carb portion and add extra protein if you are still hungry.",
-    reason: input.personalGoal
-      ? `Because your goal is "${input.personalGoal}", the best choice is the one with more protein and less calorie surprise.`
-      : "The best choice is the one with more protein and less calorie surprise.",
+    reason: "The best choice has more protein, fewer calorie surprises, and a portion you can repeat.",
     nextAction: best.food.betterChoiceSuggestion,
     matches,
   };

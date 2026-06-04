@@ -9,6 +9,7 @@ import MealCoach from "./MealCoach";
 import EmotionalGoalOnboarding from "./EmotionalGoalOnboarding";
 import DesiFoodEstimator from "./DesiFoodEstimator";
 import BudgetFitnessMode from "./BudgetFitnessMode";
+import EatNextAdvisor from "./EatNextAdvisor";
 import type { Lang } from "@/lib/database.types";
 
 /**
@@ -111,6 +112,11 @@ export default function CoachDashboard({ lang, name }: { lang: Lang; name: strin
         {/* Ask the coach — the existing meal advisor, embedded (logic unchanged) */}
         <section id="coach" className="scroll-mt-4">
           <MealCoach lang={lang} />
+        </section>
+
+        {/* Eat next — Phase 5: instant, offline pick from your options (no AI) */}
+        <section id="eatnext" className="scroll-mt-4">
+          <EatNextAdvisor lang={lang} />
         </section>
 
         {/* Goal — Phase 2: motivation/emotional goal (self-contained, localStorage) */}
