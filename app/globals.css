@@ -119,6 +119,39 @@
     }
   }
 
+  /* Branded selection — a small premium detail. */
+  ::selection {
+    background-color: rgb(var(--primary) / 0.18);
+    color: rgb(var(--foreground));
+  }
+
+  /* Images/icons shouldn't be draggable like a web page's. */
+  img {
+    -webkit-user-drag: none;
+    user-select: none;
+  }
+
+  /* Thin, unobtrusive scrollbar on desktop (mobile uses the OS overlay one). */
+  @media (pointer: fine) {
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: rgb(var(--border)) transparent;
+    }
+    *::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+    *::-webkit-scrollbar-thumb {
+      background-color: rgb(var(--border));
+      border: 3px solid transparent;
+      border-radius: 9999px;
+      background-clip: content-box;
+    }
+    *::-webkit-scrollbar-thumb:hover {
+      background-color: rgb(var(--muted-foreground) / 0.5);
+    }
+  }
+
   /* Honour "reduce motion": neutralise CSS transitions/animations too (Framer
      is handled separately via MotionConfig reducedMotion="user"). */
   @media (prefers-reduced-motion: reduce) {
@@ -130,5 +163,13 @@
       transition-duration: 0.01ms !important;
       scroll-behavior: auto !important;
     }
+  }
+}
+
+@layer components {
+  /* Reusable "feels tappable" press for rows/chips/tiles that aren't a Button
+     or Card — gentle, GPU-only, with the same iOS easing. */
+  .pressable {
+    @apply touch-manipulation select-none transition duration-200 ease-ios active:scale-[0.98];
   }
 }

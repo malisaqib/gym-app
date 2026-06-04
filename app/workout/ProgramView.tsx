@@ -103,9 +103,9 @@ export default function ProgramView({
               type="button"
               onClick={() => setSelected(i)}
               aria-pressed={isSelected}
-              className={`flex-1 rounded-field border px-1 py-2 text-center transition active:scale-[0.97] ${
+              className={`pressable flex-1 rounded-field border px-1 py-2 text-center ${
                 isSelected
-                  ? "border-primary bg-primary/10"
+                  ? "border-primary bg-primary/10 shadow-soft"
                   : d.isRest
                     ? "border-border bg-background"
                     : "border-border bg-card hover:border-primary/60"
@@ -517,7 +517,7 @@ function SmallButton({
       onClick={onClick}
       disabled={disabled}
       aria-pressed={active}
-      className={`rounded-pill border px-3 py-1.5 text-xs font-medium transition active:scale-[0.97] disabled:opacity-40 ${
+      className={`pressable rounded-pill border px-3 py-1.5 text-xs font-medium disabled:opacity-40 ${
         active
           ? "border-primary bg-primary/10 text-primary"
           : "border-border bg-background text-foreground hover:border-primary/60"

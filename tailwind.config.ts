@@ -72,9 +72,15 @@ const config: Config = {
         pill: "9999px",
       },
       boxShadow: {
-        soft: "0 1px 3px rgb(28 26 22 / 0.06), 0 1px 2px rgb(28 26 22 / 0.04)",
-        pop: "0 4px 16px rgb(28 26 22 / 0.08)",
-        nav: "0 -2px 24px rgb(28 26 22 / 0.08)",
+        // Layered, low-contrast elevation — soft and premium, never harsh.
+        soft: "0 1px 2px rgb(28 26 22 / 0.04), 0 2px 8px rgb(28 26 22 / 0.05)",
+        pop: "0 2px 8px rgb(28 26 22 / 0.06), 0 12px 32px rgb(28 26 22 / 0.10)",
+        nav: "0 -1px 0 rgb(28 26 22 / 0.04), 0 -10px 32px rgb(28 26 22 / 0.10)",
+        ring: "0 0 0 1px rgb(28 26 22 / 0.04)", // crisp hairline on light surfaces
+      },
+      transitionTimingFunction: {
+        // iOS-ish ease-out: quick to react, gentle to settle.
+        ios: "cubic-bezier(0.22, 1, 0.36, 1)",
       },
     },
   },
