@@ -51,6 +51,7 @@ export interface ProgramExercise {
   repRange: string;
   restSeconds: number;
   targetMuscles: MuscleGroup[];
+  instructions: string[]; // straight from the dataset — powers "How to" (no AI)
   note?: string; // beginner-only "why this movement" + form cue
 }
 
@@ -373,16 +374,23 @@ function pickUnused(candidates: Exercise[], used: Set<string>, offset: number): 
   return candidates[offset % candidates.length];
 }
 
-function selectExercise(
-  all: Exercise[],
-  pattern: MovementPattern,
-  ctx: SelectCtx,
-  used: Set<string>,
-  offset: number
-): Exercise | null {
+function buildSelectCtx(setup: TrainingSetup): SelectCtx {
+  return {
+    equipment: resolveEquipment(setup),
+    levels: allowedLevels(setup.experienceLevel),
+    injury: buildInjuryFilter(setup.injuriesNote),
+  };
+}
+
+/**
+ * The full, name-sorted list of eligible exercises for a movement pattern given
+ * the user's equipment/level/injuries. Progressive relaxation guarantees a slot
+ * fills from whatever's available. Used by both generation and swapping, so a
+ * swap can only ever land on another VALID, grounded exercise.
+ */
+function candidatesForPattern(all: Exercise[], pattern: MovementPattern, ctx: SelectCtx): Exercise[] {
   const spec = PATTERN_SPEC[pattern];
 
-  // Progressive relaxation so a slot still fills from whatever equipment exists.
   const attempts = [
     { equipment: ctx.equipment, level: ctx.levels, muscleGroups: spec.muscles, mechanic: spec.mechanic, category: ALLOWED_CATEGORIES },
     { equipment: ctx.equipment, level: ctx.levels, muscleGroups: spec.muscles, mechanic: spec.mechanic },
@@ -393,22 +401,82 @@ function selectExercise(
   for (const f of attempts) {
     let cands = filterExercises(all, f);
 
-    // Prefer the intended force direction, but don't let it empty the slot.
+    // Prefer the intended force direction, but don't let it empty the pool.
     if (spec.force) {
       const byForce = cands.filter((e) => e.force === spec.force);
       if (byForce.length) cands = byForce;
     }
 
-    // Injury filtering — fall back to unfiltered if it would empty the slot.
+    // Injury filtering — fall back to unfiltered if it would empty the pool.
     const safe = cands.filter((e) => passesInjury(e, ctx.injury));
     if (safe.length) cands = safe;
 
     if (cands.length === 0) continue;
 
-    cands = [...cands].sort((a, b) => a.name.localeCompare(b.name));
-    return pickUnused(cands, used, offset);
+    return [...cands].sort((a, b) => a.name.localeCompare(b.name));
   }
-  return null;
+  return [];
+}
+
+function selectExercise(
+  all: Exercise[],
+  pattern: MovementPattern,
+  ctx: SelectCtx,
+  used: Set<string>,
+  offset: number
+): Exercise | null {
+  const cands = candidatesForPattern(all, pattern, ctx);
+  if (cands.length === 0) return null;
+  return pickUnused(cands, used, offset);
+}
+
+/**
+ * Build the program-shaped exercise (scheme + beginner note + instructions) for
+ * a chosen dataset exercise. Shared by generation and swapping so both produce
+ * an identical shape with the right sets/reps/rest for this user.
+ */
+function toProgramExercise(
+  ex: Exercise,
+  pattern: MovementPattern,
+  setup: TrainingSetup,
+  emphasis: TrainingEmphasis
+): ProgramExercise {
+  const isCompound = ex.mechanic === "compound";
+  const isStatic = ex.force === "static";
+  const scheme = schemeFor(setup.experienceLevel, emphasis, isCompound, isStatic);
+
+  return {
+    exerciseId: ex.id,
+    name: ex.name,
+    pattern,
+    isCompound,
+    sets: scheme.sets,
+    repRange: scheme.repRange,
+    restSeconds: scheme.restSeconds,
+    targetMuscles: ex.primaryMuscles,
+    instructions: ex.instructions,
+    note: setup.experienceLevel === "beginner" ? PATTERN_NOTE[pattern] : undefined,
+  };
+}
+
+/**
+ * Phase 6 — swap an exercise for another VALID one of the same movement pattern.
+ * Deterministic and grounded: it only ever returns an exercise the user can
+ * actually do (same equipment/level/injury rules), never an invented one.
+ * `excludeIds` should include the current exercise + the day's other exercises
+ * so a swap doesn't duplicate or no-op. Returns null if there's no alternative.
+ */
+export function swapProgramExercise(
+  setup: TrainingSetup,
+  emphasis: TrainingEmphasis,
+  exercises: Exercise[],
+  pattern: MovementPattern,
+  excludeIds: string[]
+): ProgramExercise | null {
+  const exclude = new Set(excludeIds);
+  const cands = candidatesForPattern(exercises, pattern, buildSelectCtx(setup)).filter((e) => !exclude.has(e.id));
+  if (cands.length === 0) return null;
+  return toProgramExercise(cands[0], pattern, setup, emphasis);
 }
 
 // --- progression text ------------------------------------------------------
@@ -458,12 +526,10 @@ export function generateProgram(
 ): WeeklyProgram {
   const focuses = splitForDays(setup.experienceLevel, setup.trainingDaysPerWeek);
   const schedule = weekSchedule(setup.trainingDaysPerWeek);
-  const equipment = resolveEquipment(setup);
-  const levels = allowedLevels(setup.experienceLevel);
   const injury = buildInjuryFilter(setup.injuriesNote);
   const pullups = canDoPullups(setup);
 
-  const ctx: SelectCtx = { equipment, levels, injury };
+  const ctx: SelectCtx = buildSelectCtx(setup);
 
   // For A/B/C suffixing when a focus repeats in the week.
   const totals: Partial<Record<DayFocus, number>> = {};
@@ -502,22 +568,7 @@ export function generateProgram(
       if (!ex) return;
       usedInDay.add(ex.id);
       used.add(ex.id);
-
-      const isCompound = ex.mechanic === "compound";
-      const isStatic = ex.force === "static";
-      const scheme = schemeFor(setup.experienceLevel, emphasis, isCompound, isStatic);
-
-      built.push({
-        exerciseId: ex.id,
-        name: ex.name,
-        pattern,
-        isCompound,
-        sets: scheme.sets,
-        repRange: scheme.repRange,
-        restSeconds: scheme.restSeconds,
-        targetMuscles: ex.primaryMuscles,
-        note: setup.experienceLevel === "beginner" ? PATTERN_NOTE[pattern] : undefined,
-      });
+      built.push(toProgramExercise(ex, pattern, setup, emphasis));
     });
 
     // Guarantee compounds-first ordering regardless of any fallback selections.

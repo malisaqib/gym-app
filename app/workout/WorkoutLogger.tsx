@@ -8,7 +8,7 @@ import BottomNav from "@/components/BottomNav";
 import TrainingSetup from "./TrainingSetup";
 import ProgramView from "./ProgramView";
 import type { ProfileTrainingDefaults, TrainingSetup as TrainingSetupData } from "@/lib/workouts/trainingSetup";
-import type { WeeklyProgram } from "@/lib/workouts/generator";
+import type { ProgramExercise, WeeklyProgram } from "@/lib/workouts/generator";
 
 export default function WorkoutLogger({
   today,
@@ -21,6 +21,8 @@ export default function WorkoutLogger({
   const [program, setProgram] = useState<WeeklyProgram | null>(null);
   const [history, setHistory] = useState<Record<string, ExerciseHistory>>({});
   const [programLoading, setProgramLoading] = useState(false);
+  // Keep the current setup so Swap can re-query against the same constraints.
+  const [setup, setSetup] = useState<TrainingSetupData | null>(null);
 
   // Optimistic update for one exercise's today-list (keyed by exercise name).
   function setToday(name: string, updater: (sets: WorkoutLog[]) => WorkoutLog[]) {
@@ -30,15 +32,27 @@ export default function WorkoutLogger({
     });
   }
 
+  // Replace one exercise (after a Swap) in the given day.
+  function replaceExercise(dayIndex: number, oldId: string, next: ProgramExercise) {
+    setProgram((prev) => {
+      if (!prev) return prev;
+      const days = prev.days.map((d, i) =>
+        i === dayIndex ? { ...d, exercises: d.exercises.map((e) => (e.exerciseId === oldId ? next : e)) } : d
+      );
+      return { ...prev, days };
+    });
+  }
+
   // TrainingSetup emits the setup on mount (if configured) and after each save.
-  const handleSetupChange = useCallback(async (setup: TrainingSetupData | null) => {
-    if (!setup) {
+  const handleSetupChange = useCallback(async (next: TrainingSetupData | null) => {
+    setSetup(next);
+    if (!next) {
       setProgram(null);
       return;
     }
     setProgramLoading(true);
     try {
-      const res = await buildProgram(setup);
+      const res = await buildProgram(next);
       if (res.ok) {
         setProgram(res.program);
         setHistory(res.history);
@@ -66,7 +80,16 @@ export default function WorkoutLogger({
           </div>
         )}
 
-        {program && <ProgramView program={program} today={today} history={history} setToday={setToday} />}
+        {program && (
+          <ProgramView
+            program={program}
+            today={today}
+            history={history}
+            setup={setup}
+            setToday={setToday}
+            onReplaceExercise={replaceExercise}
+          />
+        )}
       </main>
       <BottomNav />
     </>

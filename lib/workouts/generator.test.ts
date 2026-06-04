@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { generateProgram } from "./generator.ts";
+import { generateProgram, swapProgramExercise } from "./generator.ts";
 import { normalizeTrainingSetup, type TrainingSetup } from "./trainingSetup.ts";
 import type { Exercise } from "./exerciseDb.ts";
 
@@ -123,6 +123,39 @@ test("injuries adjust selection and are reported", () => {
     !names.some((n) => /deadlift|lunge|good ?morning|bent[- ]?over/.test(n)),
     "knee/back-aggravating movements are filtered out"
   );
+});
+
+test("swap returns a different, still-valid exercise of the same pattern", () => {
+  // Gym setup -> a deep candidate pool, so an alternative reliably exists.
+  const config = setup({ trainingLocation: "gym", experienceLevel: "intermediate", trainingDaysPerWeek: 3 });
+  const prog = generateProgram(config, "general", ALL);
+  const day = prog.days.find((d) => !d.isRest)!;
+  const original = day.exercises[0];
+
+  // Exclude everything already in the day (incl. the original) — like the UI does.
+  const excludeIds = day.exercises.map((e) => e.exerciseId);
+  const swapped = swapProgramExercise(config, "general", ALL, original.pattern, excludeIds);
+
+  assert.ok(swapped, "an alternative should exist for a common pattern in a gym");
+  assert.notEqual(swapped!.exerciseId, original.exerciseId, "swap must change the exercise");
+  assert.ok(!excludeIds.includes(swapped!.exerciseId), "swap must avoid same-day duplicates");
+  assert.equal(swapped!.pattern, original.pattern, "swap keeps the same movement pattern");
+
+  // Grounded: still a real, level-appropriate catalog exercise with instructions.
+  const src = BY_ID.get(swapped!.exerciseId);
+  assert.ok(src, "swap resolves to a real catalog entry");
+  assert.ok(["beginner", "intermediate"].includes(src!.level), "swap respects the level cap");
+  assert.ok(swapped!.instructions.length > 0, "swap carries how-to instructions");
+});
+
+test("program exercises carry dataset instructions", () => {
+  const prog = generateProgram(
+    setup({ trainingLocation: "gym", experienceLevel: "intermediate", trainingDaysPerWeek: 3 }),
+    "general",
+    ALL
+  );
+  const anyExercise = trainingDays(prog).flatMap((d) => d.exercises)[0];
+  assert.ok(Array.isArray(anyExercise.instructions) && anyExercise.instructions.length > 0);
 });
 
 test("set/rep schemes differ by emphasis for non-beginners", () => {
