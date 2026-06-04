@@ -3,7 +3,6 @@
 import { motion } from "motion/react";
 import { listContainer, listItem } from "@/lib/motion";
 import { Card } from "@/components/ui/Card";
-import { EmptyState } from "@/components/ui/EmptyState";
 import BottomNav from "@/components/BottomNav";
 import MealCoach from "./MealCoach";
 import EmotionalGoalOnboarding from "./EmotionalGoalOnboarding";
@@ -11,6 +10,7 @@ import DesiFoodEstimator from "./DesiFoodEstimator";
 import BudgetFitnessMode from "./BudgetFitnessMode";
 import EatNextAdvisor from "./EatNextAdvisor";
 import WeeklyCheckIn from "./WeeklyCheckIn";
+import ProgressTracker from "./ProgressTracker";
 import type { Lang } from "@/lib/database.types";
 
 /**
@@ -140,10 +140,9 @@ export default function CoachDashboard({ lang, name }: { lang: Lang; name: strin
           <WeeklyCheckIn lang={lang} />
         </section>
 
-        {/* Progress — wired in Phase 7 */}
-        <section id="progress" className="scroll-mt-4 space-y-2">
-          <h2 className="font-display text-lg font-semibold text-foreground">{t("progressTitle")}</h2>
-          <EmptyState icon="📈" title={t("progressEmpty")} />
+        {/* Progress + streak — Phase 7 & 8 */}
+        <section id="progress" className="scroll-mt-4">
+          <ProgressTracker lang={lang} />
         </section>
       </main>
       <BottomNav />
