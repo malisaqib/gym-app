@@ -10,6 +10,7 @@ import EmotionalGoalOnboarding from "./EmotionalGoalOnboarding";
 import DesiFoodEstimator from "./DesiFoodEstimator";
 import BudgetFitnessMode from "./BudgetFitnessMode";
 import EatNextAdvisor from "./EatNextAdvisor";
+import WeeklyCheckIn from "./WeeklyCheckIn";
 import type { Lang } from "@/lib/database.types";
 
 /**
@@ -134,10 +135,9 @@ export default function CoachDashboard({ lang, name }: { lang: Lang; name: strin
           <BudgetFitnessMode lang={lang} />
         </section>
 
-        {/* Weekly check-in — wired in Phase 6 */}
-        <section id="checkin" className="scroll-mt-4 space-y-2">
-          <h2 className="font-display text-lg font-semibold text-foreground">{t("checkinTitle")}</h2>
-          <EmptyState icon="📝" title={t("checkinEmpty")} />
+        {/* Weekly check-in — Phase 6 */}
+        <section id="checkin" className="scroll-mt-4">
+          <WeeklyCheckIn lang={lang} />
         </section>
 
         {/* Progress — wired in Phase 7 */}
