@@ -1,24 +1,11 @@
 import type { Metadata, Viewport } from "next";
-import { Fraunces, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import ServiceWorkerRegister from "./ServiceWorkerRegister";
 import TimezoneCookie from "@/components/TimezoneCookie";
 
-// Body / UI / numbers — clean humanist sans with tabular figures.
-const jakarta = Plus_Jakarta_Sans({
-  subsets: ["latin"],
-  variable: "--font-jakarta",
-  display: "swap",
-  weight: ["400", "500", "600", "700", "800"],
-});
-
-// Headlines / greetings — soft serif for warmth and identity.
-const fraunces = Fraunces({
-  subsets: ["latin"],
-  variable: "--font-fraunces",
-  display: "swap",
-  weight: ["500", "600"],
-});
+// Typography: we deliberately use the native system font (San Francisco on
+// iOS/macOS) via the stack in tailwind.config. No web-font download — it loads
+// instantly and gives the app a true, native iPhone-app look and feel.
 
 export const metadata: Metadata = {
   title: "FitCoach",
@@ -49,7 +36,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${jakarta.variable} ${fraunces.variable}`}>
+    <html lang="en">
       <body className="min-h-screen font-sans antialiased">
         {/* Follow the OS light/dark setting (and react to live changes). Runs
             during parse so the theme is set before content paints. */}

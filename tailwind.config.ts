@@ -38,8 +38,33 @@ const config: Config = {
         "destructive-foreground": color("destructive-foreground"),
       },
       fontFamily: {
-        sans: ["var(--font-jakarta)", "system-ui", "sans-serif"],
-        display: ["var(--font-fraunces)", "Georgia", "serif"],
+        // Native system font — renders San Francisco on iOS/macOS (the true
+        // iPhone-app feel), Segoe UI on Windows, Roboto on Android. Zero download.
+        sans: [
+          "-apple-system",
+          "BlinkMacSystemFont",
+          '"SF Pro Text"',
+          '"Segoe UI"',
+          "system-ui",
+          "Roboto",
+          "Helvetica",
+          "Arial",
+          "sans-serif",
+          '"Apple Color Emoji"',
+          '"Segoe UI Emoji"',
+        ],
+        // Larger headings use SF Pro Display on Apple devices automatically.
+        display: [
+          "-apple-system",
+          "BlinkMacSystemFont",
+          '"SF Pro Display"',
+          '"Segoe UI"',
+          "system-ui",
+          "Roboto",
+          "Helvetica",
+          "Arial",
+          "sans-serif",
+        ],
       },
       borderRadius: {
         field: "0.875rem", // 14px — inputs & buttons
