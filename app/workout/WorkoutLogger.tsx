@@ -9,15 +9,19 @@ import { type ExerciseHistory } from "@/lib/workouts/history";
 import { listContainer, listItem, spring } from "@/lib/motion";
 import { logSet, deleteSet } from "./actions";
 import BottomNav from "@/components/BottomNav";
+import TrainingSetup from "./TrainingSetup";
+import type { ProfileTrainingDefaults } from "@/lib/workouts/trainingSetup";
 
 const emptyHistory: ExerciseHistory = { today: [], lastSessionDate: null, lastSessionSets: [] };
 
 export default function WorkoutLogger({
   initialHistory,
   today,
+  profileDefaults,
 }: {
   initialHistory: Record<string, ExerciseHistory>;
   today: string;
+  profileDefaults: ProfileTrainingDefaults;
 }) {
   const [day, setDay] = useState<WorkoutDay>("A");
   // Seeded from the server — no mount fetch.
@@ -37,6 +41,10 @@ export default function WorkoutLogger({
     <>
       <main className="mx-auto flex min-h-screen max-w-md flex-col gap-5 px-4 pb-24 pt-8">
         <h1 className="font-display text-2xl font-semibold text-foreground">Workout</h1>
+
+        {/* Phase 2 — training setup. The generated plan (Phase 3/4) will render
+            from this; for now the A/B logger below stays available. */}
+        <TrainingSetup profileDefaults={profileDefaults} />
 
         {/* A / B day switch */}
         <div className="flex overflow-hidden rounded-field border border-border text-sm">

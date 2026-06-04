@@ -81,6 +81,11 @@ export interface Profile {
   food_preference: FoodPreference | null;
   onboarding_raw: OnboardingEntry[] | null;
   onboarded: boolean;
+  // Workout rebuild Phase 2 (migration 0008) — all nullable / additive.
+  has_equipment: boolean | null;
+  equipment: string[] | null;
+  session_minutes: number | null;
+  injuries_note: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -16,9 +16,15 @@ export default async function WorkoutPage() {
 
   const today = await getLocalToday();
 
-  // Profile (onboarding gate) + recent workout logs, in parallel on the server.
+  // Profile (onboarding gate + training-setup defaults) + recent workout logs.
+  // We only read columns that already exist, so the page never depends on the
+  // additive 0008 migration being applied (the setup card reads localStorage).
   const [{ data: profile }, { data: rows }] = await Promise.all([
-    supabase.from("profiles").select("onboarded").eq("id", user.id).single(),
+    supabase
+      .from("profiles")
+      .select("onboarded, training_location, experience, training_days")
+      .eq("id", user.id)
+      .single(),
     supabase
       .from("workout_logs")
       .select("*")
@@ -34,5 +40,11 @@ export default async function WorkoutPage() {
 
   const initialHistory = groupExerciseHistory(rows ?? [], ALL_EXERCISE_NAMES, today);
 
-  return <WorkoutLogger initialHistory={initialHistory} today={today} />;
+  const profileDefaults = {
+    trainingLocation: profile?.training_location ?? null,
+    experience: profile?.experience ?? null,
+    trainingDays: profile?.training_days ?? null,
+  };
+
+  return <WorkoutLogger initialHistory={initialHistory} today={today} profileDefaults={profileDefaults} />;
 }
