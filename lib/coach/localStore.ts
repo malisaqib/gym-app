@@ -7,6 +7,8 @@
 // readers/writers below need to change — call sites stay the same.
 
 export const EMOTIONAL_GOAL_KEY = "gymCoach.emotionalGoal";
+export const BUDGET_KEY = "gymCoach.budget";
+export const CHECKINS_KEY = "gymCoach.checkins";
 
 // Read a JSON value from localStorage, merged over `fallback`. Returns the
 // fallback untouched on the server, when nothing is stored, or on parse errors.
