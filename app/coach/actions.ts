@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { sumMacros } from "@/lib/food/totals";
 import { suggestMealCoach, type MealSuggestion } from "@/lib/coach/mealCoach";
+import { parseFoodText, type ParsedFoodItem } from "@/lib/food/parse";
 import { logEvent } from "@/lib/analytics";
 import type { FoodLog, Lang, Profile } from "@/lib/database.types";
 
@@ -65,5 +66,30 @@ export async function suggestMeal(input: { question: string; date: string }): Pr
     return { ok: true, suggestion, remainingCalories, remainingProtein };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Couldn't get a suggestion." };
+  }
+}
+
+type EstimateResult =
+  | { ok: true; items: ParsedFoodItem[]; calories: number; protein: number }
+  | { ok: false; error: string };
+
+/**
+ * Estimate a meal's macros WITHOUT logging it — for the coach's meal estimator.
+ * Reuses the RAG-grounded parser (any cuisine, the full 7.8k-food catalog), so
+ * it covers western + desi. The component turns the totals into friendly ranges
+ * and falls back to the static desi estimator if this fails. (Read-only reuse;
+ * the RAG pipeline itself is untouched.)
+ */
+export async function estimateMeal(text: string): Promise<EstimateResult> {
+  const meal = text.trim();
+  if (!meal) return { ok: false, error: "Type what you ate first." };
+  try {
+    const items = await parseFoodText(meal);
+    if (items.length === 0) return { ok: false, error: "no-match" };
+    const calories = items.reduce((s, i) => s + i.calories, 0);
+    const protein = items.reduce((s, i) => s + i.protein_g, 0);
+    return { ok: true, items, calories, protein };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "estimate-failed" };
   }
 }

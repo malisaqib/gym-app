@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import BottomNav from "@/components/BottomNav";
 import FoodLogger from "./FoodLogger";
+import EmotionalGoalOnboarding from "@/app/coach/EmotionalGoalOnboarding";
 
 // Protected page. The middleware already blocks logged-out users, but we
 // re-check here (defense in depth) and to actually get the user's data.
@@ -78,6 +79,9 @@ export default async function DashboardPage() {
           initialItems={foodRows ?? []}
           today={today}
         />
+
+        {/* Motivation goal lives on Home now (self-contained, localStorage). */}
+        <EmotionalGoalOnboarding lang={lang} />
 
         <p className="text-center text-xs text-muted-foreground break-all">{user.email}</p>
       </Screen>

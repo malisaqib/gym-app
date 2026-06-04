@@ -5,31 +5,22 @@ import { listContainer, listItem } from "@/lib/motion";
 import { Card } from "@/components/ui/Card";
 import BottomNav from "@/components/BottomNav";
 import MealCoach from "./MealCoach";
-import EmotionalGoalOnboarding from "./EmotionalGoalOnboarding";
 import DesiFoodEstimator from "./DesiFoodEstimator";
-import BudgetFitnessMode from "./BudgetFitnessMode";
-import EatNextAdvisor from "./EatNextAdvisor";
-import WeeklyCheckIn from "./WeeklyCheckIn";
-import ProgressTracker from "./ProgressTracker";
 import type { Lang } from "@/lib/database.types";
 
 /**
- * Phase 1 — Coach dashboard shell (visual only).
+ * Coach dashboard (the "Eat" tab).
  *
- * Lays out the coach landing: welcome, today's focus, quick actions, and the
- * feature sections. The "Ask the coach" section embeds the existing MealCoach
- * (its AI logic is untouched). Goal / check-in / progress show friendly empty
- * states for now; their real components get wired in later phases.
- *
- * Copy is intentionally encouraging, habit-based, and non-judgmental — no
- * appearance framing, no good/bad-food language.
+ * Focused on food decisions: the AI "What should I eat?" coach + a meal
+ * estimator. Goal lives on Home, budget in Settings, check-ins/progress in the
+ * Progress tab. Encouraging, habit-based, non-judgmental copy.
  */
 
 const T = {
   hi: { en: "Salam", roman_urdu: "Salam" },
   welcomeLine: {
-    en: "Your coach is here — one small, doable step at a time.",
-    roman_urdu: "Aap ka coach yahan hai — ek chhota, asaan step ek baar mein.",
+    en: "Let's sort out food — simple, doable, no judgment.",
+    roman_urdu: "Chalein khane ko asaan banayein — bina judgment.",
   },
   focusTitle: { en: "Today's focus", roman_urdu: "Aaj ka focus" },
   focusBody: {
@@ -38,24 +29,7 @@ const T = {
       "Har meal mein protein, khaane se pehle thora pani, aur ek choti walk. Consistency hi sab kuch hai.",
   },
   qEat: { en: "What should I eat next?", roman_urdu: "Ab kya khaon?" },
-  qGoal: { en: "Update my goal", roman_urdu: "Goal update karein" },
-  qCheckin: { en: "Weekly check-in", roman_urdu: "Weekly check-in" },
-  qProgress: { en: "View progress", roman_urdu: "Progress dekhein" },
-  goalTitle: { en: "Your goal", roman_urdu: "Aap ka goal" },
-  goalEmpty: {
-    en: "Set a goal so your coach can personalise advice. Coming up in this update.",
-    roman_urdu: "Goal set karein taake coach personalize kar sake. Is update mein aa raha hai.",
-  },
-  checkinTitle: { en: "Weekly check-in", roman_urdu: "Weekly check-in" },
-  checkinEmpty: {
-    en: "Your weekly check-in will live here — energy, sleep, and consistency, not just the scale.",
-    roman_urdu: "Yahan weekly check-in hoga — energy, neend, aur consistency, sirf wazan nahi.",
-  },
-  progressTitle: { en: "Your progress", roman_urdu: "Aap ki progress" },
-  progressEmpty: {
-    en: "Complete your first weekly check-in to see your progress.",
-    roman_urdu: "Pehla weekly check-in mukammal karein, phir progress dikhegi.",
-  },
+  qEstimate: { en: "Estimate a meal", roman_urdu: "Meal estimate karein" },
 } satisfies Record<string, Record<Lang, string>>;
 
 export default function CoachDashboard({ lang, name }: { lang: Lang; name: string | null }) {
@@ -68,15 +42,12 @@ export default function CoachDashboard({ lang, name }: { lang: Lang; name: strin
 
   const actions = [
     { id: "coach", emoji: "🍽️", label: t("qEat") },
-    { id: "goal", emoji: "🎯", label: t("qGoal") },
-    { id: "checkin", emoji: "📝", label: t("qCheckin") },
-    { id: "progress", emoji: "📈", label: t("qProgress") },
+    { id: "estimate", emoji: "🔢", label: t("qEstimate") },
   ];
 
   return (
     <>
       <main className="mx-auto flex min-h-screen max-w-md flex-col gap-5 px-4 pb-28 pt-8">
-        {/* Header block animates in as a gentle stagger */}
         <motion.div variants={listContainer} initial="hidden" animate="show" className="flex flex-col gap-5">
           <motion.div variants={listItem}>
             <Card className="p-5">
@@ -110,39 +81,14 @@ export default function CoachDashboard({ lang, name }: { lang: Lang; name: strin
           </motion.div>
         </motion.div>
 
-        {/* Ask the coach — the existing meal advisor, embedded (logic unchanged) */}
+        {/* Ask the coach — AI meal advisor (logic unchanged) */}
         <section id="coach" className="scroll-mt-4">
           <MealCoach lang={lang} />
         </section>
 
-        {/* Eat next — Phase 5: instant, offline pick from your options (no AI) */}
-        <section id="eatnext" className="scroll-mt-4">
-          <EatNextAdvisor lang={lang} />
-        </section>
-
-        {/* Goal — Phase 2: motivation/emotional goal (self-contained, localStorage) */}
-        <section id="goal" className="scroll-mt-4">
-          <EmotionalGoalOnboarding lang={lang} />
-        </section>
-
-        {/* Estimate — Phase 3: desi food estimator (static, dataset-driven) */}
+        {/* Meal estimator — dataset-backed (western + desi), friendly ranges */}
         <section id="estimate" className="scroll-mt-4">
           <DesiFoodEstimator lang={lang} />
-        </section>
-
-        {/* Budget — Phase 4: realistic, repeatable meals on a student budget */}
-        <section id="budget" className="scroll-mt-4">
-          <BudgetFitnessMode lang={lang} />
-        </section>
-
-        {/* Weekly check-in — Phase 6 */}
-        <section id="checkin" className="scroll-mt-4">
-          <WeeklyCheckIn lang={lang} />
-        </section>
-
-        {/* Progress + streak — Phase 7 & 8 */}
-        <section id="progress" className="scroll-mt-4">
-          <ProgressTracker lang={lang} />
         </section>
       </main>
       <BottomNav />
