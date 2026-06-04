@@ -1,0 +1,124 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { createClient } from "@/lib/supabase/server";
+import { calculateTargets } from "@/lib/nutrition/engine";
+import { mapRelatableGoal } from "@/lib/onboarding/goals";
+import type {
+  Experience,
+  FoodPreference,
+  Lang,
+  RelatableGoalKey,
+  Sex,
+  Timeline,
+  TrainingLocation,
+} from "@/lib/database.types";
+
+/**
+ * Edit the basic details collected at onboarding, from Settings.
+ *
+ * We re-validate everything (never trust the client) and, since body stats /
+ * goal / training days drive the numbers, we re-run the SAME pure calorie engine
+ * used at onboarding so the daily targets stay correct. Nothing here uses AI.
+ */
+
+const SEXES: Sex[] = ["male", "female"];
+const EXPERIENCES: Experience[] = ["beginner", "intermediate", "advanced"];
+const TIMELINES: Timeline[] = ["no_deadline", "4_weeks", "8_weeks", "12_weeks"];
+const LOCATIONS: TrainingLocation[] = ["home", "gym", "both"];
+const FOODS: FoodPreference[] = ["normal_desi", "high_protein", "budget", "hostel_student", "veg_limited"];
+const LANGS: Lang[] = ["en", "roman_urdu"];
+const GOAL_KEYS: RelatableGoalKey[] = [
+  "wedding_event",
+  "shirt_look",
+  "belly_fat",
+  "skinny_bulk",
+  "sports",
+  "general",
+  "gym_start",
+];
+
+export interface ProfileEditInput {
+  fullName: string;
+  relatableGoal: RelatableGoalKey;
+  timeline: Timeline;
+  trainingLocation: TrainingLocation;
+  foodPreference: FoodPreference;
+  sex: Sex;
+  age: number;
+  heightCm: number;
+  weightKg: number;
+  trainingDays: number;
+  experience: Experience;
+  preferredLanguage: Lang;
+}
+
+type Result =
+  | { ok: true; calorieTarget: number; proteinTargetG: number }
+  | { ok: false; error: string };
+
+export async function updateProfile(input: ProfileEditInput): Promise<Result> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const age = Number(input.age);
+  const heightCm = Number(input.heightCm);
+  const weightKg = Number(input.weightKg);
+  const trainingDays = Number(input.trainingDays);
+
+  const valid =
+    SEXES.includes(input.sex) &&
+    EXPERIENCES.includes(input.experience) &&
+    TIMELINES.includes(input.timeline) &&
+    LOCATIONS.includes(input.trainingLocation) &&
+    FOODS.includes(input.foodPreference) &&
+    LANGS.includes(input.preferredLanguage) &&
+    GOAL_KEYS.includes(input.relatableGoal) &&
+    Number.isFinite(age) && age >= 13 && age <= 99 &&
+    Number.isFinite(heightCm) && heightCm >= 120 && heightCm <= 230 &&
+    Number.isFinite(weightKg) && weightKg >= 30 && weightKg <= 250 &&
+    Number.isInteger(trainingDays) && trainingDays >= 0 && trainingDays <= 7;
+
+  if (!valid) return { ok: false, error: "Some values look off — please check and try again." };
+
+  const goalDef = mapRelatableGoal(input.relatableGoal);
+  const result = calculateTargets({
+    sex: input.sex,
+    age,
+    heightCm,
+    weightKg,
+    trainingDays,
+    goal: goalDef.goal,
+  });
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({
+      full_name: input.fullName.trim().slice(0, 80) || null,
+      goal: goalDef.goal,
+      relatable_goal: input.relatableGoal,
+      timeline: input.timeline,
+      training_location: input.trainingLocation,
+      food_preference: input.foodPreference,
+      sex: input.sex,
+      age,
+      height_cm: heightCm,
+      weight_kg: weightKg,
+      training_days: trainingDays,
+      experience: input.experience,
+      calorie_target: result.calorieTarget,
+      protein_target_g: result.proteinTargetG,
+      preferred_language: input.preferredLanguage,
+    })
+    .eq("id", user.id);
+
+  if (error) return { ok: false, error: error.message };
+
+  // Other screens read these — refresh their cached renders.
+  revalidatePath("/dashboard");
+  revalidatePath("/settings");
+  return { ok: true, calorieTarget: result.calorieTarget, proteinTargetG: result.proteinTargetG };
+}

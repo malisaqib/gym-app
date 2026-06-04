@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
+import { haptic } from "@/lib/haptics";
 
 // Fixed bottom tab bar for the signed-in app. Active tab gets a soft pill behind
 // its icon + the primary colour. Respects the iOS home-indicator safe area.
@@ -25,6 +26,7 @@ export default function BottomNav() {
             <Link
               key={tab.href}
               href={tab.href}
+              onPointerDown={() => haptic("tap")}
               className="group flex min-h-[44px] flex-1 flex-col items-center gap-1 py-2 transition-transform active:scale-[0.92]"
             >
               <span

@@ -6,6 +6,8 @@ import { listContainer, listItem, spring } from "@/lib/motion";
 import type { WorkoutLog } from "@/lib/database.types";
 import type { ExerciseHistory } from "@/lib/workouts/history";
 import { suggestProgression } from "@/lib/workouts/progression";
+import { haptic } from "@/lib/haptics";
+import { Sheet } from "@/components/ui/Sheet";
 import type { ProgramDay, ProgramExercise, WeeklyProgram } from "@/lib/workouts/generator";
 import type { TrainingEmphasis, TrainingSetup as TrainingSetupData } from "@/lib/workouts/trainingSetup";
 import { logSet, deleteSet } from "./actions";
@@ -250,7 +252,8 @@ function ExerciseCard({
   const [reps, setReps] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const [panel, setPanel] = useState<"none" | "how" | "ask">("none");
+  const [showHow, setShowHow] = useState(false);
+  const [askOpen, setAskOpen] = useState(false);
   const [swapping, setSwapping] = useState(false);
   const [swapError, setSwapError] = useState<string | null>(null);
 
@@ -283,6 +286,7 @@ function ExerciseCard({
     onAdd(optimistic);
     setReps("");
     setError(null);
+    haptic("success");
 
     const res = await logSet({ exerciseName: exercise.name, reps: n, setNumber, date: today });
     if (res.ok) onReplace(tempId, res.item);
@@ -305,8 +309,10 @@ function ExerciseCard({
     setSwapError(null);
     const res = await swapExercise(setup, exercise.pattern, dayExerciseIds);
     setSwapping(false);
-    if (res.ok) onSwapped(res.exercise);
-    else setSwapError(res.error);
+    if (res.ok) {
+      haptic("success");
+      onSwapped(res.exercise);
+    } else setSwapError(res.error);
   }
 
   return (
@@ -344,20 +350,18 @@ function ExerciseCard({
 
       {/* How to / Swap / Ask */}
       <div className="mt-3 flex flex-wrap gap-2">
-        <SmallButton active={panel === "how"} onClick={() => setPanel(panel === "how" ? "none" : "how")}>
+        <SmallButton active={showHow} onClick={() => setShowHow((v) => !v)}>
           How to
         </SmallButton>
         <SmallButton onClick={doSwap} disabled={swapping || !setup}>
           {swapping ? "Swapping…" : "↺ Swap"}
         </SmallButton>
-        <SmallButton active={panel === "ask"} onClick={() => setPanel(panel === "ask" ? "none" : "ask")}>
-          Ask coach
-        </SmallButton>
+        <SmallButton onClick={() => setAskOpen(true)}>Ask coach</SmallButton>
       </div>
       {swapError && <p className="mt-1 text-xs text-muted-foreground">{swapError}</p>}
 
       <AnimatePresence initial={false}>
-        {panel === "how" && (
+        {showHow && (
           <motion.div
             key="how"
             initial={{ opacity: 0, height: 0 }}
@@ -378,19 +382,12 @@ function ExerciseCard({
             )}
           </motion.div>
         )}
-
-        {panel === "ask" && (
-          <motion.div
-            key="ask"
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden"
-          >
-            <AskCoach exercise={exercise} level={level} emphasis={emphasis} />
-          </motion.div>
-        )}
       </AnimatePresence>
+
+      {/* AI coach in an iOS-style bottom sheet. */}
+      <Sheet open={askOpen} onClose={() => setAskOpen(false)} title={`Ask about ${exercise.name}`}>
+        <AskCoach exercise={exercise} level={level} emphasis={emphasis} />
+      </Sheet>
 
       {/* Today's sets */}
       {history.today.length > 0 && (
@@ -514,6 +511,7 @@ function SmallButton({
   return (
     <button
       type="button"
+      onPointerDown={() => haptic("tap")}
       onClick={onClick}
       disabled={disabled}
       aria-pressed={active}

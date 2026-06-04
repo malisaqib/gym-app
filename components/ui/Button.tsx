@@ -1,4 +1,7 @@
+"use client";
+
 import { cn } from "@/lib/cn";
+import { haptic } from "@/lib/haptics";
 
 type Variant = "primary" | "secondary" | "ghost" | "destructive";
 type Size = "sm" | "md" | "lg";
@@ -32,11 +35,17 @@ export function Button({
   className,
   children,
   disabled,
+  onPointerDown,
   ...props
 }: ButtonProps) {
   return (
     <button
       {...props}
+      onPointerDown={(e) => {
+        // Light tap on press-down for an instant, native feel (Android; iOS no-ops).
+        if (!(disabled || loading)) haptic("tap");
+        onPointerDown?.(e);
+      }}
       disabled={disabled || loading}
       className={cn(
         // `active:scale` gives an instant pressed feel; touch-manipulation removes

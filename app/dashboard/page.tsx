@@ -6,7 +6,7 @@ import { signOut } from "@/app/auth/actions";
 import type { FoodLog, Lang, Profile } from "@/lib/database.types";
 import { RELATABLE_GOALS } from "@/lib/onboarding/goals";
 import { Screen } from "@/components/ui/Screen";
-import { PageHeader } from "@/components/ui/PageHeader";
+import { LargeTitle } from "@/components/ui/LargeTitle";
 import { Button } from "@/components/ui/Button";
 import BottomNav from "@/components/BottomNav";
 import FoodLogger from "./FoodLogger";
@@ -52,7 +52,7 @@ export default async function DashboardPage() {
   return (
     <>
       <Screen>
-        <PageHeader
+        <LargeTitle
           title="Today"
           subtitle={goalLabel ? `🎯 ${goalLabel}` : undefined}
           action={
