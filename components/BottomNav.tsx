@@ -10,7 +10,7 @@ const TABS = [
   { href: "/dashboard", label: "Home", emoji: "🏠" },
   { href: "/coach", label: "Eat", emoji: "🍽️" },
   { href: "/workout", label: "Train", emoji: "🏋️" },
-  { href: "/weight", label: "Weight", emoji: "⚖️" },
+  { href: "/weight", label: "Progress", emoji: "📈" },
 ];
 
 export default function BottomNav() {

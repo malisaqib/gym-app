@@ -7,7 +7,6 @@ import { listContainer, listItem } from "@/lib/motion";
 import { toSeries, weightChange, latestWeight } from "@/lib/weight/series";
 import { logWeight, deleteWeight } from "./actions";
 import WeightChart from "./WeightChart";
-import BottomNav from "@/components/BottomNav";
 
 export default function WeightTracker({
   startWeight,
@@ -73,9 +72,8 @@ export default function WeightTracker({
   );
 
   return (
-    <>
-      <main className="mx-auto flex min-h-screen max-w-md flex-col gap-5 px-4 pb-24 pt-8">
-        <h1 className="font-display text-2xl font-semibold text-foreground">Weight</h1>
+    <section className="flex flex-col gap-5">
+      <h2 className="font-display text-xl font-semibold text-foreground">Weight</h2>
 
         {/* Summary */}
         <div className="flex items-end gap-4">
@@ -149,8 +147,6 @@ export default function WeightTracker({
             </motion.div>
           </div>
         )}
-      </main>
-      <BottomNav />
-    </>
+    </section>
   );
 }
