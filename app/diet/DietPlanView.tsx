@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { listContainer, listItem } from "@/lib/motion";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { haptic } from "@/lib/haptics";
 import { toast } from "@/lib/toast";
 import { generateDietPlan, swapDietMeal } from "./actions";
@@ -66,20 +67,25 @@ export default function DietPlanView({
   const [busy, setBusy] = useState(false);
   const [swapping, setSwapping] = useState<MealSlot | null>(null);
   const [habits, setHabits] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function generate() {
     if (busy) return;
     setBusy(true);
+    setError(null);
     try {
       const res = await generateDietPlan(notes);
       if (res.ok) {
         setPlan(res.plan);
         haptic("success");
       } else {
+        setError(res.error);
         toast.error(res.error);
       }
     } catch {
-      toast.error("Couldn't build a plan. Please try again.");
+      const message = "Couldn't build a plan. Please try again.";
+      setError(message);
+      toast.error(message);
     } finally {
       setBusy(false);
     }
@@ -88,16 +94,20 @@ export default function DietPlanView({
   async function swap(slot: MealSlot) {
     if (swapping) return;
     setSwapping(slot);
+    setError(null);
     try {
       const res = await swapDietMeal(slot);
       if (res.ok) {
         setPlan(res.plan);
         haptic("tap");
       } else {
+        setError(res.error);
         toast.error(res.error);
       }
     } catch {
-      toast.error("Couldn't swap that meal. Please try again.");
+      const message = "Couldn't swap that meal. Please try again.";
+      setError(message);
+      toast.error(message);
     } finally {
       setSwapping(null);
     }
@@ -147,9 +157,23 @@ export default function DietPlanView({
             </button>
           )}
         </div>
+        {error && <p className="text-sm text-destructive">{error}</p>}
       </Card>
 
-      {!plan && (
+      {/* First-time generation: show meal skeletons instead of a frozen screen. */}
+      {busy && !plan && (
+        <div className="flex flex-col gap-3">
+          {[0, 1, 2, 3].map((i) => (
+            <Card key={i} className="space-y-2 p-4">
+              <Skeleton className="h-5 w-28" />
+              <Skeleton className="h-10 w-full rounded-field" />
+              <Skeleton className="h-10 w-2/3 rounded-field" />
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {!plan && !busy && (
         <Card className="flex flex-col items-center gap-1 p-8 text-center">
           <span className="text-2xl">🍽️</span>
           <p className="text-sm font-medium text-foreground">{t("emptyTitle")}</p>
@@ -193,7 +217,7 @@ export default function DietPlanView({
                         onPointerDown={() => haptic("tap")}
                         onClick={() => swap(meal.slot)}
                         disabled={swapping === meal.slot}
-                        className="rounded-pill border border-border bg-background px-3 py-1 text-xs font-medium text-foreground transition hover:border-primary/50 active:scale-[0.97] disabled:opacity-40"
+                        className="min-h-[32px] shrink-0 rounded-pill border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition hover:border-primary/50 active:scale-[0.97] disabled:opacity-40"
                       >
                         {swapping === meal.slot ? "…" : `↻ ${t("swap")}`}
                       </button>

@@ -60,7 +60,14 @@ export interface ProfileEditInput {
 }
 
 type Result =
-  | { ok: true; calorieTarget: number; proteinTargetG: number; targetDate: string | null }
+  | {
+      ok: true;
+      calorieTarget: number;
+      proteinTargetG: number;
+      carbTargetG: number;
+      fatTargetG: number;
+      targetDate: string | null;
+    }
   | { ok: false; error: string };
 
 export async function updateProfile(input: ProfileEditInput): Promise<Result> {
@@ -140,5 +147,12 @@ export async function updateProfile(input: ProfileEditInput): Promise<Result> {
   // Other screens read these — refresh their cached renders.
   revalidatePath("/dashboard");
   revalidatePath("/settings");
-  return { ok: true, calorieTarget: plan.calorieTarget, proteinTargetG: plan.proteinTargetG, targetDate };
+  return {
+    ok: true,
+    calorieTarget: plan.calorieTarget,
+    proteinTargetG: plan.proteinTargetG,
+    carbTargetG: plan.carbTargetG,
+    fatTargetG: plan.fatTargetG,
+    targetDate,
+  };
 }

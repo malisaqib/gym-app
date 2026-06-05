@@ -41,6 +41,8 @@ export interface ProfileDetails {
   preferredLanguage: Lang;
   calorieTarget: number | null;
   proteinTargetG: number | null;
+  carbTargetG: number | null;
+  fatTargetG: number | null;
   targetDate: string | null;
 }
 
@@ -156,6 +158,8 @@ export default function ProfileEditor({ initial }: { initial: ProfileDetails }) 
         ...draft,
         calorieTarget: res.calorieTarget,
         proteinTargetG: res.proteinTargetG,
+        carbTargetG: res.carbTargetG,
+        fatTargetG: res.fatTargetG,
         targetDate: res.targetDate,
       });
       setEditing(false);
@@ -201,9 +205,16 @@ export default function ProfileEditor({ initial }: { initial: ProfileDetails }) 
         </dl>
 
         {details.calorieTarget != null && details.proteinTargetG != null && (
-          <div className="flex gap-2">
-            <Target label="Daily calories" value={`${details.calorieTarget}`} />
-            <Target label="Daily protein" value={`${details.proteinTargetG} g`} />
+          <div className="space-y-1.5">
+            <div className="flex gap-2">
+              <Target label="Daily calories" value={`${details.calorieTarget}`} />
+              <Target label="Daily protein" value={`${details.proteinTargetG} g`} />
+            </div>
+            {details.carbTargetG != null && details.fatTargetG != null && (
+              <p className="text-center text-xs text-muted-foreground">
+                Carbs ~{details.carbTargetG} g · Fat ~{details.fatTargetG} g
+              </p>
+            )}
           </div>
         )}
         {details.targetDate && details.goalWeightKg !== details.weightKg && (
