@@ -25,6 +25,44 @@
 - Phase 8 — Relatable goal-based onboarding (see Core product direction below).
 - Phase 9 — "What should I eat next?" AI meal coach (see below).
 
+## Nutrition & diet workstream (post-MVP, shipped)
+A focused 5-phase pass on the numbers + meal planning. Architecture rule held
+throughout: **all math and food selection is deterministic and unit-tested; AI
+is only a layer on top for interpretation/phrasing/variety, never the source of
+the numbers.** The food RAG pipeline (lib/food/*, lib/embeddings.ts, migrations
+0005–0007) was not modified.
+
+- **Calorie-engine fix** — TDEE now uses an honest WHOLE-DAY activity level
+  (sedentary..extra), not training-day count (which double-counted activity and
+  ran ~300–450 kcal high). Goal targets are fixed pace deltas (0.25 kg/wk = −250,
+  0.5 = −500), capped at ≤0.75 kg/wk loss, with hard floors (1500 M / 1200 F).
+  Pure + tested: `lib/nutrition/engine.ts`.
+- **Target-weight goal setting** — onboarding/Settings collect goal weight +
+  pace + activity; a deterministic planner derives direction, caps pace
+  (≤0.75 kg/wk AND ≤1% bodyweight/wk loss; ≤0.5 gain), and outputs calories,
+  macros (protein 1.6 g/kg, fat ~27.5%, rest carbs), and an estimated target
+  date. `lib/nutrition/goalPlan.ts`.
+- **Adaptive recalculation** — logging a weight recomputes targets from the new
+  weight (flips to maintenance at goal); a deterministic plateau detector
+  surfaces a supportive, non-shaming nudge on the Progress tab (AI only phrases
+  it). `lib/nutrition/adapt.ts`, `lib/coach/adaptCoach.ts`.
+- **Diet-plan generator** — a real generator (not hardcoded menus): splits the
+  day across meals and greedily selects from an owned, annotated meal catalog to
+  hit calories + protein while respecting prefs (veg / excluded foods / cuisine
+  lean). Regenerate + swap; "Focus on habits" view; plans persist in Supabase.
+  AI parses free-text prefs only (with a deterministic fallback).
+  `lib/diet/{foodCatalog,planner}.ts`, `lib/coach/dietCoach.ts`, `app/diet/*`.
+
+### Pending migrations (run in Supabase SQL editor, in order)
+- `supabase/migrations/0009_goal_targets.sql` — goal/activity/macro columns + a
+  re-run-safe backfill that corrects existing users' old (too-high) targets.
+- `supabase/migrations/0010_meal_plans.sql` — saved diet plans table.
+
+### Deferred (flagged, not built)
+- Budget-aware diet selection / "protein-per-rupee" (needs a food-cost layer).
+- One-time "confirm your activity" prompt for existing users after the backfill.
+- One-tap "apply" on the plateau nudge (currently advisory only).
+
 ## Core product direction
 The app should feel like a friendly desi fitness coach — not a strict medical app
 or a western bodybuilding tracker. Tone: friendly, simple, no shame, Roman Urdu
