@@ -77,6 +77,13 @@ export interface Profile {
   experience: Experience | null;
   calorie_target: number | null;
   protein_target_g: number | null;
+  // Target-weight goal setting (migration 0009) — all additive / nullable.
+  activity_level: ActivityLevel | null;
+  goal_weight_kg: number | null;
+  weekly_pace_kg: number | null; // signed (loss negative)
+  target_date: string | null; // date (YYYY-MM-DD)
+  carb_target_g: number | null;
+  fat_target_g: number | null;
   preferred_language: Lang;
   relatable_goal: RelatableGoalKey | null;
   timeline: Timeline | null;

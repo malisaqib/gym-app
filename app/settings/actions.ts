@@ -2,9 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { calculateTargets } from "@/lib/nutrition/engine";
-import { mapRelatableGoal } from "@/lib/onboarding/goals";
+import { buildGoalPlan, targetDateFrom, type PaceChoice } from "@/lib/nutrition/goalPlan";
+import { getLocalToday } from "@/lib/date";
 import type {
+  ActivityLevel,
   Experience,
   FoodPreference,
   Lang,
@@ -15,11 +16,11 @@ import type {
 } from "@/lib/database.types";
 
 /**
- * Edit the basic details collected at onboarding, from Settings.
+ * Edit the details collected at onboarding, from Settings.
  *
- * We re-validate everything (never trust the client) and, since body stats /
- * goal / training days drive the numbers, we re-run the SAME pure calorie engine
- * used at onboarding so the daily targets stay correct. Nothing here uses AI.
+ * We re-validate everything (never trust the client) and re-run the SAME
+ * deterministic goal plan used at onboarding (current vs goal weight + pace ->
+ * safe pace, calories, macros, timeline) so the targets stay correct. No AI.
  */
 
 const SEXES: Sex[] = ["male", "female"];
@@ -28,6 +29,8 @@ const TIMELINES: Timeline[] = ["no_deadline", "4_weeks", "8_weeks", "12_weeks"];
 const LOCATIONS: TrainingLocation[] = ["home", "gym", "both"];
 const FOODS: FoodPreference[] = ["normal_desi", "high_protein", "budget", "hostel_student", "veg_limited"];
 const LANGS: Lang[] = ["en", "roman_urdu"];
+const ACTIVITY_LEVELS: ActivityLevel[] = ["sedentary", "light", "moderate", "very", "extra"];
+const PACE_VALUES = [0.25, 0.5, 0.75];
 const GOAL_KEYS: RelatableGoalKey[] = [
   "wedding_event",
   "shirt_look",
@@ -48,13 +51,16 @@ export interface ProfileEditInput {
   age: number;
   heightCm: number;
   weightKg: number;
+  goalWeightKg: number;
+  activityLevel: ActivityLevel;
+  weeklyPace: PaceChoice;
   trainingDays: number;
   experience: Experience;
   preferredLanguage: Lang;
 }
 
 type Result =
-  | { ok: true; calorieTarget: number; proteinTargetG: number }
+  | { ok: true; calorieTarget: number; proteinTargetG: number; targetDate: string | null }
   | { ok: false; error: string };
 
 export async function updateProfile(input: ProfileEditInput): Promise<Result> {
@@ -67,7 +73,9 @@ export async function updateProfile(input: ProfileEditInput): Promise<Result> {
   const age = Number(input.age);
   const heightCm = Number(input.heightCm);
   const weightKg = Number(input.weightKg);
+  const goalWeightKg = Number(input.goalWeightKg);
   const trainingDays = Number(input.trainingDays);
+  const pace: PaceChoice = input.weeklyPace === "recommended" ? "recommended" : Number(input.weeklyPace);
 
   const valid =
     SEXES.includes(input.sex) &&
@@ -77,29 +85,34 @@ export async function updateProfile(input: ProfileEditInput): Promise<Result> {
     FOODS.includes(input.foodPreference) &&
     LANGS.includes(input.preferredLanguage) &&
     GOAL_KEYS.includes(input.relatableGoal) &&
+    ACTIVITY_LEVELS.includes(input.activityLevel) &&
+    (pace === "recommended" || PACE_VALUES.includes(pace)) &&
     Number.isFinite(age) && age >= 13 && age <= 99 &&
     Number.isFinite(heightCm) && heightCm >= 120 && heightCm <= 230 &&
     Number.isFinite(weightKg) && weightKg >= 30 && weightKg <= 250 &&
+    Number.isFinite(goalWeightKg) && goalWeightKg >= 30 && goalWeightKg <= 250 &&
     Number.isInteger(trainingDays) && trainingDays >= 0 && trainingDays <= 7;
 
   if (!valid) return { ok: false, error: "Some values look off — please check and try again." };
 
-  const goalDef = mapRelatableGoal(input.relatableGoal);
-  // training days no longer feeds the calorie engine (see onboarding/actions.ts);
-  // it's still saved below for the workout module.
-  const result = calculateTargets({
+  const plan = buildGoalPlan({
     sex: input.sex,
     age,
     heightCm,
-    weightKg,
-    goal: goalDef.goal,
+    currentWeightKg: weightKg,
+    goalWeightKg,
+    activityLevel: input.activityLevel,
+    pace,
   });
+
+  const today = await getLocalToday();
+  const targetDate = targetDateFrom(today, plan.weeksToGoal);
 
   const { error } = await supabase
     .from("profiles")
     .update({
       full_name: input.fullName.trim().slice(0, 80) || null,
-      goal: goalDef.goal,
+      goal: plan.goal,
       relatable_goal: input.relatableGoal,
       timeline: input.timeline,
       training_location: input.trainingLocation,
@@ -108,10 +121,16 @@ export async function updateProfile(input: ProfileEditInput): Promise<Result> {
       age,
       height_cm: heightCm,
       weight_kg: weightKg,
+      goal_weight_kg: goalWeightKg,
+      activity_level: input.activityLevel,
+      weekly_pace_kg: plan.weeklyPaceKg,
+      target_date: targetDate,
       training_days: trainingDays,
       experience: input.experience,
-      calorie_target: result.calorieTarget,
-      protein_target_g: result.proteinTargetG,
+      calorie_target: plan.calorieTarget,
+      protein_target_g: plan.proteinTargetG,
+      carb_target_g: plan.carbTargetG,
+      fat_target_g: plan.fatTargetG,
       preferred_language: input.preferredLanguage,
     })
     .eq("id", user.id);
@@ -121,5 +140,5 @@ export async function updateProfile(input: ProfileEditInput): Promise<Result> {
   // Other screens read these — refresh their cached renders.
   revalidatePath("/dashboard");
   revalidatePath("/settings");
-  return { ok: true, calorieTarget: result.calorieTarget, proteinTargetG: result.proteinTargetG };
+  return { ok: true, calorieTarget: plan.calorieTarget, proteinTargetG: plan.proteinTargetG, targetDate };
 }

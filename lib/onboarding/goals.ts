@@ -152,9 +152,14 @@ export function buildPlanGuidance(input: {
   foodPreference: string;
   trainingLocation: string;
   lang: Lang;
+  // When a goal weight is set, the direction comes from current-vs-goal weight,
+  // not the relatable goal. Pass it so the diet sentence can't contradict the
+  // actual target (e.g. relatable "bulk" but the user set a lower goal weight).
+  goalOverride?: Goal;
 }): PlanGuidance {
   const lang = input.lang;
   const def = mapRelatableGoal(input.relatableGoalKey);
+  const planGoal = input.goalOverride ?? def.goal;
   const timeline = (TIMELINE_LABEL[input.timeline as Timeline] ?? TIMELINE_LABEL.no_deadline)[lang];
   const diet =
     (DIET_BY_PREFERENCE[input.foodPreference as FoodPreference] ?? DIET_BY_PREFERENCE.normal_desi)[lang];
@@ -171,8 +176,8 @@ export function buildPlanGuidance(input: {
 
   const explanation =
     lang === "roman_urdu"
-      ? `${GOAL_PLAN[def.goal].roman_urdu} Timeline: ${timeline}. Ye plan seedha aap ke goal (${def.focus.roman_urdu}) se juda hai — ahista ahista, bina kisi shame ke.`
-      : `${GOAL_PLAN[def.goal].en} Timeline: ${timeline}. This plan connects straight to your goal (${def.focus.en}) — steady and beginner-friendly.`;
+      ? `${GOAL_PLAN[planGoal].roman_urdu} Timeline: ${timeline}. Ye plan seedha aap ke goal (${def.focus.roman_urdu}) se juda hai — ahista ahista, bina kisi shame ke.`
+      : `${GOAL_PLAN[planGoal].en} Timeline: ${timeline}. This plan connects straight to your goal (${def.focus.en}) — steady and beginner-friendly.`;
 
   return { headline, diet, workout, explanation };
 }

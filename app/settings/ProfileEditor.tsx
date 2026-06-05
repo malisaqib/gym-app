@@ -6,6 +6,7 @@ import { haptic } from "@/lib/haptics";
 import { toast } from "@/lib/toast";
 import { RELATABLE_GOALS } from "@/lib/onboarding/goals";
 import type {
+  ActivityLevel,
   Experience,
   FoodPreference,
   Lang,
@@ -14,6 +15,7 @@ import type {
   Timeline,
   TrainingLocation,
 } from "@/lib/database.types";
+import type { PaceChoice } from "@/lib/nutrition/goalPlan";
 import { updateProfile, type ProfileEditInput } from "./actions";
 
 /**
@@ -31,11 +33,15 @@ export interface ProfileDetails {
   age: number;
   heightCm: number;
   weightKg: number;
+  goalWeightKg: number;
+  activityLevel: ActivityLevel;
+  pace: PaceChoice;
   trainingDays: number;
   experience: Experience;
   preferredLanguage: Lang;
   calorieTarget: number | null;
   proteinTargetG: number | null;
+  targetDate: string | null;
 }
 
 const GOAL_OPTS = RELATABLE_GOALS.map((g) => ({ value: g.key, label: g.label.en }));
@@ -71,6 +77,29 @@ const LANG_OPTS: { value: Lang; label: string }[] = [
   { value: "roman_urdu", label: "Roman Urdu" },
 ];
 const DAY_OPTS = Array.from({ length: 8 }, (_, n) => ({ value: n, label: String(n) }));
+const ACT_OPTS: { value: ActivityLevel; label: string }[] = [
+  { value: "sedentary", label: "Mostly sitting" },
+  { value: "light", label: "Lightly active" },
+  { value: "moderate", label: "Moderately active" },
+  { value: "very", label: "Very active" },
+  { value: "extra", label: "On feet all day" },
+];
+const PACE_OPTS: { value: PaceChoice; label: string }[] = [
+  { value: "recommended", label: "Recommended" },
+  { value: 0.25, label: "0.25 kg/wk" },
+  { value: 0.5, label: "0.5 kg/wk" },
+  { value: 0.75, label: "0.75 kg/wk" },
+];
+
+function formatDate(iso: string): string {
+  try {
+    return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" }).format(
+      new Date(`${iso}T00:00:00`)
+    );
+  } catch {
+    return iso;
+  }
+}
 
 function goalLabel(key: RelatableGoalKey): string {
   return RELATABLE_GOALS.find((g) => g.key === key)?.label.en ?? key;
@@ -107,6 +136,9 @@ export default function ProfileEditor({ initial }: { initial: ProfileDetails }) 
       age: draft.age,
       heightCm: draft.heightCm,
       weightKg: draft.weightKg,
+      goalWeightKg: draft.goalWeightKg,
+      activityLevel: draft.activityLevel,
+      weeklyPace: draft.pace,
       trainingDays: draft.trainingDays,
       experience: draft.experience,
       preferredLanguage: draft.preferredLanguage,
@@ -120,7 +152,12 @@ export default function ProfileEditor({ initial }: { initial: ProfileDetails }) 
       }
       haptic("success");
       toast.success("Profile updated");
-      setDetails({ ...draft, calorieTarget: res.calorieTarget, proteinTargetG: res.proteinTargetG });
+      setDetails({
+        ...draft,
+        calorieTarget: res.calorieTarget,
+        proteinTargetG: res.proteinTargetG,
+        targetDate: res.targetDate,
+      });
       setEditing(false);
     } catch {
       const message = "Couldn't save your changes. Please try again.";
@@ -157,6 +194,8 @@ export default function ProfileEditor({ initial }: { initial: ProfileDetails }) 
           <Stat label="Sex" value={details.sex === "male" ? "Male" : "Female"} />
           <Stat label="Height" value={`${details.heightCm} cm`} />
           <Stat label="Weight" value={`${details.weightKg} kg`} />
+          <Stat label="Goal weight" value={`${details.goalWeightKg} kg`} />
+          <Stat label="Activity" value={ACT_OPTS.find((o) => o.value === details.activityLevel)?.label ?? "—"} />
           <Stat label="Training" value={`${details.trainingDays} days/wk`} />
           <Stat label="Experience" value={EXP_OPTS.find((o) => o.value === details.experience)?.label ?? "—"} />
         </dl>
@@ -166,6 +205,11 @@ export default function ProfileEditor({ initial }: { initial: ProfileDetails }) 
             <Target label="Daily calories" value={`${details.calorieTarget}`} />
             <Target label="Daily protein" value={`${details.proteinTargetG} g`} />
           </div>
+        )}
+        {details.targetDate && details.goalWeightKg !== details.weightKg && (
+          <p className="text-sm text-muted-foreground">
+            🎯 On track for {details.goalWeightKg} kg by {formatDate(details.targetDate)}.
+          </p>
         )}
         <p className="text-xs text-muted-foreground">
           Editing your stats or goal updates these targets automatically.
@@ -207,7 +251,18 @@ export default function ProfileEditor({ initial }: { initial: ProfileDetails }) 
         <Field label="Weight (kg)">
           <NumberInput value={draft.weightKg} min={30} max={250} onChange={(n) => patch({ weightKg: n })} />
         </Field>
+        <Field label="Goal weight (kg)">
+          <NumberInput value={draft.goalWeightKg} min={30} max={250} onChange={(n) => patch({ goalWeightKg: n })} />
+        </Field>
       </div>
+
+      <Field label="Daily activity (outside workouts)">
+        <Chips options={ACT_OPTS} selected={draft.activityLevel} onSelect={(v) => patch({ activityLevel: v })} />
+      </Field>
+
+      <Field label="Goal pace">
+        <Chips options={PACE_OPTS} selected={draft.pace} onSelect={(v) => patch({ pace: v })} />
+      </Field>
 
       <Field label="Training days / week">
         <Chips options={DAY_OPTS} selected={draft.trainingDays} onSelect={(v) => patch({ trainingDays: v })} />

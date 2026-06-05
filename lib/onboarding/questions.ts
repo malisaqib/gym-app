@@ -1,4 +1,5 @@
 import type {
+  ActivityLevel,
   Experience,
   FoodPreference,
   Lang,
@@ -8,6 +9,7 @@ import type {
   Timeline,
   TrainingLocation,
 } from "@/lib/database.types";
+import type { PaceChoice } from "@/lib/nutrition/goalPlan";
 import { RELATABLE_GOALS } from "@/lib/onboarding/goals";
 
 /**
@@ -129,6 +131,54 @@ export const STEPS: Step[] = [
     max: 250,
   },
   {
+    // Target weight (Phase 2). Same number = "just maintain".
+    key: "goalWeightKg",
+    kind: "number",
+    prompt: {
+      en: "What weight would you like to reach?",
+      roman_urdu: "Aap kaunsa wazan reach karna chahte hain?",
+    },
+    placeholder: {
+      en: "kg, e.g. 65 — or your current weight to maintain",
+      roman_urdu: "kg, masalan 65 — ya mojooda wazan maintain karne ke liye",
+    },
+    min: 30,
+    max: 250,
+  },
+  {
+    // Desired pace. "Recommended" lets the engine pick a healthy rate; any value
+    // that's too fast gets safely capped (with an explanation) on the server.
+    key: "weeklyPace",
+    kind: "choice",
+    prompt: {
+      en: "How fast would you like to go?",
+      roman_urdu: "Aap kitni tezi se badlna chahte hain?",
+    },
+    options: [
+      { value: "recommended", label: { en: "Recommended pace", roman_urdu: "Recommended raftaar" } },
+      { value: "0.25", label: { en: "Steady · 0.25 kg/week", roman_urdu: "Aaram se · 0.25 kg/hafta" } },
+      { value: "0.5", label: { en: "Standard · 0.5 kg/week", roman_urdu: "Standard · 0.5 kg/hafta" } },
+      { value: "0.75", label: { en: "Faster · 0.75 kg/week", roman_urdu: "Tez · 0.75 kg/hafta" } },
+    ],
+  },
+  {
+    // Honest WHOLE-DAY activity (not training count) — this drives the calorie
+    // engine's activity factor. See lib/nutrition/engine.ts.
+    key: "activityLevel",
+    kind: "choice",
+    prompt: {
+      en: "Outside workouts, how active is your day?",
+      roman_urdu: "Workout ke ilawa, aap ka din kitna active hota hai?",
+    },
+    options: [
+      { value: "sedentary", label: { en: "Mostly sitting", roman_urdu: "Zyada tar baithay" } },
+      { value: "light", label: { en: "Lightly active", roman_urdu: "Thoda active" } },
+      { value: "moderate", label: { en: "Moderately active", roman_urdu: "Theek thaak active" } },
+      { value: "very", label: { en: "Very active", roman_urdu: "Bohat active" } },
+      { value: "extra", label: { en: "On my feet all day", roman_urdu: "Saara din chalte phirte" } },
+    ],
+  },
+  {
     key: "trainingLocation",
     kind: "choice",
     prompt: {
@@ -216,6 +266,28 @@ export const UI: Record<string, Localized> = {
     roman_urdu:
       "Main ne aap ki calories ko mehfooz had par rakha, zyada kami nahi ki — ahista ahista behtar hai.",
   },
+  // Goal-weight summary (placeholders {w}=goal kg, {d}=date, {c}=kcal, {p}=protein,
+  // {carb}/{fat}=grams) — filled in the component.
+  goalReachLine: {
+    en: "To reach {w} kg by {d},",
+    roman_urdu: "{w} kg tak {d} tak pohanchne ke liye,",
+  },
+  goalAim: {
+    en: "aim for about {c} kcal/day and {p} g protein.",
+    roman_urdu: "rozana takriban {c} kcal aur {p} g protein ka target rakhein.",
+  },
+  maintainLine: {
+    en: "To stay around {w} kg, aim for about {c} kcal/day and {p} g protein.",
+    roman_urdu: "~{w} kg ke aas paas rehne ke liye, rozana takriban {c} kcal aur {p} g protein.",
+  },
+  macrosLine: {
+    en: "Carbs ~{carb} g · Fat ~{fat} g",
+    roman_urdu: "Carbs ~{carb} g · Fat ~{fat} g",
+  },
+  paceCappedNote: {
+    en: "I eased your pace to a safe, steady rate to keep it healthy.",
+    roman_urdu: "Sehat ke liye main ne raftaar ko mehfooz, steady level par rakha.",
+  },
   goToDashboard: { en: "See my dashboard", roman_urdu: "Mera dashboard dekhein" },
   genericError: {
     en: "Something went wrong saving your answers. Please try again.",
@@ -235,6 +307,9 @@ export interface OnboardingInput {
   age: number;
   heightCm: number;
   weightKg: number;
+  goalWeightKg: number; // target weight (same as current = maintain)
+  weeklyPace: PaceChoice; // "recommended" or an absolute kg/week magnitude
+  activityLevel: ActivityLevel; // honest whole-day activity
   trainingLocation: TrainingLocation;
   trainingDays: number;
   experience: Experience;

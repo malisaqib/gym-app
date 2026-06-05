@@ -11,6 +11,7 @@ import {
   type OnboardingInput,
 } from "@/lib/onboarding/questions";
 import type {
+  ActivityLevel,
   Experience,
   FoodPreference,
   Lang,
@@ -20,7 +21,7 @@ import type {
   Timeline,
   TrainingLocation,
 } from "@/lib/database.types";
-import type { TargetResult } from "@/lib/nutrition/engine";
+import type { GoalPlan, PaceChoice } from "@/lib/nutrition/goalPlan";
 import type { PlanGuidance } from "@/lib/onboarding/goals";
 import { saveOnboarding } from "./actions";
 
@@ -37,12 +38,42 @@ export default function Onboarding({ initialLang }: { initialLang: Lang }) {
   const [draft, setDraft] = useState(""); // text/number/select being typed/picked
   const [inputError, setInputError] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>("asking");
-  const [result, setResult] = useState<TargetResult | null>(null);
+  const [plan, setPlan] = useState<GoalPlan | null>(null);
+  const [targetDate, setTargetDate] = useState<string | null>(null);
+  const [goalWeightKg, setGoalWeightKg] = useState<number | null>(null);
   const [guidance, setGuidance] = useState<PlanGuidance | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   // Translate a localized string into the current language.
   const tr = (loc: Localized) => loc[lang];
+
+  // Replace {placeholders} in a localized summary string.
+  const fill = (s: string, vals: Record<string, string | number>) =>
+    s.replace(/\{(\w+)\}/g, (_, k) => String(vals[k] ?? ""));
+
+  function formatDate(iso: string): string {
+    try {
+      return new Intl.DateTimeFormat("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      }).format(new Date(`${iso}T00:00:00`));
+    } catch {
+      return iso;
+    }
+  }
+
+  // One-line "to reach X by [date], aim for ~N kcal / ~P g protein" (or maintain).
+  function goalSummary(p: GoalPlan): string {
+    const w = goalWeightKg ?? "";
+    if (p.direction === "maintain" || !targetDate) {
+      return fill(tr(UI.maintainLine), { w, c: p.calorieTarget, p: p.proteinTargetG });
+    }
+    return `${fill(tr(UI.goalReachLine), { w, d: formatDate(targetDate) })} ${fill(tr(UI.goalAim), {
+      c: p.calorieTarget,
+      p: p.proteinTargetG,
+    })}`;
+  }
 
   const currentStep = STEPS[index];
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -83,6 +114,9 @@ export default function Onboarding({ initialLang }: { initialLang: Lang }) {
       age: Number(a.age),
       heightCm: Number(a.heightCm),
       weightKg: Number(a.weightKg),
+      goalWeightKg: Number(a.goalWeightKg),
+      weeklyPace: (a.weeklyPace === "recommended" ? "recommended" : Number(a.weeklyPace)) as PaceChoice,
+      activityLevel: a.activityLevel as ActivityLevel,
       trainingLocation: a.trainingLocation as TrainingLocation,
       trainingDays: Number(a.trainingDays),
       experience: a.experience as Experience,
@@ -94,7 +128,9 @@ export default function Onboarding({ initialLang }: { initialLang: Lang }) {
 
     const res = await saveOnboarding(payload);
     if (res.ok) {
-      setResult(res.result);
+      setPlan(res.plan);
+      setTargetDate(res.targetDate);
+      setGoalWeightKg(res.goalWeightKg);
       setGuidance(res.guidance);
       setStatus("done");
     } else {
@@ -170,15 +206,20 @@ export default function Onboarding({ initialLang }: { initialLang: Lang }) {
 
         {status === "submitting" && <BotBubble>{tr(UI.calculating)}</BotBubble>}
 
-        {status === "done" && result && (
+        {status === "done" && plan && (
           <BotBubble>
             <p className="mb-2">{tr(UI.doneTitle)}</p>
             <div className="flex gap-2">
-              <TargetPill label={tr(UI.caloriesLabel)} value={`${result.calorieTarget}`} unit="kcal" />
-              <TargetPill label={tr(UI.proteinLabel)} value={`${result.proteinTargetG}`} unit="g" />
+              <TargetPill label={tr(UI.caloriesLabel)} value={`${plan.calorieTarget}`} unit="kcal" />
+              <TargetPill label={tr(UI.proteinLabel)} value={`${plan.proteinTargetG}`} unit="g" />
             </div>
-            {result.safetyFloorApplied && (
-              <p className="mt-2 text-xs text-warning">{tr(UI.safetyNote)}</p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              {fill(tr(UI.macrosLine), { carb: plan.carbTargetG, fat: plan.fatTargetG })}
+            </p>
+            <p className="mt-2 text-sm text-foreground">{goalSummary(plan)}</p>
+            {plan.paceCapped && <p className="mt-2 text-xs text-warning">{tr(UI.paceCappedNote)}</p>}
+            {plan.safetyFloorApplied && (
+              <p className="mt-1 text-xs text-warning">{tr(UI.safetyNote)}</p>
             )}
           </BotBubble>
         )}
