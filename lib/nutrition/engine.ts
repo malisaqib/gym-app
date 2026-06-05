@@ -1,18 +1,26 @@
-import type { Goal, Sex } from "@/lib/database.types";
+import type { ActivityLevel, Goal, Sex } from "@/lib/database.types";
 
 /**
- * Phase 2 — Calorie & protein engine.
+ * Calorie & protein engine.
  *
  * Pure, deterministic functions (no database, no AI, no randomness) so they are
- * easy to read and test. The math is based on the Mifflin–St Jeor equation, the
- * most widely used and accurate resting-metabolism formula for healthy adults.
+ * easy to read and to unit-test. Based on the Mifflin–St Jeor equation, the most
+ * widely used resting-metabolism formula for healthy adults.
  *
- * Flow:  inputs -> BMR -> TDEE (maintenance) -> calorie target for the goal
- *                                            -> protein target for the goal
+ * Flow:  inputs -> BMR -> TDEE (maintenance) -> calorie target for the goal/pace
+ *                                            -> protein target
  *
- * Nutrition target logic should be reviewed by a qualified dietitian before
- * public launch. Safety floors below cap deficits to steer toward gradual,
- * sustainable change — never extreme cuts.
+ * ACTIVITY CONVENTION (read before changing anything):
+ *   TDEE = BMR * activityFactor, where activityFactor comes from ONE honest
+ *   question about the user's WHOLE-DAY activity (sedentary..extra). Training is
+ *   treated as ALREADY INCLUDED in that choice, so we NEVER add workout/exercise
+ *   calories on top of TDEE — that would double-count.
+ *   (This is the bug we fixed: the factor used to be inferred from training days
+ *   alone, which over-stated maintenance by ~300–450 kcal for the typical user
+ *   who trains a few times a week but is otherwise sedentary.)
+ *
+ * Nutrition targets should be reviewed by a qualified dietitian before public
+ * launch. The pace cap + hard floors below keep changes gradual — never extreme.
  */
 
 export interface TargetInput {
@@ -20,35 +28,54 @@ export interface TargetInput {
   age: number; // years
   heightCm: number;
   weightKg: number;
-  trainingDays: number; // training sessions per week, 0–7
   goal: Goal;
+  // Honest whole-day activity level. Optional for now: until the onboarding
+  // activity question is wired (next phase), callers omit it and we assume a
+  // conservative "light" baseline rather than inferring activity from training.
+  activityLevel?: ActivityLevel;
+  // Signed weekly weight-change pace in kg (negative = loss, positive = gain).
+  // Optional: if omitted we derive a sensible default from `goal`.
+  weeklyPaceKg?: number;
 }
 
 export interface TargetResult {
   bmr: number; // resting calories burned per day
   activityFactor: number; // multiplier applied to BMR to get TDEE
   tdee: number; // maintenance calories per day
-  calorieTarget: number; // recommended daily calories for the goal
+  calorieTarget: number; // recommended daily calories for the goal/pace
   proteinTargetG: number; // recommended daily protein in grams
-  safetyFloorApplied: boolean; // true if we raised calories for safety
+  weeklyPaceKg: number; // the pace actually used (after safe capping)
+  paceCapped: boolean; // true if we reduced an unsafe requested pace
+  safetyFloorApplied: boolean; // true if we raised calories to the hard floor
 }
 
 // --- Tunable assumptions (kept here so they're visible and easy to change) --
 
-// Activity multipliers (BMR -> TDEE). Standard Mifflin–St Jeor factors.
-const ACTIVITY_FACTORS = {
-  sedentary: 1.2,
-  light: 1.375,
-  moderate: 1.55,
-  veryActive: 1.725,
-  extraActive: 1.9,
-} as const;
+// Whole-day activity multipliers (BMR -> TDEE). Standard Mifflin–St Jeor.
+export const ACTIVITY_FACTORS: Record<ActivityLevel, number> = {
+  sedentary: 1.2, // desk job, little movement, little/no exercise
+  light: 1.375, // light activity or light exercise ~1–3 days/week
+  moderate: 1.55, // moderate activity or exercise ~3–5 days/week
+  very: 1.725, // very active or hard exercise ~6–7 days/week
+  extra: 1.9, // very hard exercise AND a physical job
+};
 
-// Calorie adjustment per goal, relative to maintenance (TDEE).
-const GOAL_CALORIE_MULTIPLIER: Record<Goal, number> = {
-  lose_fat: 0.8, // ~20% deficit
-  maintain: 1.0,
-  gain_muscle: 1.1, // ~10% lean surplus (beginners shouldn't bulk hard)
+// Interim default until the onboarding activity question lands (see TargetInput).
+const DEFAULT_ACTIVITY: ActivityLevel = "light";
+
+// Energy convention: ~7000 kcal per kg of body mass (a common practical figure),
+// so 0.5 kg/week ≈ 500 kcal/day and 0.25 kg/week ≈ 250 kcal/day.
+const KCAL_PER_KG = 7000;
+
+// Safe weekly pace caps. Loss is capped hard; gain kept slow for beginners.
+const MAX_LOSS_PACE_KG = 0.75; // never apply a steeper deficit than this
+const MAX_GAIN_PACE_KG = 0.5;
+
+// Default weekly pace per practical goal, when the caller doesn't specify one.
+const DEFAULT_PACE_KG: Record<Goal, number> = {
+  lose_fat: -0.5, // mild, sustainable deficit (~500 kcal/day)
+  maintain: 0,
+  gain_muscle: 0.25, // slow lean gain (~250 kcal/day) — beginners shouldn't bulk hard
 };
 
 // Protein per kg of bodyweight per goal. Higher in a deficit to protect muscle.
@@ -58,8 +85,8 @@ const GOAL_PROTEIN_PER_KG: Record<Goal, number> = {
   gain_muscle: 1.8,
 };
 
-// The absolute lowest daily calories we will ever recommend, by sex. A backstop
-// against unsafe crash diets.
+// The absolute lowest daily calories we will ever recommend, by sex. A hard
+// backstop against unsafe crash diets.
 const HARD_CALORIE_FLOOR: Record<Sex, number> = {
   female: 1200,
   male: 1500,
@@ -75,18 +102,26 @@ export function calculateBmr(input: TargetInput): number {
   return sex === "male" ? base + 5 : base - 161;
 }
 
-/** Map weekly training sessions to an activity multiplier. */
-export function activityFactorForTrainingDays(trainingDays: number): number {
-  if (trainingDays <= 0) return ACTIVITY_FACTORS.sedentary;
-  if (trainingDays <= 2) return ACTIVITY_FACTORS.light;
-  if (trainingDays <= 4) return ACTIVITY_FACTORS.moderate;
-  if (trainingDays <= 6) return ACTIVITY_FACTORS.veryActive;
-  return ACTIVITY_FACTORS.extraActive; // 7 days/week
+/** Whole-day activity multiplier for an honest activity level. */
+export function activityFactor(level: ActivityLevel): number {
+  return ACTIVITY_FACTORS[level];
 }
 
 /** Total Daily Energy Expenditure = maintenance calories. */
 export function calculateTdee(input: TargetInput): number {
-  return calculateBmr(input) * activityFactorForTrainingDays(input.trainingDays);
+  const level = input.activityLevel ?? DEFAULT_ACTIVITY;
+  return calculateBmr(input) * activityFactor(level);
+}
+
+/**
+ * Clamp a requested weekly pace into the safe range:
+ *   loss capped at -MAX_LOSS_PACE_KG, gain capped at +MAX_GAIN_PACE_KG.
+ * Returns the safe pace and whether we had to change it (so the UI can explain).
+ */
+export function capWeeklyPace(weeklyPaceKg: number): { pace: number; capped: boolean } {
+  if (weeklyPaceKg < -MAX_LOSS_PACE_KG) return { pace: -MAX_LOSS_PACE_KG, capped: true };
+  if (weeklyPaceKg > MAX_GAIN_PACE_KG) return { pace: MAX_GAIN_PACE_KG, capped: true };
+  return { pace: weeklyPaceKg, capped: false };
 }
 
 /** Protein target in grams, rounded to the nearest 5g. */
@@ -96,28 +131,31 @@ export function calculateProteinTarget(input: TargetInput): number {
 }
 
 /**
- * Daily calorie target for the goal, with safety floors so we never recommend
- * an unsafe deficit:
- *   - never below the user's BMR (don't eat under what your body burns at rest)
- *   - never below the absolute hard floor (1200 kcal F / 1500 kcal M)
- *
- * Returns whether a floor had to be applied, so the UI can explain it.
+ * Daily calorie target = TDEE + (capped weekly pace converted to a kcal/day
+ * delta), then floored at the hard minimum so we never recommend an unsafe cut.
+ * Returns the pace actually used plus the two safety flags.
  */
 export function calculateCalorieTarget(input: TargetInput): {
   calorieTarget: number;
+  weeklyPaceKg: number;
+  paceCapped: boolean;
   safetyFloorApplied: boolean;
 } {
-  const bmr = calculateBmr(input);
-  const tdee = bmr * activityFactorForTrainingDays(input.trainingDays);
+  const tdee = calculateTdee(input);
 
-  const raw = tdee * GOAL_CALORIE_MULTIPLIER[input.goal];
+  const requested = input.weeklyPaceKg ?? DEFAULT_PACE_KG[input.goal];
+  const { pace, capped } = capWeeklyPace(requested);
 
-  // Floors realistically only bite for the fat-loss goal (the one that cuts).
-  const floor = Math.max(bmr, HARD_CALORIE_FLOOR[input.sex]);
+  const dailyDelta = (pace * KCAL_PER_KG) / 7; // -0.5 kg/wk -> -500 kcal/day
+  const raw = tdee + dailyDelta;
+
+  const floor = HARD_CALORIE_FLOOR[input.sex];
   const safe = Math.max(raw, floor);
 
   return {
     calorieTarget: roundTo(safe, 10),
+    weeklyPaceKg: pace,
+    paceCapped: capped,
     safetyFloorApplied: safe > raw, // we had to raise calories for safety
   };
 }
@@ -125,16 +163,20 @@ export function calculateCalorieTarget(input: TargetInput): {
 /** Run the whole engine: inputs -> calorie & protein targets. */
 export function calculateTargets(input: TargetInput): TargetResult {
   const bmr = calculateBmr(input);
-  const activityFactor = activityFactorForTrainingDays(input.trainingDays);
-  const tdee = bmr * activityFactor;
-  const { calorieTarget, safetyFloorApplied } = calculateCalorieTarget(input);
+  const level = input.activityLevel ?? DEFAULT_ACTIVITY;
+  const factor = activityFactor(level);
+  const tdee = bmr * factor;
+  const { calorieTarget, weeklyPaceKg, paceCapped, safetyFloorApplied } =
+    calculateCalorieTarget(input);
 
   return {
     bmr: Math.round(bmr),
-    activityFactor,
+    activityFactor: factor,
     tdee: Math.round(tdee),
     calorieTarget,
     proteinTargetG: calculateProteinTarget(input),
+    weeklyPaceKg,
+    paceCapped,
     safetyFloorApplied,
   };
 }

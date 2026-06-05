@@ -9,6 +9,9 @@
 export type Goal = "lose_fat" | "maintain" | "gain_muscle";
 export type Sex = "male" | "female";
 export type Experience = "beginner" | "intermediate" | "advanced";
+// Honest whole-day activity level — drives the calorie engine's activity factor.
+// (Stored on profiles as an additive column from Phase 2 onward.)
+export type ActivityLevel = "sedentary" | "light" | "moderate" | "very" | "extra";
 export type FoodLogSource = "llm" | "manual" | "corrected";
 export type Lang = "en" | "roman_urdu";
 

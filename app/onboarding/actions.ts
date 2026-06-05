@@ -56,12 +56,15 @@ export async function saveOnboarding(input: OnboardingInput): Promise<SaveResult
   // --- Map relatable goal -> practical goal, then run the engine ------------
   const goalDef = mapRelatableGoal(input.relatableGoal);
 
+  // NOTE: training days no longer feeds the calorie engine (that double-counted
+  // activity). Until the honest activity question is added, the engine assumes a
+  // conservative "light" baseline. trainingDays is still saved for the workout
+  // module below.
   const result = calculateTargets({
     sex: input.sex,
     age,
     heightCm,
     weightKg,
-    trainingDays,
     goal: goalDef.goal,
   });
 

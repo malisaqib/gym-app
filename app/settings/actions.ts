@@ -85,12 +85,13 @@ export async function updateProfile(input: ProfileEditInput): Promise<Result> {
   if (!valid) return { ok: false, error: "Some values look off — please check and try again." };
 
   const goalDef = mapRelatableGoal(input.relatableGoal);
+  // training days no longer feeds the calorie engine (see onboarding/actions.ts);
+  // it's still saved below for the workout module.
   const result = calculateTargets({
     sex: input.sex,
     age,
     heightCm,
     weightKg,
-    trainingDays,
     goal: goalDef.goal,
   });
 
