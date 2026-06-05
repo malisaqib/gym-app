@@ -53,6 +53,7 @@ export async function updateSession(request: NextRequest) {
     path.startsWith("/onboarding") ||
     path.startsWith("/workout") ||
     path.startsWith("/coach") ||
+    path.startsWith("/diet") ||
     path.startsWith("/weight");
 
   if (isProtected && !user) {

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { motion } from "motion/react";
 import { listContainer, listItem } from "@/lib/motion";
 import { Card } from "@/components/ui/Card";
@@ -30,6 +31,11 @@ const T = {
   },
   qEat: { en: "What should I eat next?", roman_urdu: "Ab kya khaon?" },
   qEstimate: { en: "Estimate a meal", roman_urdu: "Meal estimate karein" },
+  planTitle: { en: "Build my day's plan", roman_urdu: "Mere din ka plan banayein" },
+  planBody: {
+    en: "A simple, repeatable day of meals built around your targets.",
+    roman_urdu: "Aap ke targets ke mutabiq ek asaan, repeatable din ka plan.",
+  },
 } satisfies Record<string, Record<Lang, string>>;
 
 export default function CoachDashboard({ lang, name }: { lang: Lang; name: string | null }) {
@@ -64,6 +70,18 @@ export default function CoachDashboard({ lang, name }: { lang: Lang; name: strin
               <p className="text-xs font-medium uppercase tracking-wide text-primary">{t("focusTitle")}</p>
               <p className="mt-1.5 text-sm leading-relaxed text-foreground">{t("focusBody")}</p>
             </Card>
+          </motion.div>
+
+          <motion.div variants={listItem}>
+            <Link href="/diet" className="block">
+              <Card className="flex items-center justify-between p-5 transition hover:border-primary/40 hover:bg-muted active:scale-[0.99]">
+                <div>
+                  <h2 className="font-display text-base font-semibold text-foreground">🥗 {t("planTitle")}</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">{t("planBody")}</p>
+                </div>
+                <span className="shrink-0 text-muted-foreground">→</span>
+              </Card>
+            </Link>
           </motion.div>
 
           <motion.div variants={listItem} className="grid grid-cols-2 gap-2">
