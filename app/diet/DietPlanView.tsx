@@ -256,9 +256,14 @@ export default function DietPlanView({
           {!habits ? (
             <Card className="p-4">
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("daily")}</p>
-              <div className="mt-1 flex gap-4">
-                <Total value={plan.totalCalories} target={plan.calorieTarget} unit={t("cal")} />
-                <Total value={plan.totalProtein} target={plan.proteinTargetG} unit={`g ${t("protein")}`} />
+              <div className="mt-1 flex gap-5">
+                <TargetBar value={plan.totalCalories} target={plan.calorieTarget} unit={t("cal")} />
+                <TargetBar
+                  value={plan.totalProtein}
+                  target={plan.proteinTargetG}
+                  unit={`g ${t("protein")}`}
+                  tone={plan.proteinShort ? "warn" : "ok"}
+                />
               </div>
               {plan.proteinShort && (
                 <p className="mt-2 rounded-field bg-muted px-3 py-2 text-xs text-warning">
@@ -282,7 +287,7 @@ export default function DietPlanView({
                         {SLOT_LABEL[meal.slot][lang]}
                         {!habits && (
                           <span className="ml-2 text-xs font-normal text-muted-foreground tabular-nums">
-                            {meal.calories} {t("cal")} · {meal.protein} g
+                            {meal.calories}/{meal.budget} {t("cal")} · {meal.protein} g
                           </span>
                         )}
                       </h3>
@@ -351,17 +356,32 @@ function Chip({
   );
 }
 
-function Total({ value, target, unit }: { value: number; target: number; unit: string }) {
+// Value-vs-target with a thin progress bar. `tone` lets protein show "short"
+// (amber) vs on-track (primary). Bars cap at 100% (calories never exceed target).
+function TargetBar({
+  value,
+  target,
+  unit,
+  tone = "ok",
+}: {
+  value: number;
+  target: number;
+  unit: string;
+  tone?: "ok" | "warn";
+}) {
   const pct = target > 0 ? Math.min(100, Math.round((value / target) * 100)) : 0;
+  const bar = tone === "warn" ? "bg-warning" : "bg-primary";
   return (
     <div className="flex-1">
       <p className="font-display text-lg font-semibold tabular-nums text-foreground">
         {value}
         <span className="text-sm font-normal text-muted-foreground"> / {target}</span>
+        <span className="ml-1 text-xs font-normal text-muted-foreground">{unit}</span>
       </p>
-      <p className="text-xs text-muted-foreground">
-        {unit} · {pct}%
-      </p>
+      <div className="mt-1 h-1.5 w-full overflow-hidden rounded-pill bg-muted">
+        <div className={`h-full rounded-pill ${bar} transition-all`} style={{ width: `${pct}%` }} />
+      </div>
+      <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">{pct}% of target</p>
     </div>
   );
 }
