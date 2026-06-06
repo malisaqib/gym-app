@@ -70,6 +70,23 @@ export function filterFromPreference(
   };
 }
 
+/**
+ * Combine several preference sources into one filter (later parts win for
+ * regionFocus; vegetarian is true if ANY part sets it; excludeTags are unioned).
+ * Used to layer: food preference + onboarding notes + the diet screen's choices.
+ */
+export function mergeFilters(...parts: Partial<DietFilter>[]): DietFilter {
+  let vegetarian = false;
+  let regionFocus: DietFilter["regionFocus"] = null;
+  const tags = new Set<string>();
+  for (const p of parts) {
+    if (p.vegetarian) vegetarian = true;
+    if (p.regionFocus) regionFocus = p.regionFocus;
+    (p.excludeTags ?? []).forEach((t) => tags.add(t));
+  }
+  return { vegetarian, regionFocus, excludeTags: [...tags] };
+}
+
 // --- core -------------------------------------------------------------------
 
 function allowed(food: CatalogFood, filter: DietFilter): boolean {

@@ -9,7 +9,6 @@ import type {
   Timeline,
   TrainingLocation,
 } from "@/lib/database.types";
-import type { PaceChoice } from "@/lib/nutrition/goalPlan";
 import { RELATABLE_GOALS } from "@/lib/onboarding/goals";
 
 /**
@@ -146,22 +145,6 @@ export const STEPS: Step[] = [
     max: 250,
   },
   {
-    // Desired pace. "Recommended" lets the engine pick a healthy rate; any value
-    // that's too fast gets safely capped (with an explanation) on the server.
-    key: "weeklyPace",
-    kind: "choice",
-    prompt: {
-      en: "How fast would you like to go?",
-      roman_urdu: "Aap kitni tezi se badlna chahte hain?",
-    },
-    options: [
-      { value: "recommended", label: { en: "Recommended pace", roman_urdu: "Recommended raftaar" } },
-      { value: "0.25", label: { en: "Steady · 0.25 kg/week", roman_urdu: "Aaram se · 0.25 kg/hafta" } },
-      { value: "0.5", label: { en: "Standard · 0.5 kg/week", roman_urdu: "Standard · 0.5 kg/hafta" } },
-      { value: "0.75", label: { en: "Faster · 0.75 kg/week", roman_urdu: "Tez · 0.75 kg/hafta" } },
-    ],
-  },
-  {
     // Honest WHOLE-DAY activity (not training count) — this drives the calorie
     // engine's activity factor. See lib/nutrition/engine.ts.
     key: "activityLevel",
@@ -285,8 +268,8 @@ export const UI: Record<string, Localized> = {
     roman_urdu: "Carbs ~{carb} g · Fat ~{fat} g",
   },
   paceCappedNote: {
-    en: "I eased your pace to a safe, steady rate to keep it healthy.",
-    roman_urdu: "Sehat ke liye main ne raftaar ko mehfooz, steady level par rakha.",
+    en: "That timeline would need a faster-than-healthy pace, so I set a safe one — here's the realistic date.",
+    roman_urdu: "Is timeline ke liye sehatmand se zyada tez raftaar chahiye thi, is liye main ne mehfooz raftaar rakhi — ye haqeeqi tareekh hai.",
   },
   goToDashboard: { en: "See my dashboard", roman_urdu: "Mera dashboard dekhein" },
   genericError: {
@@ -308,7 +291,6 @@ export interface OnboardingInput {
   heightCm: number;
   weightKg: number;
   goalWeightKg: number; // target weight (same as current = maintain)
-  weeklyPace: PaceChoice; // "recommended" or an absolute kg/week magnitude
   activityLevel: ActivityLevel; // honest whole-day activity
   trainingLocation: TrainingLocation;
   trainingDays: number;

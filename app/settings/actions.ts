@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { buildGoalPlan, targetDateFrom, type PaceChoice } from "@/lib/nutrition/goalPlan";
+import { buildGoalPlan, paceFromTimeline, targetDateFrom } from "@/lib/nutrition/goalPlan";
 import { getLocalToday } from "@/lib/date";
 import type {
   ActivityLevel,
@@ -30,7 +30,6 @@ const LOCATIONS: TrainingLocation[] = ["home", "gym", "both"];
 const FOODS: FoodPreference[] = ["normal_desi", "high_protein", "budget", "hostel_student", "veg_limited"];
 const LANGS: Lang[] = ["en", "roman_urdu"];
 const ACTIVITY_LEVELS: ActivityLevel[] = ["sedentary", "light", "moderate", "very", "extra"];
-const PACE_VALUES = [0.25, 0.5, 0.75];
 const GOAL_KEYS: RelatableGoalKey[] = [
   "wedding_event",
   "shirt_look",
@@ -53,7 +52,6 @@ export interface ProfileEditInput {
   weightKg: number;
   goalWeightKg: number;
   activityLevel: ActivityLevel;
-  weeklyPace: PaceChoice;
   trainingDays: number;
   experience: Experience;
   preferredLanguage: Lang;
@@ -82,7 +80,6 @@ export async function updateProfile(input: ProfileEditInput): Promise<Result> {
   const weightKg = Number(input.weightKg);
   const goalWeightKg = Number(input.goalWeightKg);
   const trainingDays = Number(input.trainingDays);
-  const pace: PaceChoice = input.weeklyPace === "recommended" ? "recommended" : Number(input.weeklyPace);
 
   const valid =
     SEXES.includes(input.sex) &&
@@ -93,7 +90,6 @@ export async function updateProfile(input: ProfileEditInput): Promise<Result> {
     LANGS.includes(input.preferredLanguage) &&
     GOAL_KEYS.includes(input.relatableGoal) &&
     ACTIVITY_LEVELS.includes(input.activityLevel) &&
-    (pace === "recommended" || PACE_VALUES.includes(pace)) &&
     Number.isFinite(age) && age >= 13 && age <= 99 &&
     Number.isFinite(heightCm) && heightCm >= 120 && heightCm <= 230 &&
     Number.isFinite(weightKg) && weightKg >= 30 && weightKg <= 250 &&
@@ -109,7 +105,7 @@ export async function updateProfile(input: ProfileEditInput): Promise<Result> {
     currentWeightKg: weightKg,
     goalWeightKg,
     activityLevel: input.activityLevel,
-    pace,
+    pace: paceFromTimeline(input.timeline, weightKg, goalWeightKg), // timeline drives pace
   });
 
   const today = await getLocalToday();

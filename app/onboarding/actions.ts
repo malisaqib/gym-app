@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { buildGoalPlan, targetDateFrom, type GoalPlan, type PaceChoice } from "@/lib/nutrition/goalPlan";
+import { buildGoalPlan, paceFromTimeline, targetDateFrom, type GoalPlan } from "@/lib/nutrition/goalPlan";
 import { getLocalToday } from "@/lib/date";
 import type { OnboardingInput } from "@/lib/onboarding/questions";
 import { buildPlanGuidance, type PlanGuidance } from "@/lib/onboarding/goals";
@@ -14,7 +14,6 @@ import type { ActivityLevel, Experience, Sex } from "@/lib/database.types";
 const SEXES: Sex[] = ["male", "female"];
 const EXPERIENCES: Experience[] = ["beginner", "intermediate", "advanced"];
 const ACTIVITY_LEVELS: ActivityLevel[] = ["sedentary", "light", "moderate", "very", "extra"];
-const PACE_VALUES = [0.25, 0.5, 0.75];
 
 type SaveResult =
   | { ok: true; plan: GoalPlan; targetDate: string | null; goalWeightKg: number; guidance: PlanGuidance }
@@ -45,13 +44,11 @@ export async function saveOnboarding(input: OnboardingInput): Promise<SaveResult
   const weightKg = Number(input.weightKg);
   const goalWeightKg = Number(input.goalWeightKg);
   const trainingDays = Number(input.trainingDays);
-  const pace: PaceChoice = input.weeklyPace === "recommended" ? "recommended" : Number(input.weeklyPace);
 
   const valid =
     SEXES.includes(input.sex) &&
     EXPERIENCES.includes(input.experience) &&
     ACTIVITY_LEVELS.includes(input.activityLevel) &&
-    (pace === "recommended" || PACE_VALUES.includes(pace)) &&
     Number.isFinite(age) && age >= 13 && age <= 99 &&
     Number.isFinite(heightCm) && heightCm >= 120 && heightCm <= 230 &&
     Number.isFinite(weightKg) && weightKg >= 30 && weightKg <= 250 &&
@@ -63,6 +60,7 @@ export async function saveOnboarding(input: OnboardingInput): Promise<SaveResult
   }
 
   // --- Deterministic goal plan (the direction, safe pace, calories + macros) -
+  // The chosen timeline drives the pace (re-capped safely inside buildGoalPlan).
   const plan = buildGoalPlan({
     sex: input.sex,
     age,
@@ -70,7 +68,7 @@ export async function saveOnboarding(input: OnboardingInput): Promise<SaveResult
     currentWeightKg: weightKg,
     goalWeightKg,
     activityLevel: input.activityLevel,
-    pace,
+    pace: paceFromTimeline(input.timeline, weightKg, goalWeightKg),
   });
 
   const today = await getLocalToday();

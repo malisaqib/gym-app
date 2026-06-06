@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { buildPlan, swapMeal, filterFromPreference, type DietPlan, type DietFilter } from "@/lib/diet/planner";
+import { buildPlan, swapMeal, filterFromPreference, mergeFilters, type DietPlan } from "@/lib/diet/planner";
 import { parsePreferences } from "@/lib/coach/dietCoach";
 import type { MealSlot } from "@/lib/diet/foodCatalog";
 import type { FoodPreference, Lang } from "@/lib/database.types";
@@ -26,12 +26,18 @@ export async function getDietPlan(): Promise<DietPlan | null> {
 }
 
 /**
- * Generate (or regenerate) a plan from the user's targets + preferences. With
- * free-text `notes` we parse new preferences (AI, with deterministic fallback);
- * without notes a plain regenerate keeps the existing preferences and just
- * varies the selection.
+ * Generate (or regenerate) a plan. The diet screen's choices (vegetarian +
+ * avoided foods) are AUTHORITATIVE — they're already seeded from the user's food
+ * preference + onboarding "avoid" note (see the page), so every earlier answer
+ * flows through. Free-text `notes` parse into ADDITIONAL restrictions (AI, with
+ * a deterministic fallback). A bare call (no choices) keeps the prior plan's
+ * preferences and just varies the selection.
  */
-export async function generateDietPlan(notes?: string): Promise<PlanResult> {
+export async function generateDietPlan(input?: {
+  notes?: string;
+  vegetarian?: boolean;
+  excludeTags?: string[];
+}): Promise<PlanResult> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -55,21 +61,26 @@ export async function generateDietPlan(notes?: string): Promise<PlanResult> {
     return { ok: false, error: "Set your goal first so I know your daily targets." };
   }
 
-  // Decide the filter: new notes -> parse; plain regenerate -> keep prior prefs.
-  const { data: existing } = await supabase
-    .from("meal_plans")
-    .select("plan")
-    .eq("user_id", user.id)
-    .maybeSingle();
+  const hasChoices =
+    !!input && (typeof input.vegetarian === "boolean" || !!input.excludeTags?.length || !!input.notes?.trim());
 
-  let filter: DietFilter;
-  if (notes && notes.trim()) {
-    const parsed = await parsePreferences(notes, profile?.preferred_language ?? "en");
-    filter = filterFromPreference(profile?.food_preference ?? null, parsed);
-  } else if (existing?.plan && (existing.plan as DietPlan).filter) {
-    filter = (existing.plan as DietPlan).filter;
+  let filter;
+  if (hasChoices) {
+    const fromNotes = input!.notes?.trim()
+      ? await parsePreferences(input!.notes, profile?.preferred_language ?? "en")
+      : {};
+    filter = mergeFilters(
+      { vegetarian: input!.vegetarian, excludeTags: input!.excludeTags },
+      fromNotes
+    );
   } else {
-    filter = filterFromPreference(profile?.food_preference ?? null);
+    // Bare regenerate: keep the existing plan's prefs, else fall back to profile.
+    const { data: existing } = await supabase
+      .from("meal_plans")
+      .select("plan")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    filter = (existing?.plan as DietPlan | undefined)?.filter ?? filterFromPreference(profile?.food_preference ?? null);
   }
 
   const plan = buildPlan({ calorieTarget, proteinTargetG, filter, seed: randomSeed() });

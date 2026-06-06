@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildPlan, swapMeal, filterFromPreference, type DietFilter } from "./planner.ts";
+import { buildPlan, swapMeal, filterFromPreference, mergeFilters, type DietFilter } from "./planner.ts";
 import { CATALOG_BY_ID } from "./foodCatalog.ts";
 
 const openFilter: DietFilter = { vegetarian: false, excludeTags: [], regionFocus: null };
@@ -64,6 +64,17 @@ test("swapMeal changes only the targeted meal", () => {
     swapped.totalCalories,
     swapped.meals.reduce((s, m) => s + m.calories, 0)
   );
+});
+
+test("mergeFilters unions excludes, ORs vegetarian, last regionFocus wins", () => {
+  const merged = mergeFilters(
+    { vegetarian: false, excludeTags: ["beef"] },
+    { excludeTags: ["beef", "fish"], regionFocus: "desi" },
+    { vegetarian: true }
+  );
+  assert.equal(merged.vegetarian, true);
+  assert.deepEqual([...merged.excludeTags].sort(), ["beef", "fish"]);
+  assert.equal(merged.regionFocus, "desi");
 });
 
 test("filterFromPreference maps veg_limited to vegetarian and merges extras", () => {

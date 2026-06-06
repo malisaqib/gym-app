@@ -15,7 +15,6 @@ import type {
   Timeline,
   TrainingLocation,
 } from "@/lib/database.types";
-import type { PaceChoice } from "@/lib/nutrition/goalPlan";
 import { updateProfile, type ProfileEditInput } from "./actions";
 
 /**
@@ -35,7 +34,6 @@ export interface ProfileDetails {
   weightKg: number;
   goalWeightKg: number;
   activityLevel: ActivityLevel;
-  pace: PaceChoice;
   trainingDays: number;
   experience: Experience;
   preferredLanguage: Lang;
@@ -86,13 +84,6 @@ const ACT_OPTS: { value: ActivityLevel; label: string }[] = [
   { value: "very", label: "Very active" },
   { value: "extra", label: "On feet all day" },
 ];
-const PACE_OPTS: { value: PaceChoice; label: string }[] = [
-  { value: "recommended", label: "Recommended" },
-  { value: 0.25, label: "0.25 kg/wk" },
-  { value: 0.5, label: "0.5 kg/wk" },
-  { value: 0.75, label: "0.75 kg/wk" },
-];
-
 function formatDate(iso: string): string {
   try {
     return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" }).format(
@@ -140,7 +131,6 @@ export default function ProfileEditor({ initial }: { initial: ProfileDetails }) 
       weightKg: draft.weightKg,
       goalWeightKg: draft.goalWeightKg,
       activityLevel: draft.activityLevel,
-      weeklyPace: draft.pace,
       trainingDays: draft.trainingDays,
       experience: draft.experience,
       preferredLanguage: draft.preferredLanguage,
@@ -269,10 +259,6 @@ export default function ProfileEditor({ initial }: { initial: ProfileDetails }) 
 
       <Field label="Daily activity (outside workouts)">
         <Chips options={ACT_OPTS} selected={draft.activityLevel} onSelect={(v) => patch({ activityLevel: v })} />
-      </Field>
-
-      <Field label="Goal pace">
-        <Chips options={PACE_OPTS} selected={draft.pace} onSelect={(v) => patch({ pace: v })} />
       </Field>
 
       <Field label="Training days / week">

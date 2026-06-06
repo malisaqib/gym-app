@@ -7,7 +7,6 @@ import { SupportResources } from "@/components/SupportResources";
 import BudgetFitnessMode from "@/app/coach/BudgetFitnessMode";
 import ProfileEditor, { type ProfileDetails } from "./ProfileEditor";
 import BottomNav from "@/components/BottomNav";
-import type { PaceChoice } from "@/lib/nutrition/goalPlan";
 import type { Lang, Profile } from "@/lib/database.types";
 
 // Protected by its own auth check (same pattern as other pages).
@@ -28,11 +27,6 @@ export default async function SettingsPage() {
 
   const lang = (profile?.preferred_language as Lang) ?? "en";
 
-  // Derive the pace CHOICE from the stored signed pace (we only persist the
-  // signed kg/week, not the original choice).
-  const paceMag = Math.round(Math.abs(profile?.weekly_pace_kg ?? 0) * 100) / 100;
-  const pace: PaceChoice = [0.25, 0.5, 0.75].includes(paceMag) ? paceMag : "recommended";
-
   // Map the profile row to the editor's shape, with sensible fallbacks so a
   // partially-filled profile still renders.
   const weightKg = profile?.weight_kg ?? 70;
@@ -48,7 +42,6 @@ export default async function SettingsPage() {
     weightKg,
     goalWeightKg: profile?.goal_weight_kg ?? weightKg, // null => maintain at current
     activityLevel: profile?.activity_level ?? "light",
-    pace,
     trainingDays: profile?.training_days ?? 3,
     experience: profile?.experience ?? "beginner",
     preferredLanguage: lang,

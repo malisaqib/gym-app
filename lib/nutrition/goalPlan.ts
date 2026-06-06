@@ -152,6 +152,28 @@ export function buildGoalPlan(input: GoalPlanInput): GoalPlan {
   };
 }
 
+// How many weeks each onboarding timeline option means (no_deadline => none).
+const TIMELINE_WEEKS: Record<string, number> = { "4_weeks": 4, "8_weeks": 8, "12_weeks": 12 };
+
+/**
+ * Turn a chosen timeline into the weekly pace it would require to reach the goal.
+ * Returns "recommended" for an open-ended timeline (or when already at goal); the
+ * returned magnitude is RE-CAPPED safely by buildGoalPlan, so an over-ambitious
+ * deadline simply gets eased (and flagged via paceCapped). This is how the
+ * timeline answer actually drives the targets.
+ */
+export function paceFromTimeline(
+  timeline: string,
+  currentWeightKg: number,
+  goalWeightKg: number | null
+): PaceChoice {
+  const weeks = TIMELINE_WEEKS[timeline];
+  if (!weeks || goalWeightKg == null) return "recommended";
+  const change = Math.abs(goalWeightKg - currentWeightKg);
+  if (change < 0.0001) return "recommended";
+  return Math.round((change / weeks) * 100) / 100; // kg/week magnitude
+}
+
 /** Target date = today + weeks·7, as YYYY-MM-DD. Pure (caller passes today). */
 export function targetDateFrom(todayISO: string, weeks: number | null): string | null {
   if (weeks == null || weeks <= 0) return null;

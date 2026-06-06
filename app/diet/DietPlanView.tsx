@@ -9,9 +9,19 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { haptic } from "@/lib/haptics";
 import { toast } from "@/lib/toast";
 import { generateDietPlan, swapDietMeal } from "./actions";
-import type { DietPlan } from "@/lib/diet/planner";
+import type { DietPlan, DietFilter } from "@/lib/diet/planner";
 import type { MealSlot } from "@/lib/diet/foodCatalog";
 import type { Lang } from "@/lib/database.types";
+
+// Quick-tap "avoid" options (values must match foodCatalog tags).
+const AVOID: { tag: string; label: Record<Lang, string> }[] = [
+  { tag: "beef", label: { en: "Beef", roman_urdu: "Beef" } },
+  { tag: "chicken", label: { en: "Chicken", roman_urdu: "Chicken" } },
+  { tag: "fish", label: { en: "Fish", roman_urdu: "Machli" } },
+  { tag: "egg", label: { en: "Egg", roman_urdu: "Anda" } },
+  { tag: "dairy", label: { en: "Dairy", roman_urdu: "Dairy" } },
+  { tag: "nuts", label: { en: "Nuts", roman_urdu: "Nuts" } },
+];
 
 const T = {
   title: { en: "Your day's plan", roman_urdu: "Aap ke din ka plan" },
@@ -19,7 +29,9 @@ const T = {
     en: "A simple, repeatable day that fits your targets. Swap anything you don't fancy.",
     roman_urdu: "Ek asaan, repeatable din jo aap ke targets se milta hai. Jo pasand na ho, swap karein.",
   },
-  notesLabel: { en: "Anything to keep in mind? (optional)", roman_urdu: "Koi baat zehan mein? (optional)" },
+  vegLabel: { en: "Vegetarian", roman_urdu: "Vegetarian" },
+  avoidLabel: { en: "Avoid", roman_urdu: "Avoid karein" },
+  notesLabel: { en: "Anything else? (optional)", roman_urdu: "Aur kuch? (optional)" },
   notesPlaceholder: {
     en: "e.g. no beef, hostel food only, vegetarian",
     roman_urdu: "misal: beef nahi, hostel ka khana, vegetarian",
@@ -53,10 +65,12 @@ const SLOT_LABEL: Record<MealSlot, Record<Lang, string>> = {
 
 export default function DietPlanView({
   initialPlan,
+  initialFilter,
   hasTargets,
   lang,
 }: {
   initialPlan: DietPlan | null;
+  initialFilter: DietFilter;
   hasTargets: boolean;
   lang: Lang;
 }) {
@@ -64,17 +78,22 @@ export default function DietPlanView({
 
   const [plan, setPlan] = useState<DietPlan | null>(initialPlan);
   const [notes, setNotes] = useState("");
+  const [vegetarian, setVegetarian] = useState(initialFilter.vegetarian);
+  const [avoid, setAvoid] = useState<string[]>(initialFilter.excludeTags);
   const [busy, setBusy] = useState(false);
   const [swapping, setSwapping] = useState<MealSlot | null>(null);
   const [habits, setHabits] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const toggleAvoid = (tag: string) =>
+    setAvoid((cur) => (cur.includes(tag) ? cur.filter((x) => x !== tag) : [...cur, tag]));
 
   async function generate() {
     if (busy) return;
     setBusy(true);
     setError(null);
     try {
-      const res = await generateDietPlan(notes);
+      const res = await generateDietPlan({ notes, vegetarian, excludeTags: avoid });
       if (res.ok) {
         setPlan(res.plan);
         haptic("success");
@@ -133,6 +152,19 @@ export default function DietPlanView({
       </div>
 
       <Card className="space-y-3 p-4">
+        {/* Quick-tap preferences (seeded from onboarding/your profile). */}
+        <div className="flex flex-wrap items-center gap-2">
+          <Chip active={vegetarian} onClick={() => setVegetarian((v) => !v)}>
+            🥦 {t("vegLabel")}
+          </Chip>
+          <span className="text-xs text-muted-foreground">· {t("avoidLabel")}:</span>
+          {AVOID.map((a) => (
+            <Chip key={a.tag} active={avoid.includes(a.tag)} onClick={() => toggleAvoid(a.tag)}>
+              {a.label[lang]}
+            </Chip>
+          ))}
+        </div>
+
         <label className="block space-y-1.5">
           <span className="text-sm font-medium text-foreground">{t("notesLabel")}</span>
           <input
@@ -248,6 +280,32 @@ export default function DietPlanView({
         </>
       )}
     </div>
+  );
+}
+
+function Chip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onPointerDown={() => haptic("tap")}
+      onClick={onClick}
+      aria-pressed={active}
+      className={`min-h-[32px] rounded-pill border px-3 py-1.5 text-xs font-medium transition active:scale-[0.97] ${
+        active
+          ? "border-primary bg-primary text-primary-foreground"
+          : "border-border bg-background text-foreground hover:border-primary/50"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 

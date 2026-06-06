@@ -21,7 +21,7 @@ import type {
   Timeline,
   TrainingLocation,
 } from "@/lib/database.types";
-import type { GoalPlan, PaceChoice } from "@/lib/nutrition/goalPlan";
+import type { GoalPlan } from "@/lib/nutrition/goalPlan";
 import type { PlanGuidance } from "@/lib/onboarding/goals";
 import { saveOnboarding } from "./actions";
 
@@ -115,7 +115,6 @@ export default function Onboarding({ initialLang }: { initialLang: Lang }) {
       heightCm: Number(a.heightCm),
       weightKg: Number(a.weightKg),
       goalWeightKg: Number(a.goalWeightKg),
-      weeklyPace: (a.weeklyPace === "recommended" ? "recommended" : Number(a.weeklyPace)) as PaceChoice,
       activityLevel: a.activityLevel as ActivityLevel,
       trainingLocation: a.trainingLocation as TrainingLocation,
       trainingDays: Number(a.trainingDays),

@@ -6,6 +6,7 @@ import {
   recommendedPaceMagnitude,
   splitMacros,
   buildGoalPlan,
+  paceFromTimeline,
   targetDateFrom,
   type GoalPlanInput,
 } from "./goalPlan.ts";
@@ -82,6 +83,26 @@ test("splitMacros roughly sums back to the calorie target", () => {
   assert.equal(proteinG, 110);
   const kcal = proteinG * 4 + carbG * 4 + fatG * 9;
   assert.ok(Math.abs(kcal - 2100) <= 10, `macros sum ${kcal} should be ~2100`);
+});
+
+test("paceFromTimeline derives the required weekly pace (capped later by buildGoalPlan)", () => {
+  assert.equal(paceFromTimeline("no_deadline", 70, 64), "recommended");
+  assert.equal(paceFromTimeline("4_weeks", 70, null), "recommended"); // no goal
+  assert.equal(paceFromTimeline("8_weeks", 70, 70), "recommended"); // already there
+  assert.equal(paceFromTimeline("12_weeks", 70, 64), 0.5); // 6kg / 12 weeks
+  assert.equal(paceFromTimeline("4_weeks", 70, 64), 1.5); // 6kg / 4 weeks (raw; gets capped)
+});
+
+test("an over-ambitious timeline is eased to a safe pace (paceCapped)", () => {
+  const plan = buildGoalPlan({
+    ...base,
+    currentWeightKg: 70,
+    goalWeightKg: 64,
+    pace: paceFromTimeline("4_weeks", 70, 64), // 1.5 kg/wk required
+  });
+  assert.equal(plan.direction, "lose");
+  assert.equal(plan.paceCapped, true);
+  assert.equal(plan.weeklyPaceKg, -0.7); // capped to the 1% rule for 70kg
 });
 
 test("targetDateFrom adds weeks*7 days (UTC), null when maintaining", () => {
