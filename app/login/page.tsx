@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
 import { login } from "@/app/auth/actions";
 import { SubmitButton } from "@/app/auth/SubmitButton";
 import { FadeIn } from "@/components/ui/FadeIn";
@@ -10,6 +12,13 @@ export default async function LoginPage({
   searchParams: Promise<{ error?: string; message?: string }>;
 }) {
   const { error, message } = await searchParams;
+
+  // Already signed in? Send them to the app instead of showing the login form.
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (user) redirect("/dashboard");
 
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-12">

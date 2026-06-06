@@ -42,9 +42,20 @@ export async function updateSession(request: NextRequest) {
 
   // IMPORTANT: getUser() revalidates the token with Supabase. Do not put any
   // logic between createServerClient and getUser, or you can log users out.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let user = null;
+  let authUnavailable = false;
+  try {
+    const { data, error } = await supabase.auth.getUser();
+    user = data.user;
+    // Distinguish "no/invalid session" (redirect) from "auth is briefly
+    // unreachable" (don't redirect) — a transient Supabase blip shouldn't log
+    // everyone out. Only network-retryable / 5xx errors count as unavailable.
+    if (error && isTransientAuthError(error)) authUnavailable = true;
+  } catch {
+    // Never let an auth hiccup 500 the whole app (middleware runs on every route,
+    // including public ones). Treat as "can't verify right now".
+    authUnavailable = true;
+  }
 
   // Protect private routes. Add more prefixes here as the app grows.
   const path = request.nextUrl.pathname;
@@ -54,13 +65,23 @@ export async function updateSession(request: NextRequest) {
     path.startsWith("/workout") ||
     path.startsWith("/coach") ||
     path.startsWith("/diet") ||
+    path.startsWith("/settings") ||
     path.startsWith("/weight");
 
-  if (isProtected && !user) {
+  // Only bounce to login when we DEFINITIVELY have no user. If auth was just
+  // unreachable, let the request through with the existing cookies intact.
+  if (isProtected && !user && !authUnavailable) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
   }
 
   return supabaseResponse;
+}
+
+// Network/server failures (vs. a genuine missing session) should not be treated
+// as "logged out". Conservative: only known-transient cases qualify; anything
+// else falls through to the safe default (redirect).
+function isTransientAuthError(error: { name?: string; status?: number }): boolean {
+  return error?.name === "AuthRetryableFetchError" || (typeof error?.status === "number" && error.status >= 500);
 }
