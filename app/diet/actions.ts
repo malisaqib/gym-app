@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { buildPlan, swapMeal, filterFromPreference, mergeFilters, type DietPlan } from "@/lib/diet/planner";
-import { parsePreferences } from "@/lib/coach/dietCoach";
+import { parsePreferences, keywordPreferences } from "@/lib/coach/dietCoach";
 import type { MealSlot } from "@/lib/diet/foodCatalog";
 import type { FoodPreference, Lang } from "@/lib/database.types";
 
@@ -12,6 +12,13 @@ const SLOTS: MealSlot[] = ["breakfast", "lunch", "dinner", "snack"];
 type PlanResult = { ok: true; plan: DietPlan } | { ok: false; error: string };
 
 const randomSeed = () => Math.floor(Math.random() * 1_000_000_000);
+
+// Split a free-text dislikes field ("beef, prawns") into avoid terms.
+const splitTerms = (s: string | null | undefined) =>
+  (s ?? "")
+    .split(/[,\n;]+/)
+    .map((t) => t.trim())
+    .filter((t) => t.length >= 3);
 
 /** Load the user's saved plan (or null). */
 export async function getDietPlan(): Promise<DietPlan | null> {
@@ -47,13 +54,20 @@ export async function generateDietPlan(input?: {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("calorie_target, protein_target_g, food_preference, preferred_language")
+    .select(
+      "calorie_target, protein_target_g, food_preference, preferred_language, usual_breakfast, usual_lunch, usual_dinner, usual_foods, disliked_foods"
+    )
     .eq("id", user.id)
     .single<{
       calorie_target: number | null;
       protein_target_g: number | null;
       food_preference: FoodPreference | null;
       preferred_language: Lang | null;
+      usual_breakfast: string | null;
+      usual_lunch: string | null;
+      usual_dinner: string | null;
+      usual_foods: string | null;
+      disliked_foods: string | null;
     }>();
 
   const calorieTarget = profile?.calorie_target ?? 0;
@@ -61,6 +75,14 @@ export async function generateDietPlan(input?: {
   if (!calorieTarget) {
     return { ok: false, error: "Set your goal first so I know your daily targets." };
   }
+
+  // The user's saved dislikes ALWAYS apply (hard excludes), parsed as a list +
+  // any "no X" phrasing.
+  const dislikes = mergeFilters(
+    { excludeFoods: splitTerms(profile?.disliked_foods) },
+    keywordPreferences(profile?.disliked_foods ?? "")
+  );
+  const base = filterFromPreference(profile?.food_preference ?? null);
 
   const hasChoices =
     !!input &&
@@ -75,20 +97,31 @@ export async function generateDietPlan(input?: {
       ? await parsePreferences(input!.notes, profile?.preferred_language ?? "en")
       : {};
     filter = mergeFilters(
+      base,
+      dislikes,
       { vegetarian: input!.vegetarian, excludeTags: input!.excludeTags, excludeFoods: input!.excludeFoods },
       fromNotes
     );
   } else {
-    // Bare regenerate: keep the existing plan's prefs, else fall back to profile.
+    // Bare regenerate: keep the existing plan's prefs, else profile + dislikes.
     const { data: existing } = await supabase
       .from("meal_plans")
       .select("plan")
       .eq("user_id", user.id)
       .maybeSingle();
-    filter = (existing?.plan as DietPlan | undefined)?.filter ?? filterFromPreference(profile?.food_preference ?? null);
+    const prior = (existing?.plan as DietPlan | undefined)?.filter;
+    filter = prior ? mergeFilters(prior, dislikes) : mergeFilters(base, dislikes);
   }
 
-  const plan = buildPlan({ calorieTarget, proteinTargetG, filter, seed: randomSeed() });
+  // Seed the plan from the user's usual meals + favourite foods.
+  const usual = {
+    breakfast: profile?.usual_breakfast ?? undefined,
+    lunch: profile?.usual_lunch ?? undefined,
+    dinner: profile?.usual_dinner ?? undefined,
+    foods: profile?.usual_foods ?? undefined,
+  };
+
+  const plan = buildPlan({ calorieTarget, proteinTargetG, filter, usual, seed: randomSeed() });
 
   const { error } = await supabase
     .from("meal_plans")

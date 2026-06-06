@@ -11,11 +11,46 @@ test("buildPlan returns the four meal slots in order", () => {
   assert.ok(plan.meals.every((m) => m.items.length > 0));
 });
 
-test("daily totals land near the calorie target and hit most of the protein", () => {
-  const plan = buildPlan({ calorieTarget: 2100, proteinTargetG: 110, filter: openFilter, seed: 1 });
-  assert.ok(plan.totalCalories >= 2100 * 0.8, `calories ${plan.totalCalories} too low`);
-  assert.ok(plan.totalCalories <= 2100 * 1.2, `calories ${plan.totalCalories} too high`);
-  assert.ok(plan.totalProtein >= 70, `protein ${plan.totalProtein} too low`);
+test("fits the calorie budget — never exceeds it, and lands within tolerance", () => {
+  const plan = buildPlan({ calorieTarget: 2100, proteinTargetG: 130, filter: openFilter, seed: 1 });
+  // HARD constraint: total must never blow past the target.
+  assert.ok(plan.totalCalories <= 2100, `over budget: ${plan.totalCalories}`);
+  // ...and should land close (within ~10% under).
+  assert.ok(plan.totalCalories >= 2100 * 0.9, `too low: ${plan.totalCalories}`);
+  // every meal stays within its own slot budget.
+  for (const m of plan.meals) {
+    assert.ok(m.calories <= m.budget, `${m.slot} ${m.calories} > budget ${m.budget}`);
+  }
+});
+
+test("hits the protein target within calories (or flags it honestly)", () => {
+  const plan = buildPlan({ calorieTarget: 2100, proteinTargetG: 130, filter: openFilter, seed: 1 });
+  // the flag must reflect reality
+  assert.equal(plan.proteinShort, plan.totalProtein < 130);
+  // and it gets reasonably close regardless
+  assert.ok(plan.totalProtein >= 110, `protein too low: ${plan.totalProtein}`);
+  // raising protein must NOT have pushed calories over budget
+  assert.ok(plan.totalCalories <= 2100, `protein pass blew the budget: ${plan.totalCalories}`);
+});
+
+test("seeds meals from the user's usual foods (and keeps them)", () => {
+  const plan = buildPlan({
+    calorieTarget: 2100,
+    proteinTargetG: 120,
+    filter: openFilter,
+    seed: 1,
+    usual: { breakfast: "paratha and eggs", lunch: "rice and daal" },
+  });
+  const ids = (slot: string) =>
+    plan.meals.find((m) => m.slot === slot)!.items.map((i) => i.id);
+  const bfast = ids("breakfast");
+  assert.ok(
+    bfast.includes("paratha") || bfast.some((id) => CATALOG_BY_ID[id].tags.includes("egg")),
+    `breakfast didn't seed usual: ${bfast.join(",")}`
+  );
+  const lunch = ids("lunch");
+  assert.ok(lunch.includes("rice") || lunch.includes("daal"), `lunch didn't seed usual: ${lunch.join(",")}`);
+  assert.ok(plan.totalCalories <= 2100);
 });
 
 test("the plan is deterministic for a given seed", () => {

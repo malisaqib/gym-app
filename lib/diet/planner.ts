@@ -2,16 +2,20 @@ import type { FoodPreference } from "@/lib/database.types";
 import { FOOD_CATALOG, CATALOG_BY_ID, type CatalogFood, type MealSlot } from "./foodCatalog.ts";
 
 /**
- * Deterministic diet-plan generator (Phase 4).
+ * Deterministic diet-plan generator (Phase 3 rebuild).
  *
- * Pure functions (no DB, no AI). Splits the daily calorie target across meals,
- * then greedily SELECTS foods from the owned catalog to fill each meal's slot
- * while pushing toward the protein target and respecting preferences (veg,
- * excluded foods, a soft cuisine lean). A seed makes it deterministic but lets
- * "regenerate" / "swap" produce variety. No hardcoded menus — plans are built.
+ * Pure functions (no DB, no AI). The daily calorie + protein targets are a
+ * BUDGET TO FIT, not to exceed:
+ *   1. split the day across meals so the slot budgets sum to EXACTLY the target,
+ *   2. seed each meal with the user's usual foods (where they fit the slot),
+ *   3. fill the rest from the catalog — every add is hard-capped so a meal can
+ *      never exceed its slot budget (so the day can never exceed the target),
+ *   4. if protein is short, raise it by SWAPPING items for higher-protein ones
+ *      of similar calories — never by adding calories on top,
+ *   5. flag `proteinShort` if the target can't be met within the calorie budget.
  *
- * Budget/cost is intentionally out of scope for now (deferred), so selection
- * optimises protein + calorie-fit, not protein-per-rupee.
+ * A seed makes it deterministic but lets regenerate/swap vary the result.
+ * No hardcoded menus — plans are built. (Budget/cost is out of scope.)
  */
 
 export interface DietFilter {
@@ -19,6 +23,14 @@ export interface DietFilter {
   excludeTags: string[]; // whole categories to remove (e.g. "beef") — matched on tags
   excludeFoods: string[]; // SPECIFIC foods to avoid, free text (e.g. "whey protein shake")
   regionFocus: "desi" | "western" | null; // soft lean, not a hard filter
+}
+
+/** The user's usual meals (free text), used to seed the plan. */
+export interface UsualMeals {
+  breakfast?: string;
+  lunch?: string;
+  dinner?: string;
+  foods?: string; // foods they eat a lot (likes) — preferred when filling
 }
 
 export interface PlanMealItem {
@@ -37,6 +49,7 @@ export interface PlanMeal {
   items: PlanMealItem[];
   calories: number;
   protein: number;
+  budget: number; // this meal's calorie budget (so the UI can show fit)
 }
 
 export interface DietPlan {
@@ -46,15 +59,19 @@ export interface DietPlan {
   totalCalories: number;
   totalProtein: number;
   filter: DietFilter;
+  proteinShort: boolean; // couldn't reach the protein target within the calorie budget
   seed: number;
 }
 
-const SLOTS: { slot: MealSlot; title: string; pct: number }[] = [
+const SLOT_META: { slot: MealSlot; title: string; pct: number }[] = [
   { slot: "breakfast", title: "Breakfast", pct: 0.25 },
   { slot: "lunch", title: "Lunch", pct: 0.35 },
   { slot: "dinner", title: "Dinner", pct: 0.3 },
   { slot: "snack", title: "Snack", pct: 0.1 },
 ];
+
+const FILL_TO = 0.95; // try to fill at least 95% of each slot (lands within ±5%)
+const MAX_ITEMS: Record<MealSlot, number> = { breakfast: 5, lunch: 5, dinner: 5, snack: 3 };
 
 // --- preferences ------------------------------------------------------------
 
@@ -79,8 +96,7 @@ export function filterFromPreference(
 
 /**
  * Combine several preference sources into one filter (later parts win for
- * regionFocus; vegetarian is true if ANY part sets it; excludeTags are unioned).
- * Used to layer: food preference + onboarding notes + the diet screen's choices.
+ * regionFocus; vegetarian is true if ANY part sets it; excludes are unioned).
  */
 export function mergeFilters(...parts: Partial<DietFilter>[]): DietFilter {
   let vegetarian = false;
@@ -96,11 +112,9 @@ export function mergeFilters(...parts: Partial<DietFilter>[]): DietFilter {
   return { vegetarian, regionFocus, excludeTags: [...tags], excludeFoods: [...foods].filter(Boolean) };
 }
 
-// --- core -------------------------------------------------------------------
+// --- matching ---------------------------------------------------------------
 
-// Does a free-text "avoid" term refer to this food? Tolerant both ways so
-// "whey", "protein shake", or "the whey protein shake thing" all match
-// "Whey protein shake".
+// Does a free-text "avoid" term refer to this food? Tolerant both ways.
 function matchesAvoidedFood(food: CatalogFood, terms: string[]): boolean {
   if (!terms?.length) return false;
   const name = food.name.toLowerCase();
@@ -109,6 +123,17 @@ function matchesAvoidedFood(food: CatalogFood, terms: string[]): boolean {
     if (term.length < 3) return false;
     return name.includes(term) || term.includes(name) || food.tags.some((tag) => term.includes(tag));
   });
+}
+
+// Is this food mentioned in a free-text meal description ("paratha + egg")?
+function mentioned(food: CatalogFood, text: string): boolean {
+  const t = ` ${text.toLowerCase()} `;
+  if (!t.trim()) return false;
+  const name = food.name.toLowerCase();
+  if (t.includes(name)) return true;
+  if (food.tags.some((tag) => tag.length >= 3 && t.includes(tag))) return true;
+  const tokens = name.replace(/[^a-z]+/g, " ").split(" ").filter((w) => w.length >= 4);
+  return tokens.some((tok) => t.includes(tok));
 }
 
 function allowed(food: CatalogFood, filter: DietFilter): boolean {
@@ -128,6 +153,8 @@ const toItem = (f: CatalogFood): PlanMealItem => ({
   fat: f.fat,
 });
 
+const proteinDensity = (f: CatalogFood) => f.protein / Math.max(1, f.calories);
+
 /** Pick the highest-scoring of the top few candidates (rng adds safe variety). */
 function chooseTop(
   cands: CatalogFood[],
@@ -137,99 +164,201 @@ function chooseTop(
 ): CatalogFood | null {
   if (cands.length === 0) return null;
   const sorted = [...cands].sort((a, b) => score(b) - score(a) || a.id.localeCompare(b.id));
-  const n = Math.min(topN, sorted.length);
-  return sorted[Math.floor(rng() * n)];
+  return sorted[Math.floor(rng() * Math.min(topN, sorted.length))];
 }
 
-function buildMeal(
-  slot: MealSlot,
-  title: string,
-  slotCal: number,
+// --- meal building (hard-capped) --------------------------------------------
+
+interface BuiltMeal {
+  slot: MealSlot;
+  title: string;
+  budget: number;
+  cands: CatalogFood[]; // allowed, slot-suitable (reused by the protein-swap pass)
+  chosen: CatalogFood[];
+  protectedIds: Set<string>; // usual-food seeds — never swapped out for protein
+}
+
+const sumCal = (items: CatalogFood[]) => items.reduce((s, f) => s + f.calories, 0);
+const sumPro = (items: CatalogFood[]) => items.reduce((s, f) => s + f.protein, 0);
+
+function buildMealItems(
+  budget: number,
   slotProtein: number,
-  filter: DietFilter,
-  rng: () => number
-): PlanMeal {
-  const cands = FOOD_CATALOG.filter((f) => f.slots.includes(slot) && allowed(f, filter));
+  slot: MealSlot,
+  cands: CatalogFood[],
+  rng: () => number,
+  usualText: string | undefined,
+  likeIds: Set<string>
+): CatalogFood[] {
   const chosen: CatalogFood[] = [];
-  let cal = 0;
-  let pro = 0;
+  const fits = (f: CatalogFood) => sumCal(chosen) + f.calories <= budget; // HARD cap
+  const likeBonus = (f: CatalogFood) => (likeIds.has(f.id) ? 6 : 0);
+  const regionBonus = (f: CatalogFood) => 0; // region handled by likes/usual now; kept neutral
+  const maxItems = MAX_ITEMS[slot];
 
-  const regionBonus = (f: CatalogFood) => (filter.regionFocus && f.region === filter.regionFocus ? 3 : 0);
-
-  // 1) Anchor a real meal with a protein source (snacks skip this).
-  if (slot !== "snack") {
-    const proteins = cands.filter((f) => f.role === "protein");
-    const anchor = chooseTop(
-      proteins,
-      (f) => f.protein + regionBonus(f) - overshoot(f.calories, slotCal * 0.75),
-      rng
-    );
-    if (anchor) {
-      chosen.push(anchor);
-      cal += anchor.calories;
-      pro += anchor.protein;
+  // 1) Seed with the user's usual foods for this slot (highest priority).
+  if (usualText) {
+    const seeds = cands
+      .filter((f) => mentioned(f, usualText))
+      .sort((a, b) => b.protein - a.protein || a.id.localeCompare(b.id));
+    for (const s of seeds) {
+      if (chosen.length >= maxItems) break;
+      if (!chosen.includes(s) && fits(s)) chosen.push(s);
     }
   }
 
-  // 2) Fill toward the slot's calorie target, adding protein where still short.
-  const maxItems = slot === "snack" ? 2 : 4;
+  // 2) Anchor a protein if none yet (real meals only).
+  if (slot !== "snack" && !chosen.some((f) => f.role === "protein")) {
+    const proteins = cands.filter((f) => f.role === "protein" && !chosen.includes(f) && fits(f));
+    const anchor = chooseTop(proteins, (f) => proteinDensity(f) * 100 + likeBonus(f) + regionBonus(f), rng);
+    if (anchor) chosen.push(anchor);
+  }
+
+  // 3) Fill toward FILL_TO of the budget — never exceeding it.
   let guard = 0;
-  while (cal < slotCal * 0.9 && chosen.length < maxItems && guard < 20) {
+  while (sumCal(chosen) < budget * FILL_TO && chosen.length < maxItems && guard < 30) {
     guard++;
-    const remaining = slotCal - cal;
-    const pool = cands.filter((f) => !chosen.includes(f) && f.calories <= remaining * 1.35);
+    const remaining = budget - sumCal(chosen);
+    const pool = cands.filter((f) => !chosen.includes(f) && f.calories <= remaining);
     if (pool.length === 0) break;
-    const needProtein = pro < slotProtein;
+    const needProtein = sumPro(chosen) < slotProtein;
     const pick = chooseTop(
       pool,
-      (f) => -Math.abs(remaining - f.calories) / 20 + (needProtein ? f.protein * 0.6 : 0) + regionBonus(f),
+      (f) =>
+        -(remaining - f.calories) / 12 + // close the calorie gap (never over)
+        proteinDensity(f) * (needProtein ? 60 : 25) + // protein-per-calorie
+        likeBonus(f) +
+        regionBonus(f),
       rng
     );
     if (!pick) break;
     chosen.push(pick);
-    cal += pick.calories;
-    pro += pick.protein;
   }
 
-  return { slot, title, items: chosen.map(toItem), calories: Math.round(cal), protein: Math.round(pro) };
+  return chosen;
 }
 
-/** Build a full day's plan. Deterministic for a given seed. */
+/**
+ * Day-level pass: while under the protein target, SWAP one chosen item for a
+ * higher-protein candidate that still fits its slot budget. Never adds calories
+ * beyond the caps. Deterministic (picks the largest protein gain each round).
+ */
+interface Swap {
+  meal: BuiltMeal;
+  outIdx: number;
+  inFood: CatalogFood;
+  gain: number;
+}
+
+function improveProtein(meals: BuiltMeal[], proteinTargetG: number): void {
+  const totalProtein = () => meals.reduce((s, m) => s + sumPro(m.chosen), 0);
+  let guard = 0;
+  while (totalProtein() < proteinTargetG && guard < 25) {
+    guard++;
+    let best: Swap | null = null;
+    for (const m of meals) {
+      const calNow = sumCal(m.chosen);
+      for (let xi = 0; xi < m.chosen.length; xi++) {
+        const x = m.chosen[xi];
+        if (m.protectedIds.has(x.id)) continue; // keep the user's usual foods in place
+        for (const y of m.cands) {
+          if (m.chosen.includes(y)) continue;
+          if (calNow - x.calories + y.calories > m.budget) continue; // stay under the cap
+          const gain = y.protein - x.protein;
+          if (gain > 0 && (best === null || gain > best.gain)) {
+            best = { meal: m, outIdx: xi, inFood: y, gain };
+          }
+        }
+      }
+    }
+    if (best === null) break;
+    best.meal.chosen[best.outIdx] = best.inFood;
+  }
+}
+
+/** Slot calorie budgets that sum to EXACTLY the daily target (snack absorbs rounding). */
+function slotBudgets(calorieTarget: number): { slot: MealSlot; title: string; cal: number }[] {
+  const b = Math.round(calorieTarget * SLOT_META[0].pct);
+  const l = Math.round(calorieTarget * SLOT_META[1].pct);
+  const d = Math.round(calorieTarget * SLOT_META[2].pct);
+  const s = Math.max(0, calorieTarget - b - l - d);
+  return [
+    { slot: "breakfast", title: "Breakfast", cal: b },
+    { slot: "lunch", title: "Lunch", cal: l },
+    { slot: "dinner", title: "Dinner", cal: d },
+    { slot: "snack", title: "Snack", cal: s },
+  ];
+}
+
+function finalizeMeal(b: { slot: MealSlot; title: string; budget: number; chosen: CatalogFood[] }): PlanMeal {
+  return {
+    slot: b.slot,
+    title: b.title,
+    items: b.chosen.map(toItem),
+    calories: sumCal(b.chosen),
+    protein: sumPro(b.chosen),
+    budget: b.budget,
+  };
+}
+
+/** Build a full day's plan that fits the targets. Deterministic for a given seed. */
 export function buildPlan(input: {
   calorieTarget: number;
   proteinTargetG: number;
   filter: DietFilter;
+  usual?: UsualMeals;
   seed?: number;
 }): DietPlan {
   const seed = input.seed ?? 1;
   const rng = mulberry32(seed);
-  const meals = SLOTS.map((s) =>
-    buildMeal(s.slot, s.title, input.calorieTarget * s.pct, input.proteinTargetG * s.pct, input.filter, rng)
+  const likeIds = new Set(
+    input.usual?.foods ? FOOD_CATALOG.filter((f) => mentioned(f, input.usual!.foods!)).map((f) => f.id) : []
   );
+
+  const built: BuiltMeal[] = slotBudgets(input.calorieTarget).map((s) => {
+    const slotProtein = input.proteinTargetG * (input.calorieTarget > 0 ? s.cal / input.calorieTarget : 0);
+    const cands = FOOD_CATALOG.filter((f) => f.slots.includes(s.slot) && allowed(f, input.filter));
+    const usualText = usualForSlot(input.usual, s.slot);
+    const chosen = buildMealItems(s.cal, slotProtein, s.slot, cands, rng, usualText, likeIds);
+    const protectedIds = new Set(
+      usualText ? chosen.filter((f) => mentioned(f, usualText)).map((f) => f.id) : []
+    );
+    return { slot: s.slot, title: s.title, budget: s.cal, cands, chosen, protectedIds };
+  });
+
+  improveProtein(built, input.proteinTargetG);
+
+  const meals = built.map(finalizeMeal);
+  const totalCalories = meals.reduce((s, m) => s + m.calories, 0);
+  const totalProtein = meals.reduce((s, m) => s + m.protein, 0);
   return {
     meals,
     calorieTarget: input.calorieTarget,
     proteinTargetG: input.proteinTargetG,
-    totalCalories: meals.reduce((s, m) => s + m.calories, 0),
-    totalProtein: meals.reduce((s, m) => s + m.protein, 0),
+    totalCalories,
+    totalProtein,
     filter: input.filter,
+    proteinShort: totalProtein < input.proteinTargetG,
     seed,
   };
 }
 
-/** Re-select a single meal (used by "swap this meal"). */
+/** Re-select a single meal (used by "swap this meal"). No usual-food seed, so it varies. */
 export function swapMeal(plan: DietPlan, slot: MealSlot, newSeed: number): DietPlan {
-  const s = SLOTS.find((x) => x.slot === slot);
-  if (!s) return plan;
+  const target = plan.meals.find((m) => m.slot === slot);
+  if (!target) return plan;
+  const meta = SLOT_META.find((x) => x.slot === slot)!;
   const rng = mulberry32(newSeed);
-  const meal = buildMeal(s.slot, s.title, plan.calorieTarget * s.pct, plan.proteinTargetG * s.pct, plan.filter, rng);
+  const budget = target.budget;
+  const slotProtein = plan.proteinTargetG * (plan.calorieTarget > 0 ? budget / plan.calorieTarget : 0);
+  const cands = FOOD_CATALOG.filter((f) => f.slots.includes(slot) && allowed(f, plan.filter));
+  const chosen = buildMealItems(budget, slotProtein, slot, cands, rng, undefined, new Set());
+
+  const meal = finalizeMeal({ slot, title: meta.title, budget, chosen });
   const meals = plan.meals.map((m) => (m.slot === slot ? meal : m));
-  return {
-    ...plan,
-    meals,
-    totalCalories: meals.reduce((acc, m) => acc + m.calories, 0),
-    totalProtein: meals.reduce((acc, m) => acc + m.protein, 0),
-  };
+  const totalCalories = meals.reduce((s, m) => s + m.calories, 0);
+  const totalProtein = meals.reduce((s, m) => s + m.protein, 0);
+  return { ...plan, meals, totalCalories, totalProtein, proteinShort: totalProtein < plan.proteinTargetG };
 }
 
 /** Validate a swap target id belongs to the catalog (defensive for stored data). */
@@ -239,8 +368,12 @@ export function isKnownFood(id: string): boolean {
 
 // --- helpers ----------------------------------------------------------------
 
-function overshoot(cal: number, target: number): number {
-  return cal > target ? (cal - target) / 50 : 0;
+function usualForSlot(usual: UsualMeals | undefined, slot: MealSlot): string | undefined {
+  if (!usual) return undefined;
+  if (slot === "breakfast") return usual.breakfast;
+  if (slot === "lunch") return usual.lunch;
+  if (slot === "dinner") return usual.dinner;
+  return undefined; // snack has no "usual" capture
 }
 
 function dedupe<T>(arr: T[]): T[] {
