@@ -36,6 +36,7 @@ export default function Onboarding({ initialLang }: { initialLang: Lang }) {
   const [answers, setAnswers] = useState<Record<string, AnswerValue>>({});
   const [transcript, setTranscript] = useState<OnboardingEntry[]>([]);
   const [draft, setDraft] = useState(""); // text/number/select being typed/picked
+  const [eating, setEating] = useState<Record<string, string>>({}); // the "eating" multi-field step
   const [inputError, setInputError] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>("asking");
   const [plan, setPlan] = useState<GoalPlan | null>(null);
@@ -46,6 +47,7 @@ export default function Onboarding({ initialLang }: { initialLang: Lang }) {
 
   // Translate a localized string into the current language.
   const tr = (loc: Localized) => loc[lang];
+  const str = (v: AnswerValue | undefined) => (typeof v === "string" ? v.trim() : "");
 
   // Replace {placeholders} in a localized summary string.
   const fill = (s: string, vals: Record<string, string | number>) =>
@@ -103,6 +105,27 @@ export default function Onboarding({ initialLang }: { initialLang: Lang }) {
     }
   }
 
+  // The "eating" step records several optional fields at once (or none on Skip).
+  function recordEating(values: Record<string, string>) {
+    const step = STEPS[index];
+    const nextAnswers = { ...answers, ...values };
+    const summary = Object.values(values).filter(Boolean).join(" · ") || "—";
+    const nextTranscript: OnboardingEntry[] = [
+      ...transcript,
+      { key: step.key, value: summary, message: summary, lang },
+    ];
+    setAnswers(nextAnswers);
+    setTranscript(nextTranscript);
+    setEating({});
+    setInputError(null);
+
+    if (index === STEPS.length - 1) {
+      void submit(nextAnswers, nextTranscript);
+    } else {
+      setIndex(index + 1);
+    }
+  }
+
   async function submit(a: Record<string, AnswerValue>, t: OnboardingEntry[]) {
     setStatus("submitting");
     setSubmitError(null);
@@ -120,7 +143,11 @@ export default function Onboarding({ initialLang }: { initialLang: Lang }) {
       trainingDays: Number(a.trainingDays),
       experience: a.experience as Experience,
       foodPreference: a.foodPreference as FoodPreference,
-      notes: typeof a.notes === "string" ? a.notes : "",
+      usualBreakfast: str(a.usualBreakfast),
+      usualLunch: str(a.usualLunch),
+      usualDinner: str(a.usualDinner),
+      usualFoods: str(a.usualFoods),
+      dislikedFoods: str(a.dislikedFoods),
       preferredLanguage: lang,
       transcript: t,
     };
@@ -325,6 +352,39 @@ export default function Onboarding({ initialLang }: { initialLang: Lang }) {
                 {tr(UI.send)}
               </PrimaryButton>
             )}
+          </form>
+        )}
+
+        {/* Usual eating — one compact, optional screen (Phase 2). */}
+        {status === "asking" && currentStep.kind === "eating" && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              recordEating(eating);
+            }}
+            className="flex flex-col gap-2"
+          >
+            {currentStep.fields.map((f) => (
+              <input
+                key={f.key}
+                type="text"
+                value={eating[f.key] ?? ""}
+                onChange={(e) => setEating((cur) => ({ ...cur, [f.key]: e.target.value }))}
+                placeholder={tr(f.placeholder)}
+                aria-label={tr(f.label)}
+                className="rounded-field border border-input bg-card px-3 py-2 text-base text-foreground focus:border-ring focus:outline-none"
+              />
+            ))}
+            <div className="flex items-center justify-end gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => recordEating({})}
+                className="px-2 py-2 text-sm font-medium text-muted-foreground transition hover:text-foreground"
+              >
+                {tr(UI.skip)}
+              </button>
+              <PrimaryButton type="submit">{tr(UI.save)}</PrimaryButton>
+            </div>
           </form>
         )}
 

@@ -51,7 +51,18 @@ export interface TextStep extends BaseStep {
   placeholder: Localized;
   optional?: boolean;
 }
-export type Step = ChoiceStep | NumberStep | TextStep;
+// A single compact screen with several optional free-text fields (keeps the
+// "usual eating" capture to ONE step so onboarding stays fast). Always skippable.
+export interface EatingField {
+  key: "usualBreakfast" | "usualLunch" | "usualDinner" | "usualFoods" | "dislikedFoods";
+  label: Localized;
+  placeholder: Localized;
+}
+export interface EatingStep extends BaseStep {
+  kind: "eating";
+  fields: EatingField[];
+}
+export type Step = ChoiceStep | NumberStep | TextStep | EatingStep;
 
 // Dropdown options 0–7 days, generated to avoid repetition.
 const trainingDayOptions: Choice[] = Array.from({ length: 8 }, (_, n) => ({
@@ -212,16 +223,41 @@ export const STEPS: Step[] = [
     ],
   },
   {
-    // The one free-text step: open-ended, so the user can explain in detail.
-    key: "notes",
-    kind: "text",
-    optional: true,
+    // Usual eating — one compact, fully optional screen. Powers the diet plan
+    // (Phase 3 seeds meals from these). Skippable so onboarding stays fast.
+    key: "eating",
+    kind: "eating",
     prompt: {
-      en: "Any foods you usually eat or avoid? Injuries or health notes? (Optional)",
-      roman_urdu:
-        "Koi khana jo aksar khate ya avoid karte hain? Injury ya sehat ki baat? (Optional)",
+      en: "Last thing — how do you usually eat? All optional, skip if you like.",
+      roman_urdu: "Aakhri baat — aap aam tor par kya khaate hain? Sab optional, chahein to skip karein.",
     },
-    placeholder: { en: "Type here, or skip", roman_urdu: "Yahan likhein, ya skip karein" },
+    fields: [
+      {
+        key: "usualBreakfast",
+        label: { en: "Usual breakfast", roman_urdu: "Aam nashta" },
+        placeholder: { en: "e.g. paratha + egg, or oats", roman_urdu: "misal: paratha + anda, ya oats" },
+      },
+      {
+        key: "usualLunch",
+        label: { en: "Usual lunch", roman_urdu: "Aam dopahar ka khana" },
+        placeholder: { en: "e.g. roti + chicken salan", roman_urdu: "misal: roti + chicken salan" },
+      },
+      {
+        key: "usualDinner",
+        label: { en: "Usual dinner", roman_urdu: "Aam raat ka khana" },
+        placeholder: { en: "e.g. rice + daal", roman_urdu: "misal: chawal + daal" },
+      },
+      {
+        key: "usualFoods",
+        label: { en: "Foods you eat a lot", roman_urdu: "Jo aksar khaate hain" },
+        placeholder: { en: "e.g. eggs, chicken, yogurt", roman_urdu: "misal: anday, chicken, dahi" },
+      },
+      {
+        key: "dislikedFoods",
+        label: { en: "Anything you don't or won't eat", roman_urdu: "Jo nahi khaate / pasand nahi" },
+        placeholder: { en: "allergies, dislikes — e.g. no beef", roman_urdu: "allergy/dislike — misal: beef nahi" },
+      },
+    ],
   },
 ];
 
@@ -235,6 +271,7 @@ export const UI: Record<string, Localized> = {
   },
   next: { en: "Next", roman_urdu: "Aage" },
   send: { en: "Send", roman_urdu: "Bhejein" },
+  save: { en: "Save", roman_urdu: "Save" },
   skip: { en: "Skip", roman_urdu: "Skip" },
   choosePlaceholder: { en: "Choose…", roman_urdu: "Chunein…" },
   calculating: { en: "Crunching the numbers…", roman_urdu: "Hisaab lagaya ja raha hai…" },
@@ -296,7 +333,12 @@ export interface OnboardingInput {
   trainingDays: number;
   experience: Experience;
   foodPreference: FoodPreference;
-  notes: string;
+  // Usual eating (all optional; "" when skipped).
+  usualBreakfast: string;
+  usualLunch: string;
+  usualDinner: string;
+  usualFoods: string;
+  dislikedFoods: string;
   preferredLanguage: Lang;
   transcript: OnboardingEntry[];
 }

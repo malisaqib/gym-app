@@ -108,6 +108,12 @@ export async function saveOnboarding(input: OnboardingInput): Promise<SaveResult
       protein_target_g: plan.proteinTargetG,
       carb_target_g: plan.carbTargetG,
       fat_target_g: plan.fatTargetG,
+      // Usual eating (Phase 2) — optional; empty strings stored as null.
+      usual_breakfast: input.usualBreakfast.trim() || null,
+      usual_lunch: input.usualLunch.trim() || null,
+      usual_dinner: input.usualDinner.trim() || null,
+      usual_foods: input.usualFoods.trim() || null,
+      disliked_foods: input.dislikedFoods.trim() || null,
       preferred_language: input.preferredLanguage,
       onboarding_raw: input.transcript,
       onboarded: true,

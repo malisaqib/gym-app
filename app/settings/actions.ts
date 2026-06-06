@@ -55,6 +55,12 @@ export interface ProfileEditInput {
   trainingDays: number;
   experience: Experience;
   preferredLanguage: Lang;
+  // Usual eating (Phase 2) — optional free text.
+  usualBreakfast: string;
+  usualLunch: string;
+  usualDinner: string;
+  usualFoods: string;
+  dislikedFoods: string;
 }
 
 type Result =
@@ -134,6 +140,11 @@ export async function updateProfile(input: ProfileEditInput): Promise<Result> {
       protein_target_g: plan.proteinTargetG,
       carb_target_g: plan.carbTargetG,
       fat_target_g: plan.fatTargetG,
+      usual_breakfast: input.usualBreakfast.trim() || null,
+      usual_lunch: input.usualLunch.trim() || null,
+      usual_dinner: input.usualDinner.trim() || null,
+      usual_foods: input.usualFoods.trim() || null,
+      disliked_foods: input.dislikedFoods.trim() || null,
       preferred_language: input.preferredLanguage,
     })
     .eq("id", user.id);

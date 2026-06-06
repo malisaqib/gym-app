@@ -89,6 +89,12 @@ export interface Profile {
   timeline: Timeline | null;
   training_location: TrainingLocation | null;
   food_preference: FoodPreference | null;
+  // Usual eating (migration 0011) — all additive / nullable, optional.
+  usual_breakfast: string | null;
+  usual_lunch: string | null;
+  usual_dinner: string | null;
+  usual_foods: string | null; // foods they eat a lot (likes)
+  disliked_foods: string | null; // don't/won't eat (allergies, dislikes)
   onboarding_raw: OnboardingEntry[] | null;
   onboarded: boolean;
   // Workout rebuild Phase 2 (migration 0008) — all nullable / additive.

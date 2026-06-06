@@ -42,6 +42,12 @@ export interface ProfileDetails {
   carbTargetG: number | null;
   fatTargetG: number | null;
   targetDate: string | null;
+  // Usual eating (optional) — used by the diet plan.
+  usualBreakfast: string;
+  usualLunch: string;
+  usualDinner: string;
+  usualFoods: string;
+  dislikedFoods: string;
 }
 
 const GOAL_OPTS = RELATABLE_GOALS.map((g) => ({ value: g.key, label: g.label.en }));
@@ -134,6 +140,11 @@ export default function ProfileEditor({ initial }: { initial: ProfileDetails }) 
       trainingDays: draft.trainingDays,
       experience: draft.experience,
       preferredLanguage: draft.preferredLanguage,
+      usualBreakfast: draft.usualBreakfast,
+      usualLunch: draft.usualLunch,
+      usualDinner: draft.usualDinner,
+      usualFoods: draft.usualFoods,
+      dislikedFoods: draft.dislikedFoods,
     };
     try {
       const res = await updateProfile(input);
@@ -285,6 +296,17 @@ export default function ProfileEditor({ initial }: { initial: ProfileDetails }) 
         <Chips options={LANG_OPTS} selected={draft.preferredLanguage} onSelect={(v) => patch({ preferredLanguage: v })} />
       </Field>
 
+      {/* Usual eating (optional) — feeds the diet plan. */}
+      <div className="space-y-2 rounded-field border border-border bg-background p-3">
+        <p className="text-sm font-medium text-foreground">How you usually eat (optional)</p>
+        <p className="text-xs text-muted-foreground">Your meal plan is built around these.</p>
+        <TextLine value={draft.usualBreakfast} placeholder="Usual breakfast" onChange={(v) => patch({ usualBreakfast: v })} />
+        <TextLine value={draft.usualLunch} placeholder="Usual lunch" onChange={(v) => patch({ usualLunch: v })} />
+        <TextLine value={draft.usualDinner} placeholder="Usual dinner" onChange={(v) => patch({ usualDinner: v })} />
+        <TextLine value={draft.usualFoods} placeholder="Foods you eat a lot" onChange={(v) => patch({ usualFoods: v })} />
+        <TextLine value={draft.dislikedFoods} placeholder="Anything you don't / won't eat" onChange={(v) => patch({ dislikedFoods: v })} />
+      </div>
+
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       <div className="flex items-center gap-2">
@@ -325,6 +347,26 @@ function Target({ label, value }: { label: string; value: string }) {
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="mt-0.5 font-display text-lg font-semibold tracking-tight text-primary">{value}</p>
     </div>
+  );
+}
+
+function TextLine({
+  value,
+  placeholder,
+  onChange,
+}: {
+  value: string;
+  placeholder: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <input
+      type="text"
+      value={value}
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+      className="h-11 w-full rounded-field border border-input bg-card px-3 text-base text-foreground focus:border-ring focus:outline-none"
+    />
   );
 }
 

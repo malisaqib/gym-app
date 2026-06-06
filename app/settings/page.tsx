@@ -20,7 +20,7 @@ export default async function SettingsPage() {
   const { data: profile } = await supabase
     .from("profiles")
     .select(
-      "full_name, relatable_goal, timeline, training_location, food_preference, sex, age, height_cm, weight_kg, training_days, experience, calorie_target, protein_target_g, carb_target_g, fat_target_g, preferred_language, activity_level, goal_weight_kg, weekly_pace_kg, target_date"
+      "full_name, relatable_goal, timeline, training_location, food_preference, sex, age, height_cm, weight_kg, training_days, experience, calorie_target, protein_target_g, carb_target_g, fat_target_g, preferred_language, activity_level, goal_weight_kg, weekly_pace_kg, target_date, usual_breakfast, usual_lunch, usual_dinner, usual_foods, disliked_foods"
     )
     .eq("id", user.id)
     .single<Partial<Profile>>();
@@ -50,6 +50,11 @@ export default async function SettingsPage() {
     carbTargetG: profile?.carb_target_g ?? null,
     fatTargetG: profile?.fat_target_g ?? null,
     targetDate: profile?.target_date ?? null,
+    usualBreakfast: profile?.usual_breakfast ?? "",
+    usualLunch: profile?.usual_lunch ?? "",
+    usualDinner: profile?.usual_dinner ?? "",
+    usualFoods: profile?.usual_foods ?? "",
+    dislikedFoods: profile?.disliked_foods ?? "",
   };
 
   return (
