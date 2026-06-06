@@ -80,6 +80,9 @@ export default function DietPlanView({
   const [notes, setNotes] = useState("");
   const [vegetarian, setVegetarian] = useState(initialFilter.vegetarian);
   const [avoid, setAvoid] = useState<string[]>(initialFilter.excludeTags);
+  // Specific foods to avoid (free text, e.g. "whey protein shake"). Shown as
+  // removable chips so they persist across regenerate until the user clears them.
+  const [avoidFoods, setAvoidFoods] = useState<string[]>(initialFilter.excludeFoods ?? []);
   const [busy, setBusy] = useState(false);
   const [swapping, setSwapping] = useState<MealSlot | null>(null);
   const [habits, setHabits] = useState(false);
@@ -93,9 +96,14 @@ export default function DietPlanView({
     setBusy(true);
     setError(null);
     try {
-      const res = await generateDietPlan({ notes, vegetarian, excludeTags: avoid });
+      const res = await generateDietPlan({ notes, vegetarian, excludeTags: avoid, excludeFoods: avoidFoods });
       if (res.ok) {
         setPlan(res.plan);
+        // Surface any newly-parsed exclusions as chips, and clear the note box.
+        setAvoidFoods(res.plan.filter.excludeFoods ?? []);
+        setVegetarian(res.plan.filter.vegetarian);
+        setAvoid(res.plan.filter.excludeTags);
+        setNotes("");
         haptic("success");
       } else {
         setError(res.error);
@@ -164,6 +172,24 @@ export default function DietPlanView({
             </Chip>
           ))}
         </div>
+
+        {/* Specific foods you've asked to avoid (from your notes). Tap ✕ to allow again. */}
+        {avoidFoods.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground">{t("avoidLabel")}:</span>
+            {avoidFoods.map((f) => (
+              <button
+                key={f}
+                type="button"
+                onPointerDown={() => haptic("tap")}
+                onClick={() => setAvoidFoods((cur) => cur.filter((x) => x !== f))}
+                className="min-h-[32px] rounded-pill border border-primary bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground active:scale-[0.97]"
+              >
+                {f} ✕
+              </button>
+            ))}
+          </div>
+        )}
 
         <label className="block space-y-1.5">
           <span className="text-sm font-medium text-foreground">{t("notesLabel")}</span>

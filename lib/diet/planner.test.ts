@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { buildPlan, swapMeal, filterFromPreference, mergeFilters, type DietFilter } from "./planner.ts";
 import { CATALOG_BY_ID } from "./foodCatalog.ts";
 
-const openFilter: DietFilter = { vegetarian: false, excludeTags: [], regionFocus: null };
+const openFilter: DietFilter = { vegetarian: false, excludeTags: [], excludeFoods: [], regionFocus: null };
 
 test("buildPlan returns the four meal slots in order", () => {
   const plan = buildPlan({ calorieTarget: 2100, proteinTargetG: 110, filter: openFilter, seed: 1 });
@@ -47,6 +47,27 @@ test("excludeTags removes those foods (e.g. no beef)", () => {
   });
   const ids = plan.meals.flatMap((m) => m.items.map((i) => i.id));
   assert.ok(ids.every((id) => !CATALOG_BY_ID[id].tags.includes("beef")));
+});
+
+test("excludeFoods drops a specific item by name (e.g. whey protein shake)", () => {
+  const plan = buildPlan({
+    calorieTarget: 2200,
+    proteinTargetG: 130,
+    filter: { vegetarian: false, excludeTags: [], excludeFoods: ["whey protein shake"], regionFocus: null },
+    seed: 4,
+  });
+  const ids = plan.meals.flatMap((m) => m.items.map((i) => i.id));
+  assert.ok(!ids.includes("whey"), "whey should be excluded");
+});
+
+test("a loose avoid phrase still matches the food name (tolerant)", () => {
+  const plan = buildPlan({
+    calorieTarget: 2200,
+    proteinTargetG: 130,
+    filter: { vegetarian: false, excludeTags: [], excludeFoods: ["the whey protein shake thing"], regionFocus: null },
+    seed: 8,
+  });
+  assert.ok(!plan.meals.flatMap((m) => m.items.map((i) => i.id)).includes("whey"));
 });
 
 test("swapMeal changes only the targeted meal", () => {

@@ -37,6 +37,7 @@ export async function generateDietPlan(input?: {
   notes?: string;
   vegetarian?: boolean;
   excludeTags?: string[];
+  excludeFoods?: string[];
 }): Promise<PlanResult> {
   const supabase = await createClient();
   const {
@@ -62,7 +63,11 @@ export async function generateDietPlan(input?: {
   }
 
   const hasChoices =
-    !!input && (typeof input.vegetarian === "boolean" || !!input.excludeTags?.length || !!input.notes?.trim());
+    !!input &&
+    (typeof input.vegetarian === "boolean" ||
+      !!input.excludeTags?.length ||
+      !!input.excludeFoods?.length ||
+      !!input.notes?.trim());
 
   let filter;
   if (hasChoices) {
@@ -70,7 +75,7 @@ export async function generateDietPlan(input?: {
       ? await parsePreferences(input!.notes, profile?.preferred_language ?? "en")
       : {};
     filter = mergeFilters(
-      { vegetarian: input!.vegetarian, excludeTags: input!.excludeTags },
+      { vegetarian: input!.vegetarian, excludeTags: input!.excludeTags, excludeFoods: input!.excludeFoods },
       fromNotes
     );
   } else {

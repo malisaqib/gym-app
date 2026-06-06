@@ -16,7 +16,8 @@ import { FOOD_CATALOG, CATALOG_BY_ID, type CatalogFood, type MealSlot } from "./
 
 export interface DietFilter {
   vegetarian: boolean;
-  excludeTags: string[]; // foods carrying ANY of these tags are removed (e.g. "beef")
+  excludeTags: string[]; // whole categories to remove (e.g. "beef") — matched on tags
+  excludeFoods: string[]; // SPECIFIC foods to avoid, free text (e.g. "whey protein shake")
   regionFocus: "desi" | "western" | null; // soft lean, not a hard filter
 }
 
@@ -62,11 +63,17 @@ export function filterFromPreference(
   pref: FoodPreference | null,
   extra?: Partial<DietFilter>
 ): DietFilter {
-  const base: DietFilter = { vegetarian: pref === "veg_limited", excludeTags: [], regionFocus: null };
+  const base: DietFilter = {
+    vegetarian: pref === "veg_limited",
+    excludeTags: [],
+    excludeFoods: [],
+    regionFocus: null,
+  };
   return {
     vegetarian: extra?.vegetarian ?? base.vegetarian,
     regionFocus: extra?.regionFocus ?? base.regionFocus,
     excludeTags: dedupe([...base.excludeTags, ...(extra?.excludeTags ?? [])]),
+    excludeFoods: dedupe([...base.excludeFoods, ...(extra?.excludeFoods ?? [])]),
   };
 }
 
@@ -79,19 +86,35 @@ export function mergeFilters(...parts: Partial<DietFilter>[]): DietFilter {
   let vegetarian = false;
   let regionFocus: DietFilter["regionFocus"] = null;
   const tags = new Set<string>();
+  const foods = new Set<string>();
   for (const p of parts) {
     if (p.vegetarian) vegetarian = true;
     if (p.regionFocus) regionFocus = p.regionFocus;
     (p.excludeTags ?? []).forEach((t) => tags.add(t));
+    (p.excludeFoods ?? []).forEach((f) => foods.add(f.toLowerCase().trim()));
   }
-  return { vegetarian, regionFocus, excludeTags: [...tags] };
+  return { vegetarian, regionFocus, excludeTags: [...tags], excludeFoods: [...foods].filter(Boolean) };
 }
 
 // --- core -------------------------------------------------------------------
 
+// Does a free-text "avoid" term refer to this food? Tolerant both ways so
+// "whey", "protein shake", or "the whey protein shake thing" all match
+// "Whey protein shake".
+function matchesAvoidedFood(food: CatalogFood, terms: string[]): boolean {
+  if (!terms?.length) return false;
+  const name = food.name.toLowerCase();
+  return terms.some((raw) => {
+    const term = raw.toLowerCase().trim();
+    if (term.length < 3) return false;
+    return name.includes(term) || term.includes(name) || food.tags.some((tag) => term.includes(tag));
+  });
+}
+
 function allowed(food: CatalogFood, filter: DietFilter): boolean {
   if (filter.vegetarian && !food.vegetarian) return false;
   if (food.tags.some((t) => filter.excludeTags.includes(t))) return false;
+  if (matchesAvoidedFood(food, filter.excludeFoods ?? [])) return false;
   return true;
 }
 
