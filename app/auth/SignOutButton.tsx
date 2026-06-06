@@ -2,6 +2,7 @@
 
 import { useFormStatus } from "react-dom";
 import { signOut } from "@/app/auth/actions";
+import { clearLocalCoachData } from "@/lib/coach/localStore";
 import { Button } from "@/components/ui/Button";
 
 /**
@@ -21,7 +22,7 @@ function PendingButton({ children }: { children: React.ReactNode }) {
 
 export function SignOutButton({ children = "Sign out" }: { children?: React.ReactNode }) {
   return (
-    <form action={signOut}>
+    <form action={signOut} onSubmit={() => clearLocalCoachData()}>
       <PendingButton>{children}</PendingButton>
     </form>
   );
@@ -30,7 +31,7 @@ export function SignOutButton({ children = "Sign out" }: { children?: React.Reac
 /** Compact ghost variant for the dashboard header. */
 export function SignOutGhostButton() {
   return (
-    <form action={signOut}>
+    <form action={signOut} onSubmit={() => clearLocalCoachData()}>
       <CompactPending />
     </form>
   );

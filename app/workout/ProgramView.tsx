@@ -8,6 +8,7 @@ import type { ExerciseHistory } from "@/lib/workouts/history";
 import { suggestProgression } from "@/lib/workouts/progression";
 import { haptic } from "@/lib/haptics";
 import { useAsyncAction } from "@/lib/useAsyncAction";
+import { localDateString } from "@/lib/localDate";
 import { Button } from "@/components/ui/Button";
 import { toast } from "@/lib/toast";
 import { Sheet } from "@/components/ui/Sheet";
@@ -273,6 +274,10 @@ function ExerciseCard({
       setError(`Enter ${unit}.`);
       return;
     }
+    // Persist with the LIVE local day (not the render-time prop, which goes
+    // stale across midnight). The optimistic row is replaced by the saved row
+    // (with the real date) on success, so its placeholder date is cosmetic.
+    const date = localDateString();
     const tempId = crypto.randomUUID();
     const setNumber = history.today.length + 1;
     const optimistic: WorkoutLog = {
@@ -291,7 +296,7 @@ function ExerciseCard({
     setError(null);
     haptic("success");
 
-    const res = await logSet({ exerciseName: exercise.name, reps: n, setNumber, date: today });
+    const res = await logSet({ exerciseName: exercise.name, reps: n, setNumber, date });
     if (res.ok) onReplace(tempId, res.item);
     else {
       onRemove(tempId);
@@ -303,7 +308,10 @@ function ExerciseCard({
     const snapshot = history.today.find((s) => s.id === id);
     onRemove(id);
     const res = await deleteSet(id);
-    if (!res.ok && snapshot) onAdd(snapshot);
+    if (!res.ok) {
+      if (snapshot) onAdd(snapshot); // restore — never silently drop
+      toast.error(res.error || "Couldn't delete that set. Please try again.");
+    }
   }
 
   async function doSwap() {

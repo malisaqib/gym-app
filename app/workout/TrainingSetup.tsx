@@ -103,12 +103,15 @@ export default function TrainingSetup({
     onSetupChange?.(next); // rebuild the plan from the new setup
     toast.success("Workout plan updated");
 
-    // Best-effort DB sync (works once migration 0008 is applied).
+    // Best-effort DB sync (works once migration 0008 is applied). If it fails,
+    // tell the user it's saved on this device only — don't let it look synced.
     try {
       const res = await saveTrainingSetup(next);
       setSyncNote(res.ok ? "synced" : "local");
+      if (!res.ok) toast.error("Saved on this device — couldn't sync to your account.");
     } catch {
       setSyncNote("local");
+      toast.error("Saved on this device — couldn't sync to your account.");
     } finally {
       setSaving(false);
     }
@@ -312,11 +315,13 @@ function SetupSummary({
         {setup.injuriesNote && <SummaryItem label="Notes" value={setup.injuriesNote} wide />}
       </dl>
 
-      <p className="text-xs text-muted-foreground">
-        {syncNote === "synced"
-          ? "Saved to your profile."
-          : "Saved on this device. Your full plan appears here next."}
-      </p>
+      {syncNote === "synced" ? (
+        <p className="text-xs text-muted-foreground">Saved to your account.</p>
+      ) : syncNote === "local" ? (
+        <p className="text-xs text-warning">Saved on this device only — couldn&apos;t sync to your account.</p>
+      ) : (
+        <p className="text-xs text-muted-foreground">Saved on this device. Your full plan appears here next.</p>
+      )}
     </Card>
   );
 }

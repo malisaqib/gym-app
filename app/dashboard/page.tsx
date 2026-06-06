@@ -9,6 +9,7 @@ import { LargeTitle } from "@/components/ui/LargeTitle";
 import { SignOutGhostButton } from "@/app/auth/SignOutButton";
 import BottomNav from "@/components/BottomNav";
 import IntroTour from "@/components/IntroTour";
+import LocalDataGuard from "@/components/LocalDataGuard";
 import FoodLogger from "./FoodLogger";
 import EmotionalGoalOnboarding from "@/app/coach/EmotionalGoalOnboarding";
 
@@ -82,6 +83,8 @@ export default async function DashboardPage() {
         <p className="text-center text-xs text-muted-foreground break-all">{user.email}</p>
       </Screen>
       <BottomNav />
+      {/* Wipe device-local coach data if a different user is on this device. */}
+      <LocalDataGuard userId={user.id} />
       {/* One-time, skippable walkthrough of the tabs (first visit only). */}
       <IntroTour lang={lang} />
     </>

@@ -85,11 +85,7 @@ export default async function ProgressPage() {
           />
         )}
 
-        <WeightTracker
-          startWeight={profile?.weight_kg ?? null}
-          initialLogs={logs ?? []}
-          today={today}
-        />
+        <WeightTracker startWeight={profile?.weight_kg ?? null} initialLogs={logs ?? []} />
 
         {/* Weekly check-in + progress record (self-contained, localStorage). */}
         <WeeklyCheckIn lang={lang} />

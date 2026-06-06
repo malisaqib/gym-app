@@ -34,3 +34,18 @@ export function writeLocal<T>(key: string, value: T): void {
     // Ignore: storage being full/blocked shouldn't break the page.
   }
 }
+
+// Remove ALL device-local coach data (every `gymCoach.*` key). Used on sign-out
+// and when a different user signs in, so one person's local prefs (budget,
+// check-ins, goal, training setup, intro flag) never leak to the next on a
+// shared device.
+export function clearLocalCoachData(): void {
+  if (typeof window === "undefined") return;
+  try {
+    for (const key of Object.keys(window.localStorage)) {
+      if (key.startsWith("gymCoach.")) window.localStorage.removeItem(key);
+    }
+  } catch {
+    // ignore
+  }
+}

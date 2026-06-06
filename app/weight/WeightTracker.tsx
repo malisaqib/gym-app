@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import type { BodyweightLog } from "@/lib/database.types";
 import { listContainer, listItem } from "@/lib/motion";
 import { toSeries, weightChange, latestWeight } from "@/lib/weight/series";
+import { localDateString } from "@/lib/localDate";
 import { Button } from "@/components/ui/Button";
 import { toast } from "@/lib/toast";
 import { logWeight, deleteWeight } from "./actions";
@@ -13,11 +14,9 @@ import WeightChart from "./WeightChart";
 export default function WeightTracker({
   startWeight,
   initialLogs,
-  today,
 }: {
   startWeight: number | null;
   initialLogs: BodyweightLog[];
-  today: string;
 }) {
   // Seeded from the server — no mount fetch.
   const [logs, setLogs] = useState<BodyweightLog[]>(initialLogs);
@@ -35,22 +34,25 @@ export default function WeightTracker({
     const value = Number(weight);
     if (!weight.trim() || saving) return; // guard blocks rapid double-submits
 
+    // Use the LIVE local day at submit, never a date frozen at page render
+    // (which goes stale across midnight / before the tz cookie is set).
+    const date = localDateString();
     const snapshot = logs;
     const tempId = crypto.randomUUID();
     const optimistic: BodyweightLog = {
       id: tempId,
       user_id: "",
       weight_kg: value,
-      logged_on: today,
+      logged_on: date,
       created_at: new Date().toISOString(),
     };
-    setLogs((prev) => [...prev.filter((l) => l.logged_on !== today), optimistic]);
+    setLogs((prev) => [...prev.filter((l) => l.logged_on !== date), optimistic]);
     setWeight("");
     setError(null);
     setSaving(true);
 
     try {
-      const res = await logWeight({ weight: value, date: today });
+      const res = await logWeight({ weight: value, date });
       if (res.ok) {
         setLogs((prev) => prev.map((l) => (l.id === tempId ? res.item : l)));
       } else {
