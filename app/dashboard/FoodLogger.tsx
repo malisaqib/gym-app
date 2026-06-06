@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import type { FoodLog } from "@/lib/database.types";
 import { listContainer, listItem } from "@/lib/motion";
 import { sumMacros } from "@/lib/food/totals";
-import { logFood, correctFoodItem, deleteFoodItem } from "./actions";
+import { localDateString } from "@/lib/localDate";
+import { logFood, getFoodLogs, correctFoodItem, deleteFoodItem } from "./actions";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
@@ -37,8 +38,35 @@ export default function FoodLogger({
   const [pending, setPending] = useState<PendingLog[]>([]);
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Tracks in-flight logs so a focus-refetch doesn't clobber an optimistic add.
+  const inFlight = useRef(0);
 
   const eaten = sumMacros(items);
+
+  // Re-read the day's items when the tab regains focus, and re-align if the
+  // CLIENT's local day differs from the server-rendered day (first-visit UTC
+  // fallback, or the tab being left open across local midnight). This is the
+  // server (DB) truth, so nothing "disappears" just because the page was stale.
+  useEffect(() => {
+    let cancelled = false;
+    async function refresh() {
+      if (inFlight.current > 0) return; // don't fight an optimistic add mid-write
+      const rows = await getFoodLogs(localDateString());
+      if (!cancelled) setItems(rows);
+    }
+    // Align on mount only when the client's real day != the day we rendered for.
+    if (localDateString() !== today) void refresh();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+    window.addEventListener("focus", onVisible);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", onVisible);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [today]);
 
   async function handleLog(e: React.FormEvent) {
     e.preventDefault();
@@ -50,18 +78,24 @@ export default function FoodLogger({
     setPending((p) => [...p, { tempId, text: meal }]);
     setText("");
     setError(null);
+    inFlight.current += 1;
 
     try {
-      const res = await logFood({ text: meal, date: today });
+      // Write with the user's LIVE local day (not the stale render-time prop),
+      // so the item lands on the day the dashboard will query next.
+      const res = await logFood({ text: meal, date: localDateString() });
       if (res.ok) {
         setItems((prev) => [...prev, ...res.items]);
       } else {
         setError(res.error);
+        setText(meal); // never silently drop the user's input — let them retry
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+      setText(meal);
     } finally {
       setPending((p) => p.filter((x) => x.tempId !== tempId));
+      inFlight.current -= 1;
     }
   }
 
