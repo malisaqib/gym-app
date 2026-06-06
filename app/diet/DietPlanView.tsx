@@ -26,8 +26,8 @@ const AVOID: { tag: string; label: Record<Lang, string> }[] = [
 const T = {
   title: { en: "Your day's plan", roman_urdu: "Aap ke din ka plan" },
   intro: {
-    en: "A simple, repeatable day that fits your targets. Swap anything you don't fancy.",
-    roman_urdu: "Ek asaan, repeatable din jo aap ke targets se milta hai. Jo pasand na ho, swap karein.",
+    en: "Meals built to hit your daily calories & protein. Swap anything you don't fancy.",
+    roman_urdu: "Aap ki rozana calories aur protein pe bana plan. Jo pasand na ho, swap karein.",
   },
   vegLabel: { en: "Vegetarian", roman_urdu: "Vegetarian" },
   avoidLabel: { en: "Avoid", roman_urdu: "Avoid karein" },
@@ -36,7 +36,7 @@ const T = {
     en: "e.g. no beef, hostel food only, vegetarian",
     roman_urdu: "misal: beef nahi, hostel ka khana, vegetarian",
   },
-  generate: { en: "Generate plan", roman_urdu: "Plan banayein" },
+  generate: { en: "Generate my plan", roman_urdu: "Mera plan banayein" },
   regenerate: { en: "Regenerate", roman_urdu: "Naya plan" },
   working: { en: "Working…", roman_urdu: "Ban raha hai…" },
   swap: { en: "Swap", roman_urdu: "Badlein" },
@@ -45,10 +45,10 @@ const T = {
   daily: { en: "Daily total", roman_urdu: "Din ka total" },
   cal: { en: "kcal", roman_urdu: "kcal" },
   protein: { en: "protein", roman_urdu: "protein" },
-  emptyTitle: { en: "No plan yet", roman_urdu: "Abhi koi plan nahi" },
+  emptyTitle: { en: "No meal plan yet", roman_urdu: "Abhi koi meal plan nahi" },
   emptyHint: {
-    en: "Generate a simple day of meals built around your targets.",
-    roman_urdu: "Apne targets ke mutabiq ek asaan din ka plan banayein.",
+    en: "Tap “Generate my plan” and I'll build a full day of meals that fits your calories & protein.",
+    roman_urdu: "“Mera plan banayein” dabayein — main poora din ka plan banata hoon jo aap ki calories aur protein pe fit ho.",
   },
   habitsLine: {
     en: "Aim for protein + a carb + something fresh at each meal. Numbers are a guide, not a test.",
@@ -201,7 +201,14 @@ export default function DietPlanView({
           />
         </label>
         <div className="flex items-center justify-between gap-2">
-          <Button onClick={generate} loading={busy} disabled={busy}>
+          {/* Before a plan exists, this is THE primary action — make it unmissable. */}
+          <Button
+            onClick={generate}
+            loading={busy}
+            disabled={busy}
+            fullWidth={!plan}
+            size={plan ? "md" : "lg"}
+          >
             {busy ? t("working") : plan ? t("regenerate") : t("generate")}
           </Button>
           {plan && (

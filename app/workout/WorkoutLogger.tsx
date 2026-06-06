@@ -70,7 +70,12 @@ export default function WorkoutLogger({
   return (
     <>
       <main className="mx-auto flex min-h-screen max-w-md flex-col gap-5 px-4 pb-24 pt-8">
-        <h1 className="font-display text-2xl font-semibold text-foreground">Workout</h1>
+        <div>
+          <h1 className="font-display text-2xl font-semibold text-foreground">Workout</h1>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            Your plan, built from your goal &amp; equipment — log sets as you go.
+          </p>
+        </div>
 
         {/* Training setup — emits to (re)build the deterministic plan below. */}
         <TrainingSetup profileDefaults={profileDefaults} onSetupChange={handleSetupChange} />

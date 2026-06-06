@@ -10,6 +10,7 @@ import { haptic } from "@/lib/haptics";
 const TABS = [
   { href: "/dashboard", label: "Home", emoji: "🏠" },
   { href: "/coach", label: "Eat", emoji: "🍽️" },
+  { href: "/diet", label: "Plan", emoji: "🥗" },
   { href: "/workout", label: "Train", emoji: "🏋️" },
   { href: "/weight", label: "Progress", emoji: "📈" },
 ];

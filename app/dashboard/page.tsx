@@ -8,6 +8,7 @@ import { Screen } from "@/components/ui/Screen";
 import { LargeTitle } from "@/components/ui/LargeTitle";
 import { SignOutGhostButton } from "@/app/auth/SignOutButton";
 import BottomNav from "@/components/BottomNav";
+import IntroTour from "@/components/IntroTour";
 import FoodLogger from "./FoodLogger";
 import EmotionalGoalOnboarding from "@/app/coach/EmotionalGoalOnboarding";
 
@@ -81,6 +82,8 @@ export default async function DashboardPage() {
         <p className="text-center text-xs text-muted-foreground break-all">{user.email}</p>
       </Screen>
       <BottomNav />
+      {/* One-time, skippable walkthrough of the tabs (first visit only). */}
+      <IntroTour lang={lang} />
     </>
   );
 }

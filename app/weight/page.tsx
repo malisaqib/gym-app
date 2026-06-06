@@ -69,7 +69,12 @@ export default async function ProgressPage() {
   return (
     <>
       <main className="mx-auto flex min-h-screen max-w-md flex-col gap-6 px-4 pb-28 pt-8">
-        <h1 className="font-display text-2xl font-semibold text-foreground">Progress</h1>
+        <div>
+          <h1 className="font-display text-2xl font-semibold text-foreground">Progress</h1>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            Log your weight and watch the trend toward your goal.
+          </p>
+        </div>
 
         {insight && (
           <ProgressInsight
