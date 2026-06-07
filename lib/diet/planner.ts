@@ -42,6 +42,7 @@ export interface PlanMealItem {
   protein: number;
   carbs: number;
   fat: number;
+  approx?: boolean; // true for a free-typed item we estimated (not catalog-grounded)
 }
 
 export interface PlanMeal {
@@ -400,6 +401,116 @@ export function swapMeal(plan: DietPlan, slot: MealSlot, newSeed: number): DietP
 /** Validate a swap target id belongs to the catalog (defensive for stored data). */
 export function isKnownFood(id: string): boolean {
   return id in CATALOG_BY_ID;
+}
+
+// --- per-item editing (Phase 3) --------------------------------------------
+// All pure + deterministic. Adds may push the day OVER target (a deliberate user
+// choice) — totals/flags are recomputed honestly so the UI can surface it.
+
+/** Recompute every meal's + the day's totals/flags from the current items. */
+function recompute(plan: DietPlan): DietPlan {
+  const meals = plan.meals.map((m) => ({
+    ...m,
+    calories: sumItemsCal(m.items),
+    protein: sumItemsPro(m.items),
+  }));
+  const totalCalories = meals.reduce((s, m) => s + m.calories, 0);
+  const totalProtein = meals.reduce((s, m) => s + m.protein, 0);
+  return {
+    ...plan,
+    meals,
+    totalCalories,
+    totalProtein,
+    proteinShort: totalProtein < plan.proteinTargetG,
+    caloriesShort: totalCalories < plan.calorieTarget * SHORT_THRESHOLD,
+  };
+}
+
+const sumItemsCal = (items: PlanMealItem[]) => items.reduce((s, i) => s + i.calories, 0);
+const sumItemsPro = (items: PlanMealItem[]) => items.reduce((s, i) => s + i.protein, 0);
+const mealAt = (plan: DietPlan, slot: MealSlot) => plan.meals.find((m) => m.slot === slot);
+const withMeal = (plan: DietPlan, slot: MealSlot, items: PlanMealItem[]): DietPlan =>
+  recompute({ ...plan, meals: plan.meals.map((m) => (m.slot === slot ? { ...m, items } : m)) });
+
+/** Remove one item (by index) from a meal. */
+export function removePlanItem(plan: DietPlan, slot: MealSlot, index: number): DietPlan {
+  const meal = mealAt(plan, slot);
+  if (!meal || index < 0 || index >= meal.items.length) return plan;
+  return withMeal(plan, slot, meal.items.filter((_, i) => i !== index));
+}
+
+/** Add a catalog food to a meal. Never adds an avoided food. */
+export function addPlanItem(plan: DietPlan, slot: MealSlot, foodId: string): DietPlan {
+  const food = CATALOG_BY_ID[foodId];
+  const meal = mealAt(plan, slot);
+  if (!food || !meal || !allowed(food, plan.filter)) return plan;
+  return withMeal(plan, slot, [...meal.items, toItem(food)]);
+}
+
+/** Append a pre-built item (e.g. an AI-estimated, approximate free-typed food). */
+export function appendPlanItem(plan: DietPlan, slot: MealSlot, item: PlanMealItem): DietPlan {
+  const meal = mealAt(plan, slot);
+  if (!meal) return plan;
+  return withMeal(plan, slot, [...meal.items, item]);
+}
+
+/**
+ * Swap one item for a SIMILAR catalog food (same role + closest calories) that
+ * fits the slot budget and the avoid filter, never duplicating the meal's items.
+ * Deterministic for a seed. No-op for a custom item, or when nothing fits.
+ */
+export function swapPlanItem(plan: DietPlan, slot: MealSlot, index: number, newSeed: number): DietPlan {
+  const meal = mealAt(plan, slot);
+  const item = meal?.items[index];
+  if (!meal || !item) return plan;
+  const current = CATALOG_BY_ID[item.id];
+  if (!current) return plan; // custom/approx item — can't ground a swap
+
+  const rng = mulberry32(newSeed);
+  const otherCal = meal.calories - item.calories;
+  const used = new Set(meal.items.map((i) => i.id));
+  const base = (extra: (f: CatalogFood) => boolean) =>
+    FOOD_CATALOG.filter(
+      (f) =>
+        f.slots.includes(slot) &&
+        allowed(f, plan.filter) &&
+        !used.has(f.id) &&
+        otherCal + f.calories <= meal.budget && // keep the meal within its budget
+        extra(f)
+    );
+  const pool = base((f) => f.role === current.role);
+  const finalPool = pool.length ? pool : base(() => true);
+  if (finalPool.length === 0) return plan;
+
+  const pick = chooseTop(
+    finalPool,
+    (f) => -Math.abs(f.calories - item.calories) / 10 + proteinDensity(f) * 40,
+    rng
+  );
+  if (!pick) return plan;
+  return withMeal(plan, slot, meal.items.map((it, i) => (i === index ? toItem(pick) : it)));
+}
+
+/** Deterministic catalog search for the "add food" picker (respects the filter). */
+export function searchCatalog(query: string, filter: DietFilter, slot?: MealSlot): CatalogFood[] {
+  const q = query.toLowerCase().trim();
+  if (q.length < 2) return [];
+  const tokens = q.split(/\s+/).filter(Boolean);
+  return FOOD_CATALOG.filter((f) => {
+    if (!allowed(f, filter)) return false;
+    if (slot && !f.slots.includes(slot)) return false;
+    const hay = `${f.name} ${f.tags.join(" ")}`.toLowerCase();
+    return tokens.every((tok) => hay.includes(tok));
+  }).slice(0, 12);
+}
+
+/** Best deterministic catalog match for free-typed text, or null if none. */
+export function bestCatalogMatch(text: string, filter: DietFilter, slot?: MealSlot): CatalogFood | null {
+  return (
+    FOOD_CATALOG.find(
+      (f) => (!slot || f.slots.includes(slot)) && allowed(f, filter) && mentioned(f, text)
+    ) ?? null
+  );
 }
 
 // --- helpers ----------------------------------------------------------------

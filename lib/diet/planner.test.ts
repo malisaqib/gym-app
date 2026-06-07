@@ -1,6 +1,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildPlan, swapMeal, filterFromPreference, mergeFilters, type DietFilter } from "./planner.ts";
+import {
+  buildPlan,
+  swapMeal,
+  filterFromPreference,
+  mergeFilters,
+  removePlanItem,
+  addPlanItem,
+  appendPlanItem,
+  swapPlanItem,
+  searchCatalog,
+  bestCatalogMatch,
+  isKnownFood,
+  type DietFilter,
+} from "./planner.ts";
 import { CATALOG_BY_ID } from "./foodCatalog.ts";
 
 const openFilter: DietFilter = { vegetarian: false, excludeTags: [], excludeFoods: [], regionFocus: null };
@@ -195,6 +208,65 @@ test("swapMeal changes only the targeted meal", () => {
     swapped.totalCalories,
     swapped.meals.reduce((s, m) => s + m.calories, 0)
   );
+});
+
+// --- per-item editing (Phase 3) --------------------------------------------
+
+test("removePlanItem drops the item and recomputes totals", () => {
+  const plan = buildPlan({ calorieTarget: 2100, proteinTargetG: 120, filter: openFilter, seed: 1 });
+  const before = plan.meals.find((m) => m.slot === "lunch")!.items.length;
+  const next = removePlanItem(plan, "lunch", 0);
+  const lunch = next.meals.find((m) => m.slot === "lunch")!;
+  assert.equal(lunch.items.length, before - 1);
+  assert.equal(lunch.calories, lunch.items.reduce((s, i) => s + i.calories, 0));
+  assert.equal(next.totalCalories, next.meals.reduce((s, m) => s + m.calories, 0));
+});
+
+test("addPlanItem adds a catalog food but never an avoided one", () => {
+  const filter: DietFilter = { vegetarian: false, excludeTags: ["beef"], excludeFoods: [], regionFocus: null };
+  const plan = buildPlan({ calorieTarget: 2100, proteinTargetG: 120, filter, seed: 1 });
+  const next = addPlanItem(plan, "dinner", "salad");
+  assert.ok(next.meals.find((m) => m.slot === "dinner")!.items.some((i) => i.id === "salad"));
+  // an avoided food (beef) must be a no-op
+  assert.deepEqual(addPlanItem(next, "dinner", "ground_beef"), next);
+});
+
+test("swapPlanItem returns a different in-budget catalog food; no-op for custom items", () => {
+  const plan = buildPlan({ calorieTarget: 2200, proteinTargetG: 120, filter: openFilter, seed: 1 });
+  const meal = plan.meals.find((m) => m.slot === "lunch")!;
+  const idx = meal.items.findIndex((i) => isKnownFood(i.id));
+  const next = swapPlanItem(plan, "lunch", idx, 42);
+  const meal2 = next.meals.find((m) => m.slot === "lunch")!;
+  assert.ok(meal2.calories <= meal2.budget, `swap exceeded budget: ${meal2.calories}/${meal2.budget}`);
+  assert.equal(next.totalProtein, next.meals.reduce((s, m) => s + m.protein, 0));
+
+  // a custom (non-catalog) item can't be swapped
+  const withCustom = appendPlanItem(plan, "snack", {
+    id: "custom-1", name: "Homemade shake", portion: "1 glass", calories: 200, protein: 20, carbs: 10, fat: 5, approx: true,
+  });
+  const cIdx = withCustom.meals.find((m) => m.slot === "snack")!.items.findIndex((i) => i.id === "custom-1");
+  assert.deepEqual(swapPlanItem(withCustom, "snack", cIdx, 7), withCustom);
+});
+
+test("appendPlanItem can push the day OVER target (totals reflect it honestly)", () => {
+  const plan = buildPlan({ calorieTarget: 1600, proteinTargetG: 100, filter: openFilter, seed: 1 });
+  const next = appendPlanItem(plan, "snack", {
+    id: "custom-x", name: "Big dessert", portion: "1 plate", calories: 900, protein: 8, carbs: 120, fat: 40, approx: true,
+  });
+  assert.ok(next.totalCalories > 1600, "totals should reflect going over target");
+  assert.equal(next.caloriesShort, false);
+});
+
+test("searchCatalog matches by name/tag and respects the filter", () => {
+  assert.ok(searchCatalog("rice", openFilter, "lunch").some((f) => f.id === "rice" || f.id === "brown_rice"));
+  const veg = searchCatalog("chicken", { vegetarian: true, excludeTags: [], excludeFoods: [], regionFocus: null }, "lunch");
+  assert.equal(veg.length, 0, "no chicken under a vegetarian filter");
+});
+
+test("bestCatalogMatch maps free text to a catalog food, or null", () => {
+  const m = bestCatalogMatch("some grilled chicken", openFilter, "dinner");
+  assert.ok(m && m.tags.includes("chicken"));
+  assert.equal(bestCatalogMatch("zzz unknown alien food", openFilter, "dinner"), null);
 });
 
 test("mergeFilters unions excludes, ORs vegetarian, last regionFocus wins", () => {

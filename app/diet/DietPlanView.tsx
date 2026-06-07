@@ -8,8 +8,16 @@ import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { haptic } from "@/lib/haptics";
 import { toast } from "@/lib/toast";
-import { generateDietPlan, swapDietMeal } from "./actions";
+import {
+  generateDietPlan,
+  swapDietMeal,
+  swapDietItem,
+  removeDietItem,
+  addDietItem,
+  addCustomDietItem,
+} from "./actions";
 import UsualEatingCard, { type UsualEating } from "./UsualEatingCard";
+import AddFoodPanel from "./AddFoodPanel";
 import type { DietPlan, DietFilter } from "@/lib/diet/planner";
 import type { MealSlot } from "@/lib/diet/foodCatalog";
 import type { Lang } from "@/lib/database.types";
@@ -45,6 +53,14 @@ const T = {
     roman_urdu: "Preferences badli hain — apply karne ke liye Regenerate dabayein.",
   },
   swap: { en: "Swap", roman_urdu: "Badlein" },
+  remove: { en: "Remove", roman_urdu: "Hatayein" },
+  addFood: { en: "Add food", roman_urdu: "Food add karein" },
+  estBadge: { en: "≈ est", roman_urdu: "≈ andaza" },
+  addedEst: { en: "Added as an estimate.", roman_urdu: "Andaze ke tor par add ho gaya." },
+  overNote: {
+    en: "A little over today — totally fine. Remove or swap an item to ease it back, your call.",
+    roman_urdu: "Aaj thora over — bilkul theek. Koi item hata ya badal kar kam kar sakte hain, aap ki marzi.",
+  },
   habitsOn: { en: "Focus on habits", roman_urdu: "Habits par focus" },
   habitsOff: { en: "Show numbers", roman_urdu: "Numbers dikhayein" },
   daily: { en: "Daily total", roman_urdu: "Din ka total" },
@@ -103,6 +119,10 @@ export default function DietPlanView({
   const [swapping, setSwapping] = useState<MealSlot | null>(null);
   const [habits, setHabits] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Per-item editing (Phase 3): which item is mid-edit, and the open add panel.
+  const [itemBusy, setItemBusy] = useState<string | null>(null); // `${slot}-${index}`
+  const [addOpen, setAddOpen] = useState<MealSlot | null>(null);
+  const [addBusy, setAddBusy] = useState(false);
 
   const toggleAvoid = (tag: string) =>
     setAvoid((cur) => (cur.includes(tag) ? cur.filter((x) => x !== tag) : [...cur, tag]));
@@ -171,6 +191,83 @@ export default function DietPlanView({
       toast.error(message);
     } finally {
       setSwapping(null);
+    }
+  }
+
+  // --- per-item editing -----------------------------------------------------
+
+  // Remove is optimistic (mirrors the server recompute) and rolls back on failure.
+  async function removeItem(slot: MealSlot, index: number) {
+    if (!plan || itemBusy) return;
+    const prev = plan;
+    setItemBusy(`${slot}-${index}`);
+    setPlan(localRemove(plan, slot, index));
+    haptic("tap");
+    try {
+      const res = await removeDietItem(slot, index);
+      if (res.ok) setPlan(res.plan);
+      else {
+        setPlan(prev);
+        toast.error(res.error);
+      }
+    } catch {
+      setPlan(prev);
+      toast.error("Couldn't remove that — please try again.");
+    } finally {
+      setItemBusy(null);
+    }
+  }
+
+  // Swap/add need the catalog + (for typed adds) the estimator, so they run
+  // server-authoritative with a small pending state rather than optimistically.
+  async function swapItem(slot: MealSlot, index: number) {
+    if (itemBusy) return;
+    setItemBusy(`${slot}-${index}`);
+    try {
+      const res = await swapDietItem(slot, index);
+      if (res.ok) {
+        setPlan(res.plan);
+        haptic("tap");
+      } else toast.error(res.error);
+    } catch {
+      toast.error("Couldn't swap that item — please try again.");
+    } finally {
+      setItemBusy(null);
+    }
+  }
+
+  async function addItem(slot: MealSlot, foodId: string) {
+    if (addBusy) return;
+    setAddBusy(true);
+    try {
+      const res = await addDietItem(slot, foodId);
+      if (res.ok) {
+        setPlan(res.plan);
+        setAddOpen(null);
+        haptic("success");
+      } else toast.error(res.error);
+    } catch {
+      toast.error("Couldn't add that — please try again.");
+    } finally {
+      setAddBusy(false);
+    }
+  }
+
+  async function addCustom(slot: MealSlot, text: string) {
+    if (addBusy) return;
+    setAddBusy(true);
+    try {
+      const res = await addCustomDietItem(slot, text);
+      if (res.ok) {
+        setPlan(res.plan);
+        setAddOpen(null);
+        haptic("success");
+        if (res.approx) toast.success(t("addedEst"));
+      } else toast.error(res.error);
+    } catch {
+      toast.error("Couldn't add that — please try again.");
+    } finally {
+      setAddBusy(false);
     }
   }
 
@@ -293,7 +390,12 @@ export default function DietPlanView({
             <Card className="p-4">
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("daily")}</p>
               <div className="mt-1 flex gap-5">
-                <TargetBar value={plan.totalCalories} target={plan.calorieTarget} unit={t("cal")} />
+                <TargetBar
+                  value={plan.totalCalories}
+                  target={plan.calorieTarget}
+                  unit={t("cal")}
+                  tone={plan.totalCalories > plan.calorieTarget ? "warn" : "ok"}
+                />
                 <TargetBar
                   value={plan.totalProtein}
                   target={plan.proteinTargetG}
@@ -301,12 +403,15 @@ export default function DietPlanView({
                   tone={plan.proteinShort ? "warn" : "ok"}
                 />
               </div>
+              {plan.totalCalories > plan.calorieTarget && (
+                <p className="mt-2 rounded-field bg-muted px-3 py-2 text-xs text-warning">{t("overNote")}</p>
+              )}
               {plan.caloriesShort && (
                 <p className="mt-2 rounded-field bg-muted px-3 py-2 text-xs text-warning">
                   {t("caloriesShortNote")}
                 </p>
               )}
-              {plan.proteinShort && !plan.caloriesShort && (
+              {plan.proteinShort && !plan.caloriesShort && plan.totalCalories <= plan.calorieTarget && (
                 <p className="mt-2 rounded-field bg-muted px-3 py-2 text-xs text-warning">
                   {t("proteinShortNote")}
                 </p>
@@ -345,23 +450,78 @@ export default function DietPlanView({
                       </button>
                     </div>
                     <ul className="flex flex-col gap-1.5">
-                      {meal.items.map((item, i) => (
-                        <li
-                          key={`${item.id}-${i}`}
-                          className="flex items-center justify-between rounded-field border border-border bg-background px-3 py-2"
-                        >
-                          <span className="text-sm text-foreground">
-                            {item.name}
-                            <span className="ml-1.5 text-xs text-muted-foreground">{item.portion}</span>
-                          </span>
-                          {!habits && (
-                            <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                              {item.calories} · {item.protein}g
-                            </span>
-                          )}
-                        </li>
-                      ))}
+                      {meal.items.map((item, i) => {
+                        const key = `${meal.slot}-${i}`;
+                        const rowBusy = itemBusy === key;
+                        const canSwap = !item.approx; // custom estimates can't be re-selected
+                        return (
+                          <li
+                            key={`${item.id}-${i}`}
+                            className="flex items-center gap-2 rounded-field border border-border bg-background px-3 py-2"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm text-foreground">
+                                {item.name}
+                                <span className="ml-1.5 text-xs text-muted-foreground">{item.portion}</span>
+                                {item.approx && (
+                                  <span className="ml-1.5 rounded-pill bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                                    {t("estBadge")}
+                                  </span>
+                                )}
+                              </p>
+                              {!habits && (
+                                <p className="text-xs text-muted-foreground tabular-nums">
+                                  {item.calories} · {item.protein}g
+                                </p>
+                              )}
+                            </div>
+                            {canSwap && (
+                              <button
+                                type="button"
+                                aria-label={t("swap")}
+                                disabled={rowBusy}
+                                onPointerDown={() => haptic("tap")}
+                                onClick={() => swapItem(meal.slot, i)}
+                                className="shrink-0 rounded-pill border border-border bg-card px-2 py-1 text-xs text-foreground transition hover:border-primary/50 active:scale-[0.95] disabled:opacity-40"
+                              >
+                                {rowBusy ? "…" : "↻"}
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              aria-label={t("remove")}
+                              disabled={rowBusy}
+                              onPointerDown={() => haptic("tap")}
+                              onClick={() => removeItem(meal.slot, i)}
+                              className="shrink-0 rounded-pill border border-border bg-card px-2 py-1 text-xs text-muted-foreground transition hover:border-destructive/50 hover:text-destructive active:scale-[0.95] disabled:opacity-40"
+                            >
+                              ✕
+                            </button>
+                          </li>
+                        );
+                      })}
                     </ul>
+
+                    {/* Per-meal add: searchable dataset list OR free-typed food. */}
+                    {addOpen === meal.slot ? (
+                      <AddFoodPanel
+                        slot={meal.slot}
+                        lang={lang}
+                        busy={addBusy}
+                        onPick={(foodId) => addItem(meal.slot, foodId)}
+                        onCustom={(text) => addCustom(meal.slot, text)}
+                        onCancel={() => setAddOpen(null)}
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        onPointerDown={() => haptic("tap")}
+                        onClick={() => setAddOpen(meal.slot)}
+                        className="w-fit rounded-field border border-dashed border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-primary/50 hover:text-foreground active:scale-[0.97]"
+                      >
+                        + {t("addFood")}
+                      </button>
+                    )}
                   </Card>
                 </motion.div>
               ))}
@@ -371,6 +531,31 @@ export default function DietPlanView({
       )}
     </div>
   );
+}
+
+// Optimistic remove that mirrors the server's recompute, so totals update with
+// no flicker before the authoritative response arrives (0.85 = SHORT_THRESHOLD).
+function localRemove(plan: DietPlan, slot: MealSlot, index: number): DietPlan {
+  const meals = plan.meals.map((m) => {
+    if (m.slot !== slot) return m;
+    const items = m.items.filter((_, i) => i !== index);
+    return {
+      ...m,
+      items,
+      calories: items.reduce((s, i) => s + i.calories, 0),
+      protein: items.reduce((s, i) => s + i.protein, 0),
+    };
+  });
+  const totalCalories = meals.reduce((s, m) => s + m.calories, 0);
+  const totalProtein = meals.reduce((s, m) => s + m.protein, 0);
+  return {
+    ...plan,
+    meals,
+    totalCalories,
+    totalProtein,
+    proteinShort: totalProtein < plan.proteinTargetG,
+    caloriesShort: totalCalories < plan.calorieTarget * 0.85,
+  };
 }
 
 function Chip({
@@ -412,7 +597,8 @@ function TargetBar({
   unit: string;
   tone?: "ok" | "warn";
 }) {
-  const pct = target > 0 ? Math.min(100, Math.round((value / target) * 100)) : 0;
+  const rawPct = target > 0 ? Math.round((value / target) * 100) : 0;
+  const barPct = Math.min(100, rawPct); // bar caps at full; label shows the real %
   const bar = tone === "warn" ? "bg-warning" : "bg-primary";
   return (
     <div className="flex-1">
@@ -422,9 +608,9 @@ function TargetBar({
         <span className="ml-1 text-xs font-normal text-muted-foreground">{unit}</span>
       </p>
       <div className="mt-1 h-1.5 w-full overflow-hidden rounded-pill bg-muted">
-        <div className={`h-full rounded-pill ${bar} transition-all`} style={{ width: `${pct}%` }} />
+        <div className={`h-full rounded-pill ${bar} transition-all`} style={{ width: `${barPct}%` }} />
       </div>
-      <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">{pct}% of target</p>
+      <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">{rawPct}% of target</p>
     </div>
   );
 }
