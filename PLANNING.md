@@ -60,6 +60,8 @@ the numbers.** The food RAG pipeline (lib/food/*, lib/embeddings.ts, migrations
 - `0012_coach_data.sql` — emotional_goal / budget_profile / check_ins jsonb on
   profiles (coach prefs moved off localStorage → Supabase, RLS-scoped,
   cross-device; the app one-time migrates any local data on first load).
+  NOTE: the budget feature was later removed (it never fed the plan/coach), so
+  `budget_profile` is now an unused column — harmless, left in place.
 - `0013_training_setup.sql` — training_setup jsonb on profiles (the "Set up your
   training" inputs moved off localStorage → Supabase, read DB-first so the plan
   syncs across devices; one-time local→DB migration on first load).

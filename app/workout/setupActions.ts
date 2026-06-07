@@ -55,7 +55,6 @@ export async function saveTrainingSetup(raw: TrainingSetup): Promise<{ ok: boole
       // …plus the 0008 columns (kept current for any direct queries).
       has_equipment: s.hasEquipment,
       equipment: s.equipment,
-      session_minutes: s.sessionMinutes,
       injuries_note: s.injuriesNote || null,
     })
     .eq("id", user.id);

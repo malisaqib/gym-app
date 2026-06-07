@@ -45,8 +45,6 @@ const LEVELS: { value: ExperienceLevel; label: string }[] = [
   { value: "advanced", label: "Advanced" },
 ];
 
-const SESSION_CHOICES = [30, 45, 60, 90];
-
 const DAY_CHOICES = Array.from({ length: MAX_DAYS - MIN_DAYS + 1 }, (_, i) => MIN_DAYS + i);
 
 export default function TrainingSetup({
@@ -242,29 +240,6 @@ export default function TrainingSetup({
         </div>
       </Field>
 
-      <Field label="Session length (optional)">
-        <div className="flex flex-wrap gap-2">
-          {SESSION_CHOICES.map((m) => {
-            const active = draft.sessionMinutes === m;
-            return (
-              <button
-                key={m}
-                type="button"
-                onClick={() => patch({ sessionMinutes: active ? null : m })}
-                aria-pressed={active}
-                className={`rounded-pill border px-3 py-2 text-sm font-medium transition active:scale-[0.98] ${
-                  active
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border bg-background text-foreground hover:border-primary/60"
-                }`}
-              >
-                {m} min
-              </button>
-            );
-          })}
-        </div>
-      </Field>
-
       <Field label="Any injuries or limitations? (optional)">
         <textarea
           value={draft.injuriesNote}
@@ -333,7 +308,6 @@ function SetupSummary({
 
       <dl className="grid grid-cols-2 gap-2 text-sm">
         <SummaryItem label="Equipment" value={equipmentLabels} />
-        <SummaryItem label="Session" value={setup.sessionMinutes ? `${setup.sessionMinutes} min` : "Flexible"} />
         {setup.injuriesNote && <SummaryItem label="Notes" value={setup.injuriesNote} wide />}
       </dl>
 

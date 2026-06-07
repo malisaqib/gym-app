@@ -46,7 +46,6 @@ export interface TrainingSetup {
   equipment: EquipmentItem[]; // selected items (home/both + hasEquipment)
   experienceLevel: ExperienceLevel;
   trainingDaysPerWeek: number; // clamped 2–6
-  sessionMinutes: number | null; // optional
   injuriesNote: string; // optional free text
   updatedAt: string; // ISO; "" means not set up yet
 }
@@ -62,7 +61,6 @@ export const DEFAULT_TRAINING_SETUP: TrainingSetup = {
   equipment: [],
   experienceLevel: "beginner",
   trainingDaysPerWeek: 3,
-  sessionMinutes: null,
   injuriesNote: "",
   updatedAt: "",
 };
@@ -106,12 +104,6 @@ export function normalizeTrainingSetup(raw: Partial<TrainingSetup>): TrainingSet
       ? (raw.equipment ?? []).filter((e): e is EquipmentItem => EQUIPMENT_VALUES.includes(e as EquipmentItem))
       : [];
 
-  const minutesRaw = Number(raw.sessionMinutes);
-  const sessionMinutes =
-    raw.sessionMinutes != null && Number.isFinite(minutesRaw) && minutesRaw > 0
-      ? clamp(Math.round(minutesRaw), 10, 240)
-      : null;
-
   const injuriesNote = typeof raw.injuriesNote === "string" ? raw.injuriesNote.trim().slice(0, 500) : "";
 
   return {
@@ -120,7 +112,6 @@ export function normalizeTrainingSetup(raw: Partial<TrainingSetup>): TrainingSet
     equipment,
     experienceLevel,
     trainingDaysPerWeek,
-    sessionMinutes,
     injuriesNote,
     updatedAt: raw.updatedAt || "",
   };

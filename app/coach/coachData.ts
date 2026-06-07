@@ -1,11 +1,11 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import type { BudgetProfile, EmotionalGoalProfile, WeeklyCheckInEntry } from "./localCoachTypes";
+import type { EmotionalGoalProfile, WeeklyCheckInEntry } from "./localCoachTypes";
 
 /**
  * Server actions for the coach prefs that used to live in localStorage
- * (motivation goal, budget, weekly check-ins). They're stored as jsonb on the
+ * (motivation goal, weekly check-ins). They're stored as jsonb on the
  * user's own `profiles` row, so they're RLS-scoped (no cross-user access) and
  * sync across devices. Pure data — no AI. Reads return null/[] when not set.
  */
@@ -37,26 +37,6 @@ export async function saveEmotionalGoal(goal: EmotionalGoalProfile): Promise<Sav
   const { supabase, userId } = await authed();
   if (!userId) return { ok: false, error: "Not signed in." };
   const { error } = await supabase.from("profiles").update({ emotional_goal: goal }).eq("id", userId);
-  return error ? { ok: false, error: error.message } : { ok: true };
-}
-
-// --- budget ----------------------------------------------------------------
-
-export async function loadBudget(): Promise<BudgetProfile | null> {
-  const { supabase, userId } = await authed();
-  if (!userId) return null;
-  const { data } = await supabase
-    .from("profiles")
-    .select("budget_profile")
-    .eq("id", userId)
-    .single<{ budget_profile: BudgetProfile | null }>();
-  return data?.budget_profile ?? null;
-}
-
-export async function saveBudget(profile: BudgetProfile): Promise<SaveResult> {
-  const { supabase, userId } = await authed();
-  if (!userId) return { ok: false, error: "Not signed in." };
-  const { error } = await supabase.from("profiles").update({ budget_profile: profile }).eq("id", userId);
   return error ? { ok: false, error: error.message } : { ok: true };
 }
 

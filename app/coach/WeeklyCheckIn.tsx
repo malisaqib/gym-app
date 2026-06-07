@@ -68,7 +68,6 @@ const T = {
   date: { en: "Date", roman_urdu: "Tareekh" },
   weight: { en: "Weight (kg)", roman_urdu: "Wazan (kg)" },
   workouts: { en: "Workouts", roman_urdu: "Workouts" },
-  waist: { en: "Waist (optional)", roman_urdu: "Kamr (optional)" },
   optional: { en: "Optional", roman_urdu: "Optional" },
   diet: { en: "Diet consistency", roman_urdu: "Diet consistency" },
   energy: { en: "Energy", roman_urdu: "Energy" },
@@ -99,7 +98,6 @@ export default function WeeklyCheckIn({ lang = "en" }: { lang?: Lang }) {
   const [date, setDate] = useState(todayKey());
   const [weight, setWeight] = useState("");
   const [workouts, setWorkouts] = useState("3");
-  const [waist, setWaist] = useState("");
   const [diet, setDiet] = useState(7);
   const [energy, setEnergy] = useState(7);
   const [sleep, setSleep] = useState(7);
@@ -139,7 +137,6 @@ export default function WeeklyCheckIn({ lang = "en" }: { lang?: Lang }) {
       energyLevel: energy,
       sleepQuality: sleep,
       biggestStruggle: struggle.trim(),
-      waist: toNum(waist),
       coachFeedback: buildFeedback({ workouts: w, diet, energy, sleep, struggle }),
     };
     // Replace any same-date entry, keep sorted oldest→newest (was addCheckIn).
@@ -192,7 +189,6 @@ export default function WeeklyCheckIn({ lang = "en" }: { lang?: Lang }) {
           <Field label={t("date")} type="date" value={date} onChange={setDate} />
           <Field label={t("weight")} type="number" value={weight} onChange={setWeight} placeholder={t("optional")} />
           <Field label={t("workouts")} type="number" value={workouts} onChange={setWorkouts} placeholder="3" />
-          <Field label={t("waist")} type="number" value={waist} onChange={setWaist} placeholder={t("optional")} />
         </div>
 
         <Range label={t("diet")} value={diet} onChange={setDiet} />

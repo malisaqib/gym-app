@@ -4,7 +4,6 @@ import { Screen } from "@/components/ui/Screen";
 import { LargeTitle } from "@/components/ui/LargeTitle";
 import { SignOutButton } from "@/app/auth/SignOutButton";
 import { SupportResources } from "@/components/SupportResources";
-import BudgetFitnessMode from "@/app/coach/BudgetFitnessMode";
 import ProfileEditor, { type ProfileDetails } from "./ProfileEditor";
 import BottomNav from "@/components/BottomNav";
 import type { Lang, Profile } from "@/lib/database.types";
@@ -63,8 +62,6 @@ export default async function SettingsPage() {
         <LargeTitle title="Settings" />
         {/* Basic info from onboarding — viewable & editable here. */}
         <ProfileEditor initial={details} />
-        {/* Budget set once here; editable anytime (self-contained, localStorage). */}
-        <BudgetFitnessMode lang={lang} />
         <SupportResources />
         <SignOutButton />
         <p className="text-center text-xs text-muted-foreground break-all">{user.email}</p>
