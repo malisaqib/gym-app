@@ -308,6 +308,10 @@ export const UI: Record<string, Localized> = {
     en: "That timeline would need a faster-than-healthy pace, so I set a safe one — here's the realistic date.",
     roman_urdu: "Is timeline ke liye sehatmand se zyada tez raftaar chahiye thi, is liye main ne mehfooz raftaar rakhi — ye haqeeqi tareekh hai.",
   },
+  longGoalNote: {
+    en: "This is a longer-term goal — focus on the next few weeks and we'll adapt as you go.",
+    roman_urdu: "Ye ek lambi-muddat ka goal hai — agle chand hafton par focus karein, hum saath saath adjust karte rahenge.",
+  },
   goToDashboard: { en: "See my dashboard", roman_urdu: "Mera dashboard dekhein" },
   genericError: {
     en: "Something went wrong saving your answers. Please try again.",

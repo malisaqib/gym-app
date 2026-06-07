@@ -247,6 +247,10 @@ export default function Onboarding({ initialLang }: { initialLang: Lang }) {
             {plan.safetyFloorApplied && (
               <p className="mt-1 text-xs text-warning">{tr(UI.safetyNote)}</p>
             )}
+            {/* Very long timelines (e.g. an impossible goal) get a gentle reframe. */}
+            {plan.weeksToGoal != null && plan.weeksToGoal > 52 && (
+              <p className="mt-1 text-xs text-muted-foreground">{tr(UI.longGoalNote)}</p>
+            )}
           </BotBubble>
         )}
 

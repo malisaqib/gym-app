@@ -58,6 +58,10 @@ const T = {
     en: "Protein's a little hard to hit on this calorie budget — this is the closest plan. Adding a protein-rich food (eggs, yogurt, chicken) helps.",
     roman_urdu: "Itni calories mein protein poora karna thora mushkil hai — ye sab se qareeb plan hai. Koi protein wali cheez (anday, dahi, chicken) madad karegi.",
   },
+  caloriesShortNote: {
+    en: "Couldn't build a full day with these restrictions. Try removing an avoided food or allowing a bit more variety.",
+    roman_urdu: "In restrictions ke saath poora din ka plan nahi ban saka. Koi avoid ki hui cheez hata dein ya thori aur variety allow karein.",
+  },
 } satisfies Record<string, Record<Lang, string>>;
 
 const SLOT_LABEL: Record<MealSlot, Record<Lang, string>> = {
@@ -265,7 +269,12 @@ export default function DietPlanView({
                   tone={plan.proteinShort ? "warn" : "ok"}
                 />
               </div>
-              {plan.proteinShort && (
+              {plan.caloriesShort && (
+                <p className="mt-2 rounded-field bg-muted px-3 py-2 text-xs text-warning">
+                  {t("caloriesShortNote")}
+                </p>
+              )}
+              {plan.proteinShort && !plan.caloriesShort && (
                 <p className="mt-2 rounded-field bg-muted px-3 py-2 text-xs text-warning">
                   {t("proteinShortNote")}
                 </p>

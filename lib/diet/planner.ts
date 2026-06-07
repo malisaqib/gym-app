@@ -60,8 +60,13 @@ export interface DietPlan {
   totalProtein: number;
   filter: DietFilter;
   proteinShort: boolean; // couldn't reach the protein target within the calorie budget
+  caloriesShort: boolean; // couldn't fill the day (usually too-restrictive prefs / few foods)
   seed: number;
 }
+
+// Below this fraction of the calorie target, the plan is "unbuildable" with the
+// current restrictions (normal plans land ≥90%). Used to surface a clear nudge.
+const SHORT_THRESHOLD = 0.85;
 
 const SLOT_META: { slot: MealSlot; title: string; pct: number }[] = [
   { slot: "breakfast", title: "Breakfast", pct: 0.25 },
@@ -339,6 +344,7 @@ export function buildPlan(input: {
     totalProtein,
     filter: input.filter,
     proteinShort: totalProtein < input.proteinTargetG,
+    caloriesShort: totalCalories < input.calorieTarget * SHORT_THRESHOLD,
     seed,
   };
 }
@@ -358,7 +364,14 @@ export function swapMeal(plan: DietPlan, slot: MealSlot, newSeed: number): DietP
   const meals = plan.meals.map((m) => (m.slot === slot ? meal : m));
   const totalCalories = meals.reduce((s, m) => s + m.calories, 0);
   const totalProtein = meals.reduce((s, m) => s + m.protein, 0);
-  return { ...plan, meals, totalCalories, totalProtein, proteinShort: totalProtein < plan.proteinTargetG };
+  return {
+    ...plan,
+    meals,
+    totalCalories,
+    totalProtein,
+    proteinShort: totalProtein < plan.proteinTargetG,
+    caloriesShort: totalCalories < plan.calorieTarget * SHORT_THRESHOLD,
+  };
 }
 
 /** Validate a swap target id belongs to the catalog (defensive for stored data). */

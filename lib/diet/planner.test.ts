@@ -23,6 +23,26 @@ test("fits the calorie budget — never exceeds it, and lands within tolerance",
   }
 });
 
+test("caloriesShort is false for a normal plan, true when over-restricted", () => {
+  const ok = buildPlan({ calorieTarget: 2100, proteinTargetG: 130, filter: openFilter, seed: 1 });
+  assert.equal(ok.caloriesShort, false);
+
+  // Exclude almost every food category → the day can't be filled → flagged.
+  const starved = buildPlan({
+    calorieTarget: 2100,
+    proteinTargetG: 130,
+    filter: {
+      vegetarian: true,
+      excludeTags: ["egg", "chicken", "beef", "fish", "lentil", "dairy", "nuts", "bread", "rice", "veg", "oats", "pasta", "fruit", "supplement"],
+      excludeFoods: [],
+      regionFocus: null,
+    },
+    seed: 1,
+  });
+  assert.equal(starved.caloriesShort, true);
+  assert.ok(starved.totalCalories < 2100, "should be well under target");
+});
+
 test("hits the protein target within calories (or flags it honestly)", () => {
   const plan = buildPlan({ calorieTarget: 2100, proteinTargetG: 130, filter: openFilter, seed: 1 });
   // the flag must reflect reality
