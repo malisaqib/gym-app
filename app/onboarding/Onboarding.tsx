@@ -28,6 +28,8 @@ import { saveOnboarding } from "./actions";
 type Status = "asking" | "submitting" | "done" | "error";
 type AnswerValue = string | number;
 
+const ONBOARDING_PROGRESS_KEY = "gymCoach.onboardingProgress";
+
 export default function Onboarding({ initialLang }: { initialLang: Lang }) {
   const router = useRouter();
 
@@ -84,6 +86,54 @@ export default function Onboarding({ initialLang }: { initialLang: Lang }) {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [index, status, transcript.length]);
+
+  // Persist in-progress answers to sessionStorage so a mid-flow refresh / back
+  // doesn't restart onboarding. Restored after mount (no SSR mismatch); cleared
+  // once the plan is generated.
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(ONBOARDING_PROGRESS_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as {
+        lang?: Lang;
+        index?: number;
+        answers?: Record<string, AnswerValue>;
+        transcript?: OnboardingEntry[];
+      };
+      if (saved.answers && Array.isArray(saved.transcript) && typeof saved.index === "number") {
+        if (saved.lang) setLang(saved.lang);
+        setAnswers(saved.answers);
+        setTranscript(saved.transcript);
+        setIndex(Math.min(saved.index, STEPS.length - 1));
+      }
+    } catch {
+      // corrupt/unavailable storage — just start fresh.
+    }
+  }, []);
+
+  useEffect(() => {
+    // Only persist real progress (skips the empty initial mount, so it can't
+    // clobber a just-restored snapshot).
+    if (status !== "asking" || transcript.length === 0) return;
+    try {
+      sessionStorage.setItem(
+        ONBOARDING_PROGRESS_KEY,
+        JSON.stringify({ lang, index, answers, transcript })
+      );
+    } catch {
+      // ignore
+    }
+  }, [status, lang, index, answers, transcript]);
+
+  useEffect(() => {
+    if (status === "done") {
+      try {
+        sessionStorage.removeItem(ONBOARDING_PROGRESS_KEY);
+      } catch {
+        // ignore
+      }
+    }
+  }, [status]);
 
   // Record an answer for the current step, then advance or submit.
   function recordAnswer(value: AnswerValue, message: string) {

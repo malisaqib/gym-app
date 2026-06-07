@@ -291,15 +291,17 @@ export default function DietPlanView({
               {plan.meals.map((meal) => (
                 <motion.div key={meal.slot} variants={listItem} layout>
                   <Card className="space-y-2 p-4">
-                    <div className="flex items-center justify-between">
-                      <h3 className="font-display text-base font-semibold text-foreground">
-                        {SLOT_LABEL[meal.slot][lang]}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <h3 className="font-display text-base font-semibold text-foreground">
+                          {SLOT_LABEL[meal.slot][lang]}
+                        </h3>
                         {!habits && (
-                          <span className="ml-2 text-xs font-normal text-muted-foreground tabular-nums">
+                          <p className="text-xs font-normal text-muted-foreground tabular-nums">
                             {meal.calories}/{meal.budget} {t("cal")} · {meal.protein} g
-                          </span>
+                          </p>
                         )}
-                      </h3>
+                      </div>
                       <button
                         type="button"
                         onPointerDown={() => haptic("tap")}

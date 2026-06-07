@@ -1,5 +1,6 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { parseFoodText } from "@/lib/food/parse";
 import { logEvent } from "@/lib/analytics";
@@ -80,6 +81,7 @@ export async function logFood(input: { text: string; date: string }): Promise<Lo
   if (error) return { ok: false, error: error.message };
 
   await logEvent(supabase, user.id, "food_logged", { items: (data ?? []).length });
+  revalidatePath("/dashboard"); // keep the server-rendered list fresh on next nav
   return { ok: true, items: data ?? [] };
 }
 
@@ -116,6 +118,7 @@ export async function correctFoodItem(
     .single<FoodLog>();
 
   if (error) return { ok: false, error: error.message };
+  revalidatePath("/dashboard");
   return { ok: true, item: data };
 }
 
@@ -134,5 +137,6 @@ export async function deleteFoodItem(id: string): Promise<{ ok: boolean; error?:
     .eq("user_id", user.id);
 
   if (error) return { ok: false, error: error.message };
+  revalidatePath("/dashboard");
   return { ok: true };
 }

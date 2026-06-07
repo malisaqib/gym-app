@@ -9,7 +9,7 @@ import type { WeightPoint } from "@/lib/weight/series";
 export default function WeightChart({ series }: { series: WeightPoint[] }) {
   if (series.length === 0) {
     return (
-      <p className="py-8 text-center text-sm text-slate-400">
+      <p className="py-8 text-center text-sm text-muted-foreground">
         Log your weight to start your progress chart.
       </p>
     );
@@ -38,10 +38,10 @@ export default function WeightChart({ series }: { series: WeightPoint[] }) {
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Weight over time">
       {/* y-axis range labels */}
-      <text x={2} y={y(max) + 4} className="fill-slate-400" fontSize="9">
+      <text x={2} y={y(max) + 4} className="fill-muted-foreground" fontSize="9">
         {max}
       </text>
-      <text x={2} y={y(min) + 4} className="fill-slate-400" fontSize="9">
+      <text x={2} y={y(min) + 4} className="fill-muted-foreground" fontSize="9">
         {min}
       </text>
 
@@ -50,7 +50,7 @@ export default function WeightChart({ series }: { series: WeightPoint[] }) {
         <polyline
           points={points}
           fill="none"
-          stroke="#10b981"
+          className="stroke-primary"
           strokeWidth="2"
           strokeLinejoin="round"
           strokeLinecap="round"
@@ -59,18 +59,18 @@ export default function WeightChart({ series }: { series: WeightPoint[] }) {
 
       {/* points */}
       {series.map((p, i) => (
-        <circle key={p.date} cx={x(i)} cy={y(p.weight)} r="2.5" fill="#059669" />
+        <circle key={p.date} cx={x(i)} cy={y(p.weight)} r="2.5" className="fill-primary" />
       ))}
 
       {/* first & last date labels */}
-      <text x={x(0)} y={H - 4} className="fill-slate-400" fontSize="9" textAnchor="middle">
+      <text x={x(0)} y={H - 4} className="fill-muted-foreground" fontSize="9" textAnchor="middle">
         {series[0].date.slice(5)}
       </text>
       {series.length > 1 && (
         <text
           x={x(series.length - 1)}
           y={H - 4}
-          className="fill-slate-400"
+          className="fill-muted-foreground"
           fontSize="9"
           textAnchor="middle"
         >
