@@ -19,7 +19,9 @@ export default async function DietPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("onboarded, calorie_target, protein_target_g, preferred_language, food_preference, onboarding_raw")
+    .select(
+      "onboarded, calorie_target, protein_target_g, preferred_language, food_preference, onboarding_raw, usual_breakfast, usual_lunch, usual_dinner, usual_foods, keep_foods"
+    )
     .eq("id", user.id)
     .single();
   if (!profile?.onboarded) redirect("/onboarding");
@@ -37,12 +39,21 @@ export default async function DietPage() {
       keywordPreferences(note)
     );
 
+  const initialUsual = {
+    breakfast: profile?.usual_breakfast ?? "",
+    lunch: profile?.usual_lunch ?? "",
+    dinner: profile?.usual_dinner ?? "",
+    foods: profile?.usual_foods ?? "",
+    keep: profile?.keep_foods ?? "",
+  };
+
   return (
     <>
       <Screen>
         <DietPlanView
           initialPlan={plan}
           initialFilter={initialFilter}
+          initialUsual={initialUsual}
           hasTargets={!!profile?.calorie_target}
           lang={lang}
         />

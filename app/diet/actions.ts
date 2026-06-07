@@ -45,6 +45,15 @@ export async function generateDietPlan(input?: {
   vegetarian?: boolean;
   excludeTags?: string[];
   excludeFoods?: string[];
+  // Phase 2: the "what you usually eat" box. When sent, we persist it additively
+  // and seed the plan from it (so the user builds the plan WITH their real food).
+  usualEating?: {
+    breakfast?: string;
+    lunch?: string;
+    dinner?: string;
+    foods?: string;
+    keep?: string;
+  };
 }): Promise<PlanResult> {
   const supabase = await createClient();
   const {
@@ -55,7 +64,7 @@ export async function generateDietPlan(input?: {
   const { data: profile } = await supabase
     .from("profiles")
     .select(
-      "calorie_target, protein_target_g, food_preference, preferred_language, usual_breakfast, usual_lunch, usual_dinner, usual_foods, disliked_foods"
+      "calorie_target, protein_target_g, food_preference, preferred_language, usual_breakfast, usual_lunch, usual_dinner, usual_foods, keep_foods, disliked_foods"
     )
     .eq("id", user.id)
     .single<{
@@ -67,6 +76,7 @@ export async function generateDietPlan(input?: {
       usual_lunch: string | null;
       usual_dinner: string | null;
       usual_foods: string | null;
+      keep_foods: string | null;
       disliked_foods: string | null;
     }>();
 
@@ -113,12 +123,33 @@ export async function generateDietPlan(input?: {
     filter = prior ? mergeFilters(prior, dislikes) : mergeFilters(base, dislikes);
   }
 
-  // Seed the plan from the user's usual meals + favourite foods.
+  // If the user edited the "usual eating" box, persist it additively first so it
+  // survives and seeds future regenerates too (best-effort; the plan still builds
+  // even if this write fails / the column isn't migrated yet).
+  const ue = input?.usualEating;
+  if (ue) {
+    await supabase
+      .from("profiles")
+      .update({
+        usual_breakfast: ue.breakfast?.trim() || null,
+        usual_lunch: ue.lunch?.trim() || null,
+        usual_dinner: ue.dinner?.trim() || null,
+        usual_foods: ue.foods?.trim() || null,
+        keep_foods: ue.keep?.trim() || null,
+      })
+      .eq("id", user.id);
+  }
+
+  // Seed the plan from the user's usual meals + favourite + keep foods. Values
+  // just typed in the box win over the stored profile; empty clears the seed.
+  const pick = (typed: string | undefined, stored: string | null | undefined) =>
+    (ue ? typed : stored)?.trim() || undefined;
   const usual = {
-    breakfast: profile?.usual_breakfast ?? undefined,
-    lunch: profile?.usual_lunch ?? undefined,
-    dinner: profile?.usual_dinner ?? undefined,
-    foods: profile?.usual_foods ?? undefined,
+    breakfast: pick(ue?.breakfast, profile?.usual_breakfast),
+    lunch: pick(ue?.lunch, profile?.usual_lunch),
+    dinner: pick(ue?.dinner, profile?.usual_dinner),
+    foods: pick(ue?.foods, profile?.usual_foods),
+    keep: pick(ue?.keep, profile?.keep_foods),
   };
 
   const plan = buildPlan({ calorieTarget, proteinTargetG, filter, usual, seed: randomSeed() });

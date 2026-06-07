@@ -95,6 +95,7 @@ export interface Profile {
   usual_dinner: string | null;
   usual_foods: string | null; // foods they eat a lot (likes)
   disliked_foods: string | null; // don't/won't eat (allergies, dislikes)
+  keep_foods: string | null; // comfort foods to keep in the plan (migration 0014)
   onboarding_raw: OnboardingEntry[] | null;
   onboarded: boolean;
   // Workout rebuild Phase 2 (migration 0008) — all nullable / additive.

@@ -73,6 +73,19 @@ test("seeds meals from the user's usual foods (and keeps them)", () => {
   assert.ok(plan.totalCalories <= 2100);
 });
 
+test("keeps the user's 'don't give up' foods in the plan, even under a high protein target", () => {
+  const plan = buildPlan({
+    calorieTarget: 2200,
+    proteinTargetG: 170, // high → triggers the protein-swap pass
+    filter: openFilter,
+    seed: 1,
+    usual: { keep: "paratha" },
+  });
+  const ids = plan.meals.flatMap((m) => m.items.map((i) => i.id));
+  assert.ok(ids.includes("paratha"), `kept food was dropped: ${ids.join(",")}`);
+  assert.ok(plan.totalCalories <= 2200, "still within the calorie cap");
+});
+
 test("the plan is deterministic for a given seed", () => {
   const a = buildPlan({ calorieTarget: 2000, proteinTargetG: 120, filter: openFilter, seed: 7 });
   const b = buildPlan({ calorieTarget: 2000, proteinTargetG: 120, filter: openFilter, seed: 7 });

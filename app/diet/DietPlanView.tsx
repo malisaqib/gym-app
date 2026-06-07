@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { haptic } from "@/lib/haptics";
 import { toast } from "@/lib/toast";
 import { generateDietPlan, swapDietMeal } from "./actions";
+import UsualEatingCard, { type UsualEating } from "./UsualEatingCard";
 import type { DietPlan, DietFilter } from "@/lib/diet/planner";
 import type { MealSlot } from "@/lib/diet/foodCatalog";
 import type { Lang } from "@/lib/database.types";
@@ -78,17 +79,20 @@ const SLOT_LABEL: Record<MealSlot, Record<Lang, string>> = {
 export default function DietPlanView({
   initialPlan,
   initialFilter,
+  initialUsual,
   hasTargets,
   lang,
 }: {
   initialPlan: DietPlan | null;
   initialFilter: DietFilter;
+  initialUsual: UsualEating;
   hasTargets: boolean;
   lang: Lang;
 }) {
   const t = (k: keyof typeof T) => T[k][lang];
 
   const [plan, setPlan] = useState<DietPlan | null>(initialPlan);
+  const [usual, setUsual] = useState<UsualEating>(initialUsual);
   const [notes, setNotes] = useState("");
   const [vegetarian, setVegetarian] = useState(initialFilter.vegetarian);
   const [avoid, setAvoid] = useState<string[]>(initialFilter.excludeTags);
@@ -120,7 +124,13 @@ export default function DietPlanView({
     setBusy(true);
     setError(null);
     try {
-      const res = await generateDietPlan({ notes, vegetarian, excludeTags: avoid, excludeFoods: avoidFoods });
+      const res = await generateDietPlan({
+        notes,
+        vegetarian,
+        excludeTags: avoid,
+        excludeFoods: avoidFoods,
+        usualEating: usual,
+      });
       if (res.ok) {
         setPlan(res.plan);
         // Surface any newly-parsed exclusions as chips, and clear the note box.
@@ -182,6 +192,9 @@ export default function DietPlanView({
         <h1 className="font-display text-2xl font-semibold text-foreground">{t("title")}</h1>
         <p className="text-sm text-muted-foreground">{t("intro")}</p>
       </div>
+
+      {/* Phase 2 — build WITH the user: capture real meals to seed the plan. */}
+      <UsualEatingCard value={usual} onChange={setUsual} lang={lang} />
 
       <Card className="space-y-3 p-4">
         {/* Quick-tap preferences (seeded from onboarding/your profile). */}

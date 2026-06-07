@@ -31,6 +31,7 @@ export interface UsualMeals {
   lunch?: string;
   dinner?: string;
   foods?: string; // foods they eat a lot (likes) — preferred when filling
+  keep?: string; // comfort foods to KEEP — seeded into any fitting slot + protected
 }
 
 export interface PlanMealItem {
@@ -333,14 +334,19 @@ export function buildPlan(input: {
 }): DietPlan {
   const seed = input.seed ?? 1;
   const rng = mulberry32(seed);
+  // Likes (a fill-time bonus) come from go-to foods AND keep foods.
+  const likeText = [input.usual?.foods, input.usual?.keep].filter(Boolean).join(" ");
   const likeIds = new Set(
-    input.usual?.foods ? FOOD_CATALOG.filter((f) => mentioned(f, input.usual!.foods!)).map((f) => f.id) : []
+    likeText ? FOOD_CATALOG.filter((f) => mentioned(f, likeText)).map((f) => f.id) : []
   );
 
   const built: BuiltMeal[] = slotBudgets(input.calorieTarget).map((s) => {
     const slotProtein = input.proteinTargetG * (input.calorieTarget > 0 ? s.cal / input.calorieTarget : 0);
     const cands = FOOD_CATALOG.filter((f) => f.slots.includes(s.slot) && allowed(f, input.filter));
-    const usualText = usualForSlot(input.usual, s.slot);
+    // Seed from this slot's usual meal PLUS any "keep" foods (keep applies to
+    // every slot the food fits). Both become protected (never swapped for protein).
+    const usualText =
+      [usualForSlot(input.usual, s.slot), input.usual?.keep].filter(Boolean).join(" ") || undefined;
     const chosen = buildMealItems(s.cal, slotProtein, s.slot, cands, rng, usualText, likeIds);
     const protectedIds = new Set(
       usualText ? chosen.filter((f) => mentioned(f, usualText)).map((f) => f.id) : []
