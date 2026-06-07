@@ -7,9 +7,10 @@ import type { Goal } from "@/lib/database.types";
  * server action, and the Phase 3 generator can all share them. The setup is the
  * INPUT to the deterministic generator; nothing here is AI-driven.
  *
- * Persistence: localStorage is authoritative for now (key below); the server
- * action mirrors it into the profile when the additive migration (0008) is
- * applied. So the feature works even before the migration is run.
+ * Persistence: the profile is the source of truth — saved as `training_setup`
+ * jsonb (migration 0013) and read DB-first so it syncs across devices.
+ * localStorage (key below) is a fast cache + offline fallback, and a legacy
+ * device-only setup is migrated into the account once on first load.
  */
 
 export type TrainingLocation = "gym" | "home" | "both";

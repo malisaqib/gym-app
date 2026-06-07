@@ -21,14 +21,16 @@ import {
   type TrainingLocation,
   type TrainingSetup as TrainingSetupData,
 } from "@/lib/workouts/trainingSetup";
-import { saveTrainingSetup } from "./setupActions";
+import { loadTrainingSetup, saveTrainingSetup } from "./setupActions";
 
 /**
  * Phase 2 — "Set up your training" card on the Workout tab.
  *
- * Collects the inputs the deterministic generator (Phase 3) needs. localStorage
- * is the source of truth for now; we also best-effort sync to the profile so it
- * survives across devices once migration 0008 is applied. Nothing here is AI.
+ * Collects the inputs the deterministic generator (Phase 3) needs. The setup is
+ * stored on the user's profile (jsonb, migration 0013) and read DB-first, so it
+ * syncs across devices; localStorage is a fast cache + offline fallback, and a
+ * legacy device-only setup is migrated into the account once on first load.
+ * Nothing here is AI.
  */
 
 const LOCATIONS: { value: TrainingLocation; label: string }[] = [
@@ -64,12 +66,32 @@ export default function TrainingSetup({
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    const seeded = setupFromProfileDefaults(profileDefaults);
-    const loaded = normalizeTrainingSetup(readLocal(TRAINING_SETUP_KEY, seeded));
-    setSetup(loaded);
-    setDraft(loaded);
-    setHydrated(true);
-    if (isTrainingConfigured(loaded)) onSetupChange?.(loaded);
+    let alive = true;
+    (async () => {
+      const seeded = setupFromProfileDefaults(profileDefaults);
+      // Prefer the account copy (cross-device); fall back to this device.
+      const remote = await loadTrainingSetup();
+      if (!alive) return;
+
+      let loaded: TrainingSetupData;
+      if (remote && isTrainingConfigured(remote)) {
+        loaded = remote;
+        writeLocal(TRAINING_SETUP_KEY, loaded); // keep the device cache in sync
+        setSyncNote("synced");
+      } else {
+        loaded = normalizeTrainingSetup(readLocal(TRAINING_SETUP_KEY, seeded));
+        // One-time migration: lift a legacy device-only setup into the account.
+        if (isTrainingConfigured(loaded)) void saveTrainingSetup(loaded);
+      }
+
+      setSetup(loaded);
+      setDraft(loaded);
+      setHydrated(true);
+      if (isTrainingConfigured(loaded)) onSetupChange?.(loaded);
+    })();
+    return () => {
+      alive = false;
+    };
     // We only want to read once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
