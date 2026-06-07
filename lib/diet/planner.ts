@@ -119,14 +119,29 @@ export function mergeFilters(...parts: Partial<DietFilter>[]): DietFilter {
 
 // --- matching ---------------------------------------------------------------
 
-// Does a free-text "avoid" term refer to this food? Tolerant both ways.
+// Whole-word/phrase containment. Word boundaries stop a short term from nuking
+// unrelated foods — e.g. "vegetable" must NOT match the tag "veg", and
+// "buttermilk" must NOT match the food "milk". Regex metachars are escaped.
+function wordPhrase(haystack: string, needle: string): boolean {
+  if (!needle) return false;
+  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b${escaped}\\b`).test(haystack);
+}
+
+// Does a free-text "avoid" term refer to this food? Tolerant in both directions
+// but word-boundary safe, and matches the food's category tags as whole words.
 function matchesAvoidedFood(food: CatalogFood, terms: string[]): boolean {
   if (!terms?.length) return false;
   const name = food.name.toLowerCase();
+  const tags = food.tags.map((t) => t.toLowerCase());
   return terms.some((raw) => {
     const term = raw.toLowerCase().trim();
     if (term.length < 3) return false;
-    return name.includes(term) || term.includes(name) || food.tags.some((tag) => term.includes(tag));
+    return (
+      wordPhrase(name, term) || // term names the food ("rice" → "Boiled rice")
+      wordPhrase(term, name) || // the food name appears inside a longer phrase
+      tags.some((tag) => wordPhrase(term, tag)) // term mentions a category tag
+    );
   });
 }
 
@@ -142,6 +157,8 @@ function mentioned(food: CatalogFood, text: string): boolean {
 }
 
 function allowed(food: CatalogFood, filter: DietFilter): boolean {
+  // Veg drops only meat/fish (food.vegetarian = lacto-ovo). Egg/dairy/nuts are
+  // NOT dropped by the veg toggle — they're avoided individually via excludeTags.
   if (filter.vegetarian && !food.vegetarian) return false;
   if (food.tags.some((t) => filter.excludeTags.includes(t))) return false;
   if (matchesAvoidedFood(food, filter.excludeFoods ?? [])) return false;

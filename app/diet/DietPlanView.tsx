@@ -39,6 +39,10 @@ const T = {
   generate: { en: "Generate my plan", roman_urdu: "Mera plan banayein" },
   regenerate: { en: "Regenerate", roman_urdu: "Naya plan" },
   working: { en: "Working…", roman_urdu: "Ban raha hai…" },
+  dirtyNote: {
+    en: "Preferences changed — tap Regenerate to apply them.",
+    roman_urdu: "Preferences badli hain — apply karne ke liye Regenerate dabayein.",
+  },
   swap: { en: "Swap", roman_urdu: "Badlein" },
   habitsOn: { en: "Focus on habits", roman_urdu: "Habits par focus" },
   habitsOff: { en: "Show numbers", roman_urdu: "Numbers dikhayein" },
@@ -98,6 +102,18 @@ export default function DietPlanView({
 
   const toggleAvoid = (tag: string) =>
     setAvoid((cur) => (cur.includes(tag) ? cur.filter((x) => x !== tag) : [...cur, tag]));
+
+  // The on-screen prefs vs the prefs the displayed plan was built with. Toggling
+  // chips doesn't auto-rebuild, so we flag when a Regenerate is needed (otherwise
+  // it looks like the filter was ignored).
+  const sameSet = (a: string[], b: string[]) =>
+    a.length === b.length && [...a].sort().join("|") === [...b].sort().join("|");
+  const planStale =
+    !!plan &&
+    (plan.filter.vegetarian !== vegetarian ||
+      !sameSet(plan.filter.excludeTags, avoid) ||
+      !sameSet(plan.filter.excludeFoods ?? [], avoidFoods) ||
+      notes.trim().length > 0);
 
   async function generate() {
     if (busy) return;
@@ -230,6 +246,9 @@ export default function DietPlanView({
             </button>
           )}
         </div>
+        {planStale && !busy && (
+          <p className="rounded-field bg-muted px-3 py-2 text-xs text-warning">⚠️ {t("dirtyNote")}</p>
+        )}
         {error && <p className="text-sm text-destructive">{error}</p>}
       </Card>
 

@@ -93,6 +93,48 @@ test("vegetarian filter never selects a non-veg food", () => {
   }
 });
 
+test("vegetarian allows eggs & dairy but never meat or fish (per spec)", () => {
+  const plan = buildPlan({
+    calorieTarget: 2200,
+    proteinTargetG: 130,
+    filter: { vegetarian: true, excludeTags: [], excludeFoods: [], regionFocus: null },
+    seed: 11,
+  });
+  const meatFish = new Set(["chicken", "beef", "fish"]);
+  for (const meal of plan.meals) {
+    for (const item of meal.items) {
+      assert.ok(
+        !CATALOG_BY_ID[item.id].tags.some((t) => meatFish.has(t)),
+        `${item.name} is meat/fish under a vegetarian plan`
+      );
+    }
+  }
+});
+
+test("vegetarian + avoid beef/chicken/fish/egg/dairy/nuts: none present, shortfalls flagged", () => {
+  const banned = ["beef", "chicken", "fish", "egg", "dairy", "nuts"];
+  const plan = buildPlan({
+    calorieTarget: 2000,
+    proteinTargetG: 120,
+    filter: { vegetarian: true, excludeTags: banned, excludeFoods: [], regionFocus: null },
+    seed: 2,
+  });
+  const bannedSet = new Set(banned);
+  for (const meal of plan.meals) {
+    for (const item of meal.items) {
+      const f = CATALOG_BY_ID[item.id];
+      assert.ok(!f.tags.some((t) => bannedSet.has(t)), `${f.name} violates the avoid set`);
+      assert.equal(f.vegetarian, true, `${f.name} is not vegetarian`);
+    }
+  }
+  // HARD cap still holds…
+  assert.ok(plan.totalCalories <= 2000, `over budget: ${plan.totalCalories}`);
+  // …and the plan must EITHER hit targets OR honestly flag it couldn't within
+  // these constraints (with this tiny catalog, expect it to flag).
+  assert.ok(plan.totalProtein >= 120 || plan.proteinShort, "protein shortfall must be flagged");
+  assert.ok(plan.totalCalories >= 2000 * 0.85 || plan.caloriesShort, "calorie shortfall must be flagged");
+});
+
 test("excludeTags removes those foods (e.g. no beef)", () => {
   const plan = buildPlan({
     calorieTarget: 2200,

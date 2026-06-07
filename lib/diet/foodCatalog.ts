@@ -25,7 +25,7 @@ export interface CatalogFood {
   protein: number;
   carbs: number;
   fat: number;
-  vegetarian: boolean; // true = no meat/fish/egg
+  vegetarian: boolean; // true = lacto-ovo veg (no meat/fish; eggs & dairy OK). egg/dairy/nuts are avoided separately via tags.
   role: FoodRole;
   slots: MealSlot[];
   tags: string[]; // for preference filtering, e.g. ["beef"], ["egg","dairy"]
@@ -38,8 +38,8 @@ const S: MealSlot = "snack";
 
 export const FOOD_CATALOG: CatalogFood[] = [
   // ---- desi proteins ----
-  { id: "eggs2", name: "2 eggs (boiled/fried)", region: "desi", portion: "2 eggs", calories: 160, protein: 12, carbs: 2, fat: 11, vegetarian: false, role: "protein", slots: [B, S], tags: ["egg"] },
-  { id: "omelette", name: "Omelette (2 eggs)", region: "desi", portion: "2 eggs", calories: 200, protein: 12, carbs: 2, fat: 16, vegetarian: false, role: "protein", slots: [B], tags: ["egg"] },
+  { id: "eggs2", name: "2 eggs (boiled/fried)", region: "desi", portion: "2 eggs", calories: 160, protein: 12, carbs: 2, fat: 11, vegetarian: true, role: "protein", slots: [B, S], tags: ["egg"] },
+  { id: "omelette", name: "Omelette (2 eggs)", region: "desi", portion: "2 eggs", calories: 200, protein: 12, carbs: 2, fat: 16, vegetarian: true, role: "protein", slots: [B], tags: ["egg"] },
   { id: "chicken_salan", name: "Chicken salan", region: "desi", portion: "1 serving (~200g)", calories: 300, protein: 28, carbs: 8, fat: 18, vegetarian: false, role: "protein", slots: [L, D], tags: ["chicken"] },
   { id: "chicken_karahi", name: "Chicken karahi", region: "desi", portion: "1 serving (~250g)", calories: 400, protein: 35, carbs: 8, fat: 26, vegetarian: false, role: "protein", slots: [L, D], tags: ["chicken"] },
   { id: "chicken_tikka", name: "Chicken tikka", region: "desi", portion: "1 piece (~120g)", calories: 180, protein: 22, carbs: 2, fat: 9, vegetarian: false, role: "protein", slots: [L, D, S], tags: ["chicken"] },
@@ -73,7 +73,7 @@ export const FOOD_CATALOG: CatalogFood[] = [
   { id: "salmon", name: "Salmon", region: "western", portion: "100g", calories: 206, protein: 22, carbs: 0, fat: 13, vegetarian: false, role: "protein", slots: [L, D], tags: ["fish"] },
   { id: "ground_beef", name: "Ground beef (cooked)", region: "western", portion: "100g", calories: 250, protein: 26, carbs: 0, fat: 15, vegetarian: false, role: "protein", slots: [L, D], tags: ["beef"] },
   { id: "greek_yogurt", name: "Greek yogurt (plain)", region: "western", portion: "1 cup (170g)", calories: 100, protein: 17, carbs: 6, fat: 1, vegetarian: true, role: "dairy", slots: [B, S], tags: ["dairy"] },
-  { id: "scrambled", name: "Scrambled eggs", region: "western", portion: "2 eggs", calories: 180, protein: 12, carbs: 2, fat: 14, vegetarian: false, role: "protein", slots: [B], tags: ["egg"] },
+  { id: "scrambled", name: "Scrambled eggs", region: "western", portion: "2 eggs", calories: 180, protein: 12, carbs: 2, fat: 14, vegetarian: true, role: "protein", slots: [B], tags: ["egg"] },
 
   // ---- western carbs ----
   { id: "oats", name: "Oatmeal", region: "western", portion: "1 cup cooked", calories: 150, protein: 5, carbs: 27, fat: 3, vegetarian: true, role: "carb", slots: [B], tags: ["oats"] },
@@ -90,7 +90,7 @@ export const FOOD_CATALOG: CatalogFood[] = [
   { id: "peanut_butter", name: "Peanut butter", region: "global", portion: "2 tbsp", calories: 190, protein: 7, carbs: 7, fat: 16, vegetarian: true, role: "snack", slots: [B, S], tags: ["nuts"] },
   { id: "whey", name: "Whey protein shake", region: "global", portion: "1 scoop", calories: 120, protein: 24, carbs: 3, fat: 2, vegetarian: true, role: "protein", slots: [B, S], tags: ["dairy", "supplement"] },
   { id: "salad", name: "Green salad", region: "global", portion: "1 bowl", calories: 30, protein: 2, carbs: 6, fat: 0, vegetarian: true, role: "veg", slots: [L, D], tags: ["veg"] },
-  { id: "boiled_egg1", name: "1 boiled egg", region: "global", portion: "1 egg", calories: 80, protein: 6, carbs: 1, fat: 5, vegetarian: false, role: "protein", slots: [B, S], tags: ["egg"] },
+  { id: "boiled_egg1", name: "1 boiled egg", region: "global", portion: "1 egg", calories: 80, protein: 6, carbs: 1, fat: 5, vegetarian: true, role: "protein", slots: [B, S], tags: ["egg"] },
 ];
 
 /** Quick lookup by id (used when applying swaps). */
