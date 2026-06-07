@@ -1,4 +1,5 @@
 import { retrieveFoods, type RetrievedFood } from "@/lib/food/retrieve";
+import { aiConfigError, aiHttpError } from "@/lib/ai/errors";
 import type { Lang } from "@/lib/database.types";
 
 /**
@@ -95,7 +96,7 @@ export async function suggestMealCoach(input: {
   focus?: string | null;
 }): Promise<MealSuggestion> {
   const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) throw new Error("Coach AI is not configured (missing GROQ_API_KEY).");
+  if (!apiKey) throw aiConfigError();
 
   // RAG: ground the coach's nutrition in retrieved catalog rows for the options
   // the user mentions. Degrade gracefully if retrieval/embeddings are down.
@@ -135,8 +136,7 @@ export async function suggestMealCoach(input: {
   }
 
   if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    throw new Error(`Coach request failed (${res.status}). ${detail.slice(0, 200)}`);
+    throw await aiHttpError(res, "meal-coach");
   }
 
   const data = await res.json();

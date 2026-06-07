@@ -1,4 +1,5 @@
 import { retrieveFoods, type RetrievedFood } from "@/lib/food/retrieve";
+import { aiConfigError, aiHttpError } from "@/lib/ai/errors";
 
 /**
  * Phase 4 + RAG R3 — Food text parser (Groq / Llama, grounded by retrieval).
@@ -65,19 +66,23 @@ function coerceItem(raw: unknown): ParsedFoodItem | null {
   const name = typeof r.food_name === "string" ? r.food_name.trim() : "";
   if (!name) return null;
 
-  const num = (v: unknown) => {
+  // Coerce + clamp: positive integer within a sane upper bound, so a model
+  // hallucination (e.g. "99999 kcal") can't poison the day's totals.
+  const num = (v: unknown, max: number) => {
     const n = Math.round(Number(v));
-    return Number.isFinite(n) && n > 0 ? n : 0;
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    return Math.min(n, max);
   };
 
+  const quantity = Number(r.quantity);
   return {
     food_name: name,
-    quantity: Number(r.quantity) > 0 ? Number(r.quantity) : 1,
+    quantity: Number.isFinite(quantity) && quantity > 0 ? Math.min(quantity, 100) : 1,
     unit: typeof r.unit === "string" ? r.unit : "",
-    calories: num(r.calories),
-    protein_g: num(r.protein_g),
-    carbs_g: num(r.carbs_g),
-    fat_g: num(r.fat_g),
+    calories: num(r.calories, 5000),
+    protein_g: num(r.protein_g, 1000),
+    carbs_g: num(r.carbs_g, 1000),
+    fat_g: num(r.fat_g, 1000),
   };
 }
 
@@ -89,7 +94,7 @@ function coerceItem(raw: unknown): ParsedFoodItem | null {
 export async function parseFoodText(text: string): Promise<ParsedFoodItem[]> {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
-    throw new Error("Food AI is not configured (missing GROQ_API_KEY).");
+    throw aiConfigError();
   }
 
   // RAG: pull grounded candidates for this meal. Degrade gracefully on failure.
@@ -133,8 +138,7 @@ export async function parseFoodText(text: string): Promise<ParsedFoodItem[]> {
   }
 
   if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    throw new Error(`Groq request failed (${res.status}). ${detail.slice(0, 200)}`);
+    throw await aiHttpError(res, "food-parse");
   }
 
   const data = await res.json();

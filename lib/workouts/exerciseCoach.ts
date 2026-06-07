@@ -1,4 +1,5 @@
 import type { ProgramExercise, WeeklyProgram } from "./generator";
+import { aiConfigError, aiHttpError } from "@/lib/ai/errors";
 
 /**
  * Workout rebuild — Phase 6: the AI "ask the coach" layer.
@@ -47,7 +48,7 @@ RULES:
 
 export async function askExerciseCoach(ctx: ExerciseCoachContext, question: string): Promise<string> {
   const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) throw new Error("Coach AI is not configured (missing GROQ_API_KEY).");
+  if (!apiKey) throw aiConfigError();
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30_000);
@@ -78,8 +79,7 @@ export async function askExerciseCoach(ctx: ExerciseCoachContext, question: stri
   }
 
   if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    throw new Error(`Coach request failed (${res.status}). ${detail.slice(0, 200)}`);
+    throw await aiHttpError(res, "exercise-coach");
   }
 
   const data = await res.json();
