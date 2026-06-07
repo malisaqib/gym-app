@@ -3,10 +3,12 @@
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { EMOTIONAL_GOAL_KEY, readLocal, writeLocal } from "@/lib/coach/localStore";
+import { EMOTIONAL_GOAL_KEY, readLocal } from "@/lib/coach/localStore";
 import { buildCoachFocus } from "@/lib/coach/goalContext";
 import { suggestsSupport } from "@/lib/coach/supportSignals";
 import { SupportNudge } from "@/components/SupportNudge";
+import { toast } from "@/lib/toast";
+import { loadEmotionalGoal, saveEmotionalGoal } from "./coachData";
 import {
   DEFAULT_EMOTIONAL_GOAL,
   EMOTIONAL_GOAL_OPTIONS,
@@ -50,8 +52,8 @@ const T = {
   focusLabel: { en: "Coach focus", roman_urdu: "Coach ka focus" },
   savedMsg: { en: "Saved. Your coach will keep this in mind.", roman_urdu: "Save hogaya. Coach ise yaad rakhega." },
   deviceNote: {
-    en: "Saved on this device for now.",
-    roman_urdu: "Abhi sirf is device par save hai.",
+    en: "Saved to your account.",
+    roman_urdu: "Aap ke account mein save hai.",
   },
 } satisfies Record<string, Record<Lang, string>>;
 
@@ -68,8 +70,25 @@ export default function EmotionalGoalOnboarding({ lang = "en" }: { lang?: Lang }
   const [justSaved, setJustSaved] = useState(false);
 
   useEffect(() => {
-    setGoal(readLocal(EMOTIONAL_GOAL_KEY, DEFAULT_EMOTIONAL_GOAL));
-    setHydrated(true);
+    let alive = true;
+    (async () => {
+      const fromDb = await loadEmotionalGoal();
+      if (!alive) return;
+      if (fromDb && hasEmotionalGoal(fromDb)) {
+        setGoal(fromDb);
+      } else {
+        // One-time migration: lift any legacy localStorage goal into the account.
+        const local = readLocal(EMOTIONAL_GOAL_KEY, DEFAULT_EMOTIONAL_GOAL);
+        if (hasEmotionalGoal(local)) {
+          setGoal(local);
+          void saveEmotionalGoal(local);
+        }
+      }
+      setHydrated(true);
+    })();
+    return () => {
+      alive = false;
+    };
   }, []);
 
   function openEditor() {
@@ -79,7 +98,7 @@ export default function EmotionalGoalOnboarding({ lang = "en" }: { lang?: Lang }
     setEditing(true);
   }
 
-  function save(e: React.FormEvent) {
+  async function save(e: React.FormEvent) {
     e.preventDefault();
     const custom = draftCustom.trim();
     if (!draftPreset && !custom) return;
@@ -91,10 +110,11 @@ export default function EmotionalGoalOnboarding({ lang = "en" }: { lang?: Lang }
       createdAt: goal.createdAt || now,
       updatedAt: now,
     };
-    writeLocal(EMOTIONAL_GOAL_KEY, next);
-    setGoal(next);
+    setGoal(next); // optimistic
     setEditing(false);
     setJustSaved(true);
+    const res = await saveEmotionalGoal(next);
+    if (!res.ok) toast.error("Couldn't save your goal — please try again.");
   }
 
   const canSave = Boolean(draftPreset || draftCustom.trim());

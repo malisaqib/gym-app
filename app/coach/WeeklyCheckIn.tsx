@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { addCheckIn, getCheckIns, lastCheckIn, daysSince } from "@/lib/coach/checkins";
+import { getCheckIns as getLocalCheckIns, lastCheckIn, daysSince } from "@/lib/coach/checkins";
 import { suggestsSupport } from "@/lib/coach/supportSignals";
 import { SupportNudge } from "@/components/SupportNudge";
+import { toast } from "@/lib/toast";
+import { loadCheckIns, saveCheckIns } from "./coachData";
 import type { WeeklyCheckInEntry } from "./localCoachTypes";
 import type { Lang } from "@/lib/database.types";
 
@@ -83,13 +85,14 @@ const T = {
     en: "It's been a week — a quick check-in keeps your momentum going. No pressure.",
     roman_urdu: "Ek hafta ho gaya — chota check-in momentum banaye rakhta hai. Koi pressure nahi.",
   },
-  deviceNote: { en: "Saved on this device for now.", roman_urdu: "Abhi sirf is device par save hai." },
+  deviceNote: { en: "Saved to your account.", roman_urdu: "Aap ke account mein save hai." },
 } satisfies Record<string, Record<Lang, string>>;
 
 export default function WeeklyCheckIn({ lang = "en" }: { lang?: Lang }) {
   const t = (k: keyof typeof T) => T[k][lang];
 
   const [hydrated, setHydrated] = useState(false);
+  const [entries, setEntries] = useState<WeeklyCheckInEntry[]>([]);
   const [latest, setLatest] = useState<WeeklyCheckInEntry | null>(null);
   const [justSaved, setJustSaved] = useState<WeeklyCheckInEntry | null>(null);
 
@@ -103,11 +106,28 @@ export default function WeeklyCheckIn({ lang = "en" }: { lang?: Lang }) {
   const [struggle, setStruggle] = useState("");
 
   useEffect(() => {
-    setLatest(lastCheckIn(getCheckIns()));
-    setHydrated(true);
+    let alive = true;
+    (async () => {
+      let all = await loadCheckIns();
+      if (!alive) return;
+      if (all.length === 0) {
+        // One-time migration of any legacy localStorage check-ins.
+        const local = getLocalCheckIns();
+        if (local.length) {
+          all = local;
+          void saveCheckIns(local);
+        }
+      }
+      setEntries(all);
+      setLatest(lastCheckIn(all));
+      setHydrated(true);
+    })();
+    return () => {
+      alive = false;
+    };
   }, []);
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
     const w = Math.max(0, Math.min(14, Math.round(Number(workouts) || 0)));
     const entry: WeeklyCheckInEntry = {
@@ -122,10 +142,16 @@ export default function WeeklyCheckIn({ lang = "en" }: { lang?: Lang }) {
       waist: toNum(waist),
       coachFeedback: buildFeedback({ workouts: w, diet, energy, sleep, struggle }),
     };
-    const all = addCheckIn(entry);
+    // Replace any same-date entry, keep sorted oldest→newest (was addCheckIn).
+    const all = [...entries.filter((x) => x.date !== entry.date), entry].sort((a, b) =>
+      a.date.localeCompare(b.date)
+    );
+    setEntries(all); // optimistic
     setLatest(lastCheckIn(all));
     setJustSaved(entry);
     setStruggle("");
+    const res = await saveCheckIns(all);
+    if (!res.ok) toast.error("Couldn't save your check-in — please try again.");
   }
 
   if (!hydrated) {

@@ -8,9 +8,8 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import type { Lang } from "@/lib/database.types";
 import type { MealSuggestion } from "@/lib/coach/mealCoach";
 import { buildCoachFocus } from "@/lib/coach/goalContext";
-import { EMOTIONAL_GOAL_KEY, readLocal } from "@/lib/coach/localStore";
 import { withTimeout } from "@/lib/withTimeout";
-import { DEFAULT_EMOTIONAL_GOAL } from "./localCoachTypes";
+import { loadEmotionalGoal } from "./coachData";
 import { suggestMeal } from "./actions";
 
 function localDateString(d = new Date()): string {
@@ -68,12 +67,19 @@ export default function MealCoach({ lang }: { lang: Lang }) {
   });
 
   // The user's motivation goal (from Home), translated to a neutral behaviour
-  // focus so the coach's advice feels personal. Read from localStorage on mount.
+  // focus so the coach's advice feels personal. Loaded from the account on mount.
   const [focus, setFocus] = useState<string | null>(null);
   useEffect(() => {
-    const goal = readLocal(EMOTIONAL_GOAL_KEY, DEFAULT_EMOTIONAL_GOAL);
-    const hasGoal = goal.selectedPreset || goal.customGoal.trim();
-    setFocus(hasGoal ? buildCoachFocus(goal) : null);
+    let alive = true;
+    loadEmotionalGoal()
+      .then((goal) => {
+        if (!alive || !goal) return;
+        if (goal.selectedPreset || goal.customGoal.trim()) setFocus(buildCoachFocus(goal));
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
   }, []);
 
   async function runAsk(q: string) {

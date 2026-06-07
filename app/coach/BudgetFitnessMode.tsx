@@ -3,8 +3,10 @@
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { BUDGET_KEY, readLocal, writeLocal } from "@/lib/coach/localStore";
+import { BUDGET_KEY, readLocal } from "@/lib/coach/localStore";
 import { getBudgetMeals } from "@/lib/coach/budgetMeals";
+import { toast } from "@/lib/toast";
+import { loadBudget, saveBudget } from "./coachData";
 import {
   DEFAULT_BUDGET_PROFILE,
   getBudgetLabel,
@@ -51,7 +53,7 @@ const T = {
   editBtn: { en: "Edit", roman_urdu: "Edit" },
   cancelBtn: { en: "Cancel", roman_urdu: "Cancel" },
   mealsLabel: { en: "Repeatable meals for you", roman_urdu: "Aap ke liye repeatable meals" },
-  deviceNote: { en: "Saved on this device for now.", roman_urdu: "Abhi sirf is device par save hai." },
+  deviceNote: { en: "Saved to your account.", roman_urdu: "Aap ke account mein save hai." },
 } satisfies Record<string, Record<Lang, string>>;
 
 export default function BudgetFitnessMode({ lang = "en" }: { lang?: Lang }) {
@@ -63,8 +65,25 @@ export default function BudgetFitnessMode({ lang = "en" }: { lang?: Lang }) {
   const [draft, setDraft] = useState<BudgetProfile>(DEFAULT_BUDGET_PROFILE);
 
   useEffect(() => {
-    setProfile(readLocal(BUDGET_KEY, DEFAULT_BUDGET_PROFILE));
-    setHydrated(true);
+    let alive = true;
+    (async () => {
+      const fromDb = await loadBudget();
+      if (!alive) return;
+      if (fromDb && fromDb.dailyBudget) {
+        setProfile(fromDb);
+      } else {
+        // One-time migration of any legacy localStorage budget.
+        const local = readLocal(BUDGET_KEY, DEFAULT_BUDGET_PROFILE);
+        if (local.dailyBudget) {
+          setProfile(local);
+          void saveBudget(local);
+        }
+      }
+      setHydrated(true);
+    })();
+    return () => {
+      alive = false;
+    };
   }, []);
 
   function openEditor() {
@@ -72,13 +91,14 @@ export default function BudgetFitnessMode({ lang = "en" }: { lang?: Lang }) {
     setEditing(true);
   }
 
-  function save(e: React.FormEvent) {
+  async function save(e: React.FormEvent) {
     e.preventDefault();
     if (!draft.dailyBudget) return;
     const next = { ...draft, updatedAt: new Date().toISOString() };
-    writeLocal(BUDGET_KEY, next);
-    setProfile(next);
+    setProfile(next); // optimistic
     setEditing(false);
+    const res = await saveBudget(next);
+    if (!res.ok) toast.error("Couldn't save your budget — please try again.");
   }
 
   const hasBudget = Boolean(profile.dailyBudget);

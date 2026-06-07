@@ -53,10 +53,13 @@ the numbers.** The food RAG pipeline (lib/food/*, lib/embeddings.ts, migrations
   AI parses free-text prefs only (with a deterministic fallback).
   `lib/diet/{foodCatalog,planner}.ts`, `lib/coach/dietCoach.ts`, `app/diet/*`.
 
-### Pending migrations (run in Supabase SQL editor, in order)
-- `supabase/migrations/0009_goal_targets.sql` — goal/activity/macro columns + a
-  re-run-safe backfill that corrects existing users' old (too-high) targets.
-- `supabase/migrations/0010_meal_plans.sql` — saved diet plans table.
+### Migrations (run in Supabase SQL editor, in order)
+- `0009_goal_targets.sql` — goal/activity/macro columns + re-run-safe backfill.
+- `0010_meal_plans.sql` — saved diet plans table.
+- `0011_usual_eating.sql` — usual breakfast/lunch/dinner + likes/dislikes.
+- `0012_coach_data.sql` — emotional_goal / budget_profile / check_ins jsonb on
+  profiles (coach prefs moved off localStorage → Supabase, RLS-scoped,
+  cross-device; the app one-time migrates any local data on first load).
 
 ### Deferred (flagged, not built)
 - Budget-aware diet selection / "protein-per-rupee" (needs a food-cost layer).

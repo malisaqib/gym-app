@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { estimateMeal } from "./actions";
 import { estimateDesiMeal } from "@/lib/coach/desiFoodEstimator";
-import { EMOTIONAL_GOAL_KEY, readLocal } from "@/lib/coach/localStore";
-import { DEFAULT_EMOTIONAL_GOAL, getGoalText } from "./localCoachTypes";
+import { getGoalText } from "./localCoachTypes";
+import { loadEmotionalGoal } from "./coachData";
 import type { Lang } from "@/lib/database.types";
 
 /**
@@ -74,7 +74,15 @@ export default function DesiFoodEstimator({ lang = "en" }: { lang?: Lang }) {
   const [personalGoal, setPersonalGoal] = useState("");
 
   useEffect(() => {
-    setPersonalGoal(getGoalText(readLocal(EMOTIONAL_GOAL_KEY, DEFAULT_EMOTIONAL_GOAL)));
+    let alive = true;
+    loadEmotionalGoal()
+      .then((goal) => {
+        if (alive && goal) setPersonalGoal(getGoalText(goal));
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
   }, []);
 
   async function run(meal: string) {

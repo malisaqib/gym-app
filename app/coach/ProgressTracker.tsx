@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { getCheckIns } from "@/lib/coach/checkins";
+import { getCheckIns as getLocalCheckIns } from "@/lib/coach/checkins";
 import { calculateWeeklyStreak } from "@/lib/coach/streaks";
+import { loadCheckIns } from "./coachData";
 import type { WeeklyCheckInEntry } from "./localCoachTypes";
 import type { Lang } from "@/lib/database.types";
 
@@ -65,8 +66,17 @@ export default function ProgressTracker({ lang = "en" }: { lang?: Lang }) {
   const [checkIns, setCheckIns] = useState<WeeklyCheckInEntry[]>([]);
 
   useEffect(() => {
-    setCheckIns(getCheckIns());
-    setHydrated(true);
+    let alive = true;
+    (async () => {
+      let all = await loadCheckIns();
+      if (!alive) return;
+      if (all.length === 0) all = getLocalCheckIns(); // legacy fallback (read-only)
+      setCheckIns(all);
+      setHydrated(true);
+    })();
+    return () => {
+      alive = false;
+    };
   }, []);
 
   if (!hydrated) {
