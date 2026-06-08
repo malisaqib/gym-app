@@ -569,6 +569,41 @@ export function setPlanItemAmount(plan: DietPlan, slot: MealSlot, index: number,
   return withMeal(plan, slot, items);
 }
 
+/**
+ * Override a plan item's exact calories/protein (stored as per-unit base at the
+ * current amount, like the food log) — recomputes item + meal + day totals.
+ */
+export function setPlanItemMacros(
+  plan: DietPlan,
+  slot: MealSlot,
+  index: number,
+  patch: { calories: number; protein_g: number }
+): DietPlan {
+  const meal = mealAt(plan, slot);
+  const item = meal?.items[index];
+  if (!meal || !item) return plan;
+  const s = planItemSpec(item);
+  const amount = s.amount > 0 ? s.amount : 1;
+  const cal = Math.max(0, Math.round(patch.calories));
+  const pro = Math.max(0, Math.round(patch.protein_g));
+  const next: PlanMealItem = {
+    ...item,
+    unitMode: s.unitMode,
+    baseCalories: cal / amount,
+    baseProtein: pro / amount,
+    baseCarbs: s.baseCarbs,
+    baseFat: s.baseFat,
+    servingGrams: s.servingGrams,
+    unit: s.unit,
+    amount,
+    calories: cal,
+    protein: pro,
+    carbs: Math.round(s.baseCarbs * amount),
+    fat: Math.round(s.baseFat * amount),
+  };
+  return withMeal(plan, slot, meal.items.map((it, i) => (i === index ? next : it)));
+}
+
 /** Append a pre-built item (e.g. an AI-estimated, approximate free-typed food). */
 export function appendPlanItem(plan: DietPlan, slot: MealSlot, item: PlanMealItem): DietPlan {
   const meal = mealAt(plan, slot);

@@ -16,12 +16,13 @@ import {
   addDietItem,
   addCustomDietItem,
   setDietItemAmount,
+  correctDietItem,
   getDietPlan,
 } from "./actions";
 import UsualEatingCard, { type UsualEating } from "./UsualEatingCard";
 import AddFoodPanel from "./AddFoodPanel";
 import QuantityControl, { type QtySpec } from "@/components/QuantityControl";
-import { planItemSpec, setPlanItemAmount, type DietPlan, type DietFilter } from "@/lib/diet/planner";
+import { planItemSpec, setPlanItemAmount, setPlanItemMacros, type DietPlan, type DietFilter } from "@/lib/diet/planner";
 import type { MealSlot } from "@/lib/diet/foodCatalog";
 import type { Lang } from "@/lib/database.types";
 
@@ -300,6 +301,18 @@ export default function DietPlanView({
     }, 450);
   }
 
+  // Manual exact calories/protein override for a plan item (optimistic + persist).
+  async function correctItem(slot: MealSlot, index: number, patch: { calories: number; protein_g: number }) {
+    setPlan((prev) => (prev ? setPlanItemMacros(prev, slot, index, patch) : prev));
+    const res = await correctDietItem(slot, index, patch);
+    if (res.ok) setPlan(res.plan);
+    else {
+      toast.error(res.error);
+      const fresh = await getDietPlan();
+      if (fresh) setPlan(fresh);
+    }
+  }
+
   if (!hasTargets) {
     return (
       <Card className="space-y-2 p-5">
@@ -559,10 +572,13 @@ export default function DietPlanView({
                               </button>
                             </div>
                             {qtyExpanded && (
-                              <QuantityControl
+                              <PlanItemEditor
                                 spec={spec}
                                 amount={ps.amount}
-                                onChange={(a) => changeItemAmount(meal.slot, i, a)}
+                                calories={item.calories}
+                                protein={item.protein}
+                                onAmountChange={(a) => changeItemAmount(meal.slot, i, a)}
+                                onCorrect={(c, p) => correctItem(meal.slot, i, { calories: c, protein_g: p })}
                               />
                             )}
                           </li>
@@ -625,6 +641,58 @@ function localRemove(plan: DietPlan, slot: MealSlot, index: number): DietPlan {
     proteinShort: totalProtein < plan.proteinTargetG,
     caloriesShort: totalCalories < plan.calorieTarget * 0.85,
   };
+}
+
+// Expanded per-item editor on the Plan tab: quantity + exact calories/protein
+// together (mirrors Home). The number fields follow the quantity and can be
+// hand-edited + Saved to override.
+function PlanItemEditor({
+  spec,
+  amount,
+  calories,
+  protein,
+  onAmountChange,
+  onCorrect,
+}: {
+  spec: QtySpec;
+  amount: number;
+  calories: number;
+  protein: number;
+  onAmountChange: (amount: number) => void;
+  onCorrect: (calories: number, protein_g: number) => void;
+}) {
+  const [cal, setCal] = useState(String(calories));
+  const [pro, setPro] = useState(String(protein));
+  useEffect(() => {
+    setCal(String(calories));
+    setPro(String(protein));
+  }, [amount, calories, protein]);
+
+  const field =
+    "h-10 w-24 rounded-field border border-input bg-background px-3 text-base text-foreground focus:border-ring focus:outline-none";
+  return (
+    <>
+      <QuantityControl spec={spec} amount={amount} onChange={onAmountChange} />
+      <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-border pt-3">
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Calories
+          <input type="number" inputMode="numeric" value={cal} onChange={(e) => setCal(e.target.value)} className={field} />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Protein (g)
+          <input type="number" inputMode="numeric" value={pro} onChange={(e) => setPro(e.target.value)} className={field} />
+        </label>
+        <button
+          type="button"
+          onPointerDown={() => haptic("tap")}
+          onClick={() => onCorrect(Number(cal), Number(pro))}
+          className="rounded-field bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition hover:bg-primary/90 active:scale-[0.97]"
+        >
+          Save
+        </button>
+      </div>
+    </>
+  );
 }
 
 function Chip({

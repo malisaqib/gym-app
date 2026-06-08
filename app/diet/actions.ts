@@ -12,6 +12,7 @@ import {
   addPlanItem,
   appendPlanItem,
   setPlanItemAmount,
+  setPlanItemMacros,
   searchCatalog,
   bestCatalogMatch,
   type DietPlan,
@@ -286,6 +287,25 @@ export async function setDietItemAmount(slot: MealSlot, index: number, amount: n
   const ctx = await planContext();
   if (!ctx.ok) return ctx;
   const next = setPlanItemAmount(ctx.plan, slot, index, n);
+  const saved = await persistPlan(ctx.supabase, ctx.userId, next);
+  return saved.ok ? { ok: true, plan: next } : { ok: false, error: saved.error! };
+}
+
+/** Override a plan item's exact calories/protein (manual edit). */
+export async function correctDietItem(
+  slot: MealSlot,
+  index: number,
+  patch: { calories: number; protein_g: number }
+): Promise<PlanResult> {
+  if (!SLOTS.includes(slot)) return { ok: false, error: "Unknown meal." };
+  const cal = Number(patch.calories);
+  const pro = Number(patch.protein_g);
+  if (!Number.isFinite(cal) || cal < 0 || !Number.isFinite(pro) || pro < 0) {
+    return { ok: false, error: "Enter valid numbers." };
+  }
+  const ctx = await planContext();
+  if (!ctx.ok) return ctx;
+  const next = setPlanItemMacros(ctx.plan, slot, index, { calories: cal, protein_g: pro });
   const saved = await persistPlan(ctx.supabase, ctx.userId, next);
   return saved.ok ? { ok: true, plan: next } : { ok: false, error: saved.error! };
 }
