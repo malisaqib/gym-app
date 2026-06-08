@@ -407,6 +407,7 @@ const PROGRESSION: Record<Level, string> = {
 //   3) equipment fit  — loaded barbell/dumbbell > machine/cable > bodyweight > bands
 //   4) level fit      — never above the user's level (soft nudge; hard caps live in eligible)
 //   5) compound-first — a real compound before an isolation in a compound slot
+//   6) canonical lift  — the textbook fundamental wins the final tie (then name)
 // Equipment + level HARD filtering already happened in eligible(); this only orders.
 // Tier 3 is excluded from the pool, so it never reaches here.
 
@@ -435,6 +436,13 @@ function muscleFit(e: NormalizedExercise, muscle?: MuscleGroup): number {
   return 2;
 }
 
+// Canonical "textbook" lifts. When tier + muscle + equipment + level all tie,
+// prefer the recognizable fundamental (RDL/deadlift, bench, squat, overhead
+// press, lat pulldown, barbell row, leg press) over an equally-ranked variant —
+// e.g. so the hinge slot leads with a Romanian Deadlift, not a Good Morning.
+const RE_CANONICAL =
+  /\b(bench press|romanian deadlift|deadlift|barbell (full )?squat|front squat|goblet squat|overhead press|shoulder press|military press|lat ?pulldown|pulldown|bent over (barbell )?rows?|barbell rows?|seated cable rows?|leg press|hip thrust|pull[- ]?ups?|chin[- ]?ups?)\b/i;
+
 function rankKey(e: NormalizedExercise, slot: Slot, level: Level): number[] {
   return [
     muscleFit(e, slot.muscle),
@@ -442,6 +450,7 @@ function rankKey(e: NormalizedExercise, slot: Slot, level: Level): number[] {
     equipFit(e),
     Math.max(0, DIFF_RANK[e.normalizedDifficulty] - DIFF_RANK[level]),
     slot.role === "compound" && !isCompoundPattern(e.movementPattern) ? 1 : 0,
+    RE_CANONICAL.test(e.name) ? 0 : 1, // canonical lift wins the final tie (before name)
   ];
 }
 
