@@ -1,4 +1,3 @@
-import type { Goal } from "@/lib/database.types";
 import type { FocusArea, WorkoutGoal } from "./coachPlan";
 
 /**
@@ -16,10 +15,9 @@ import type { FocusArea, WorkoutGoal } from "./coachPlan";
 
 export type TrainingLocation = "gym" | "home" | "both";
 export type ExperienceLevel = "beginner" | "intermediate" | "advanced";
-export type TrainingEmphasis = "fatLoss" | "muscleGain" | "strength" | "general";
 
 // User-facing equipment options (home/both). Mapped to dataset equipment values
-// by the Phase 3 generator — kept as our own keys so the UI stays friendly.
+// by the generator — kept as our own keys so the UI stays friendly.
 export type EquipmentItem =
   | "dumbbells"
   | "bands"
@@ -69,15 +67,6 @@ export const DEFAULT_TRAINING_SETUP: TrainingSetup = {
   goal: null,
   updatedAt: "",
 };
-
-// Map the practical onboarding goal to a training emphasis. We deliberately
-// REUSE the goal rather than ask again. ("strength" isn't produced from goal
-// today, but the type allows it for future explicit selection.)
-export function goalToEmphasis(goal: Goal | null | undefined): TrainingEmphasis {
-  if (goal === "lose_fat") return "fatLoss";
-  if (goal === "gain_muscle") return "muscleGain";
-  return "general"; // maintain / unknown
-}
 
 const LOCATIONS: TrainingLocation[] = ["gym", "home", "both"];
 const LEVELS: ExperienceLevel[] = ["beginner", "intermediate", "advanced"];
