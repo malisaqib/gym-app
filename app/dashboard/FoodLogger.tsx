@@ -265,9 +265,18 @@ function FoodItemRow({
   onDelete: (id: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
-  const [fixing, setFixing] = useState(false);
   const m = itemMacros(item); // live total = base × amount
   const amount = item.amount ?? 1;
+  // Editable exact numbers shown alongside quantity. They follow the quantity
+  // (resync when amount changes); a manual edit + Save overrides them.
+  const [cal, setCal] = useState(String(m.calories));
+  const [pro, setPro] = useState(String(m.protein_g));
+  useEffect(() => {
+    const t = itemMacros(item);
+    setCal(String(t.calories));
+    setPro(String(t.protein_g));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [amount]);
   const qtyLabel =
     item.unit_mode === "portion"
       ? `${amount} g`
@@ -315,62 +324,23 @@ function FoodItemRow({
       {editing && (
         <>
           <QuantityControl spec={spec} amount={amount} onChange={(a) => onAmountChange(item.id, a)} />
-          {fixing ? (
-            <ManualEdit
-              calories={m.calories}
-              protein={m.protein_g}
-              onSave={(c, p) => {
-                onCorrect(item.id, { calories: c, protein_g: p });
-                setFixing(false);
-              }}
-              onCancel={() => setFixing(false)}
-            />
-          ) : (
-            <button
-              type="button"
-              onClick={() => setFixing(true)}
-              className="mt-3 text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-            >
-              Fix exact calories / protein
-            </button>
-          )}
+          {/* Exact calories + protein, shown with the quantity. Follow the qty;
+              hand-edit + Save to override. */}
+          <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-border pt-3">
+            <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+              Calories
+              <Input type="number" value={cal} onChange={(e) => setCal(e.target.value)} className="h-10 w-24" />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+              Protein (g)
+              <Input type="number" value={pro} onChange={(e) => setPro(e.target.value)} className="h-10 w-24" />
+            </label>
+            <Button size="sm" onClick={() => onCorrect(item.id, { calories: Number(cal), protein_g: Number(pro) })}>
+              Save
+            </Button>
+          </div>
         </>
       )}
     </Card>
-  );
-}
-
-// Manual exact-numbers override (the original calories/protein edit), kept as a
-// secondary option under the quantity control.
-function ManualEdit({
-  calories,
-  protein,
-  onSave,
-  onCancel,
-}: {
-  calories: number;
-  protein: number;
-  onSave: (calories: number, protein: number) => void;
-  onCancel: () => void;
-}) {
-  const [cal, setCal] = useState(String(calories));
-  const [pro, setPro] = useState(String(protein));
-  return (
-    <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-border pt-3">
-      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-        Calories
-        <Input type="number" value={cal} onChange={(e) => setCal(e.target.value)} className="h-10 w-24" />
-      </label>
-      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-        Protein (g)
-        <Input type="number" value={pro} onChange={(e) => setPro(e.target.value)} className="h-10 w-24" />
-      </label>
-      <Button size="sm" onClick={() => onSave(Number(cal), Number(pro))}>
-        Save
-      </Button>
-      <Button variant="ghost" size="sm" onClick={onCancel}>
-        Cancel
-      </Button>
-    </div>
   );
 }
