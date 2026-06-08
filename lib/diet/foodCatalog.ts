@@ -95,7 +95,7 @@ export const FOOD_CATALOG: CatalogFood[] = [
 
   // ---- Phase 4: vegetarian proteins (fixes thin veg coverage) ----
   // Macros are the representative midpoint of a portion range (see Phase 4 notes).
-  { id: "paneer", name: "Paneer", region: "desi", portion: "1 serving (~100g)", calories: 265, protein: 18, carbs: 4, fat: 21, vegetarian: true, role: "protein", slots: [L, D, S], tags: ["dairy", "paneer"], aliases: ["panir", "cottage cheese"] },
+  { id: "paneer", name: "Paneer", region: "desi", portion: "1 serving (~100g)", calories: 260, protein: 18, carbs: 3, fat: 16, vegetarian: true, role: "protein", slots: [L, D, S], tags: ["dairy", "paneer"], aliases: ["panir", "cottage cheese"] },
   { id: "rajma", name: "Rajma (kidney beans)", region: "desi", portion: "1 katori (~200g)", calories: 210, protein: 9, carbs: 30, fat: 4, vegetarian: true, role: "protein", slots: [L, D], tags: ["beans", "lentil"], aliases: ["lal lobia", "kidney beans", "red beans"] },
   { id: "lobia", name: "Lobia (black-eyed peas)", region: "desi", portion: "1 katori (~200g)", calories: 190, protein: 11, carbs: 28, fat: 3, vegetarian: true, role: "protein", slots: [L, D], tags: ["beans", "lentil"], aliases: ["black eyed peas", "black-eyed peas", "cowpeas"] },
   { id: "soya", name: "Soya chunks", region: "global", portion: "1 cup cooked (~150g)", calories: 180, protein: 18, carbs: 12, fat: 4, vegetarian: true, role: "protein", slots: [L, D], tags: ["soya"], aliases: ["soy chunks", "soya chunks", "nutri"] },
@@ -106,7 +106,7 @@ export const FOOD_CATALOG: CatalogFood[] = [
   { id: "naan", name: "Naan", region: "desi", portion: "1 medium", calories: 260, protein: 8, carbs: 48, fat: 5, vegetarian: true, role: "carb", slots: [L, D], tags: ["bread"], aliases: ["nan"] },
   { id: "nihari", name: "Nihari (beef)", region: "desi", portion: "1 serving (~250g)", calories: 450, protein: 28, carbs: 12, fat: 32, vegetarian: false, role: "protein", slots: [L, D], tags: ["beef"], aliases: ["nehari", "beef stew"] },
   { id: "haleem", name: "Haleem", region: "desi", portion: "1 bowl (~250g)", calories: 310, protein: 18, carbs: 30, fat: 12, vegetarian: false, role: "protein", slots: [L, D, S], tags: ["beef", "lentil"], aliases: ["khichra", "daleem", "hareesa"] },
-  { id: "pulao", name: "Chicken pulao", region: "desi", portion: "1 plate (~300g)", calories: 450, protein: 20, carbs: 58, fat: 15, vegetarian: false, role: "carb", slots: [L, D], tags: ["chicken", "rice"], aliases: ["pilau", "yakhni pulao", "palao"] },
+  { id: "pulao", name: "Chicken pulao", region: "desi", portion: "1 plate (~300g)", calories: 470, protein: 22, carbs: 58, fat: 16, vegetarian: false, role: "carb", slots: [L, D], tags: ["chicken", "rice"], aliases: ["pilau", "yakhni pulao", "palao"] },
   { id: "aloo_paratha", name: "Aloo paratha", region: "desi", portion: "1 stuffed", calories: 300, protein: 6, carbs: 42, fat: 12, vegetarian: true, role: "carb", slots: [B], tags: ["bread", "fried"], aliases: ["potato paratha"] },
   { id: "shami", name: "Shami kababs", region: "desi", portion: "2 kababs", calories: 200, protein: 14, carbs: 6, fat: 13, vegetarian: false, role: "protein", slots: [L, D, S], tags: ["beef"], aliases: ["shaami", "shami kebab"] },
   { id: "chapli", name: "Chapli kebab", region: "desi", portion: "1 kebab (~120g)", calories: 300, protein: 18, carbs: 6, fat: 23, vegetarian: false, role: "protein", slots: [L, D, S], tags: ["beef"], aliases: ["chapli"] },
@@ -126,6 +126,11 @@ export const FOOD_CATALOG: CatalogFood[] = [
   { id: "dates", name: "Dates", region: "global", portion: "3 dates", calories: 70, protein: 1, carbs: 18, fat: 0, vegetarian: true, role: "fruit", slots: [B, S], tags: ["fruit", "sweet"], aliases: ["khajoor", "khajur"] },
   { id: "banana_shake", name: "Banana shake", region: "global", portion: "1 glass", calories: 250, protein: 8, carbs: 40, fat: 6, vegetarian: true, role: "drink", slots: [B, S], tags: ["dairy", "sweet", "fruit"], aliases: ["milkshake", "banana milkshake"] },
   { id: "mango", name: "Mango", region: "global", portion: "1 medium", calories: 150, protein: 2, carbs: 38, fat: 1, vegetarian: true, role: "fruit", slots: [B, S], tags: ["fruit"], aliases: ["aam"] },
+
+  // ---- coffee (macros verified against USDA/nutrition sources) ----
+  { id: "black_coffee", name: "Black coffee", region: "global", portion: "1 cup", calories: 5, protein: 0, carbs: 0, fat: 0, vegetarian: true, role: "drink", slots: [B, S], tags: ["coffee"], aliases: ["coffee no milk", "kali coffee", "americano"] },
+  { id: "coffee", name: "Coffee (milk & sugar)", region: "global", portion: "1 cup", calories: 80, protein: 2, carbs: 13, fat: 2, vegetarian: true, role: "drink", slots: [B, S], tags: ["coffee", "dairy", "sweet"], aliases: ["coffee", "nescafe", "doodh coffee", "milk coffee", "coffee with milk"] },
+  { id: "cold_coffee", name: "Cold coffee (shake)", region: "global", portion: "1 glass", calories: 220, protein: 7, carbs: 32, fat: 7, vegetarian: true, role: "drink", slots: [B, S], tags: ["coffee", "dairy", "sweet"], aliases: ["cold coffee", "coffee shake", "iced coffee", "frappe", "coffee milkshake"] },
 ];
 
 /** Quick lookup by id (used when applying swaps). */
