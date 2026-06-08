@@ -9,6 +9,7 @@ import {
   addPlanItem,
   appendPlanItem,
   swapPlanItem,
+  setPlanItemAmount,
   searchCatalog,
   bestCatalogMatch,
   isKnownFood,
@@ -259,6 +260,22 @@ test("appendPlanItem can push the day OVER target (totals reflect it honestly)",
   });
   assert.ok(next.totalCalories > 1600, "totals should reflect going over target");
   assert.equal(next.caloriesShort, false);
+});
+
+test("plan items carry a quantity spec; setPlanItemAmount recomputes item + totals", () => {
+  const plan = buildPlan({ calorieTarget: 2200, proteinTargetG: 120, filter: openFilter, seed: 1 });
+  const meal = plan.meals.find((m) => m.items.length > 0)!;
+  const item0 = meal.items[0];
+  assert.ok(item0.unitMode === "count" || item0.unitMode === "portion", "item has a unit mode");
+  assert.ok((item0.baseCalories ?? 0) > 0 && (item0.amount ?? 0) > 0, "item has base + amount");
+
+  const a2 = (item0.amount ?? 1) * 2;
+  const next = setPlanItemAmount(plan, meal.slot, 0, a2);
+  const after = next.meals.find((m) => m.slot === meal.slot)!.items[0];
+  assert.equal(after.amount, Math.round(a2));
+  assert.equal(after.calories, Math.round((item0.baseCalories ?? 0) * Math.round(a2)));
+  // day total stays consistent with the meals
+  assert.equal(next.totalCalories, next.meals.reduce((s, m) => s + m.calories, 0));
 });
 
 test("searchCatalog matches by name/tag and respects the filter", () => {

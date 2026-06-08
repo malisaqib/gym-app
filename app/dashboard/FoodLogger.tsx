@@ -7,8 +7,8 @@ import { listContainer, listItem } from "@/lib/motion";
 import { sumMacros } from "@/lib/food/totals";
 import { itemMacros } from "@/lib/food/quantity";
 import { localDateString } from "@/lib/localDate";
-import { logFood, getFoodLogs, setFoodItemAmount, deleteFoodItem } from "./actions";
-import QuantityControl from "./QuantityControl";
+import { logFood, getFoodLogs, setFoodItemAmount, correctFoodItem, deleteFoodItem } from "./actions";
+import QuantityControl, { type QtySpec } from "@/components/QuantityControl";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
@@ -133,6 +133,33 @@ export default function FoodLogger({
     }, 450);
   }
 
+  // Manual exact-numbers correction (optimistic + rollback). Stores the entered
+  // total as per-unit base at the current amount so it stays consistent + scales.
+  async function correctItem(id: string, patch: { calories: number; protein_g: number }) {
+    const snapshot = items;
+    setItems((prev) =>
+      prev.map((i) => {
+        if (i.id !== id) return i;
+        const amt = i.amount && i.amount > 0 ? i.amount : 1;
+        return {
+          ...i,
+          calories: patch.calories,
+          protein_g: patch.protein_g,
+          base_calories: patch.calories / amt,
+          base_protein_g: patch.protein_g / amt,
+          source: "corrected",
+        };
+      })
+    );
+    const res = await correctFoodItem(id, patch);
+    if (!res.ok) {
+      setItems(snapshot);
+      setError(res.error);
+    } else {
+      setItems((prev) => prev.map((i) => (i.id === id ? res.item : i)));
+    }
+  }
+
   // OPTIMISTIC delete: remove now, restore on error.
   async function removeItem(id: string) {
     const snapshot = items;
@@ -190,7 +217,12 @@ export default function FoodLogger({
             <AnimatePresence initial={false} mode="popLayout">
               {items.map((item) => (
                 <motion.div key={item.id} variants={listItem} exit="exit" layout>
-                  <FoodItemRow item={item} onAmountChange={changeAmount} onDelete={removeItem} />
+                  <FoodItemRow
+                    item={item}
+                    onAmountChange={changeAmount}
+                    onCorrect={correctItem}
+                    onDelete={removeItem}
+                  />
                 </motion.div>
               ))}
               {pending.map((p) => (
@@ -224,19 +256,33 @@ function PendingRow({ text }: { text: string }) {
 function FoodItemRow({
   item,
   onAmountChange,
+  onCorrect,
   onDelete,
 }: {
   item: FoodLog;
   onAmountChange: (id: string, amount: number) => void;
+  onCorrect: (id: string, patch: { calories: number; protein_g: number }) => void;
   onDelete: (id: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
+  const [fixing, setFixing] = useState(false);
   const m = itemMacros(item); // live total = base × amount
   const amount = item.amount ?? 1;
   const qtyLabel =
     item.unit_mode === "portion"
       ? `${amount} g`
       : `${amount}${item.unit && item.unit !== "item" ? ` ${item.unit}` : ""}`;
+
+  // base = per unit (count) or per gram (portion); fall back to stored totals.
+  const spec: QtySpec = {
+    unitMode: item.unit_mode ?? "count",
+    baseCalories: item.base_calories ?? item.calories,
+    baseProtein: item.base_protein_g ?? item.protein_g,
+    baseCarbs: item.base_carbs_g ?? item.carbs_g,
+    baseFat: item.base_fat_g ?? item.fat_g,
+    servingGrams: item.serving_grams,
+    unit: item.unit && item.unit !== "item" ? item.unit : "",
+  };
 
   return (
     <Card className="p-3">
@@ -266,7 +312,65 @@ function FoodItemRow({
         </div>
       </div>
 
-      {editing && <QuantityControl item={item} amount={amount} onChange={(a) => onAmountChange(item.id, a)} />}
+      {editing && (
+        <>
+          <QuantityControl spec={spec} amount={amount} onChange={(a) => onAmountChange(item.id, a)} />
+          {fixing ? (
+            <ManualEdit
+              calories={m.calories}
+              protein={m.protein_g}
+              onSave={(c, p) => {
+                onCorrect(item.id, { calories: c, protein_g: p });
+                setFixing(false);
+              }}
+              onCancel={() => setFixing(false)}
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setFixing(true)}
+              className="mt-3 text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+            >
+              Fix exact calories / protein
+            </button>
+          )}
+        </>
+      )}
     </Card>
+  );
+}
+
+// Manual exact-numbers override (the original calories/protein edit), kept as a
+// secondary option under the quantity control.
+function ManualEdit({
+  calories,
+  protein,
+  onSave,
+  onCancel,
+}: {
+  calories: number;
+  protein: number;
+  onSave: (calories: number, protein: number) => void;
+  onCancel: () => void;
+}) {
+  const [cal, setCal] = useState(String(calories));
+  const [pro, setPro] = useState(String(protein));
+  return (
+    <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-border pt-3">
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+        Calories
+        <Input type="number" value={cal} onChange={(e) => setCal(e.target.value)} className="h-10 w-24" />
+      </label>
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+        Protein (g)
+        <Input type="number" value={pro} onChange={(e) => setPro(e.target.value)} className="h-10 w-24" />
+      </label>
+      <Button size="sm" onClick={() => onSave(Number(cal), Number(pro))}>
+        Save
+      </Button>
+      <Button variant="ghost" size="sm" onClick={onCancel}>
+        Cancel
+      </Button>
+    </div>
   );
 }

@@ -11,6 +11,7 @@ import {
   removePlanItem,
   addPlanItem,
   appendPlanItem,
+  setPlanItemAmount,
   searchCatalog,
   bestCatalogMatch,
   type DietPlan,
@@ -273,6 +274,18 @@ export async function addDietItem(slot: MealSlot, foodId: string): Promise<PlanR
   if (!ctx.ok) return ctx;
   const next = addPlanItem(ctx.plan, slot, foodId);
   if (next === ctx.plan) return { ok: false, error: "Couldn't add that food." };
+  const saved = await persistPlan(ctx.supabase, ctx.userId, next);
+  return saved.ok ? { ok: true, plan: next } : { ok: false, error: saved.error! };
+}
+
+/** Set how much of a single plan item was/will be eaten (grams or units). */
+export async function setDietItemAmount(slot: MealSlot, index: number, amount: number): Promise<PlanResult> {
+  if (!SLOTS.includes(slot)) return { ok: false, error: "Unknown meal." };
+  const n = Number(amount);
+  if (!Number.isFinite(n) || n <= 0) return { ok: false, error: "Enter a valid amount." };
+  const ctx = await planContext();
+  if (!ctx.ok) return ctx;
+  const next = setPlanItemAmount(ctx.plan, slot, index, n);
   const saved = await persistPlan(ctx.supabase, ctx.userId, next);
   return saved.ok ? { ok: true, plan: next } : { ok: false, error: saved.error! };
 }

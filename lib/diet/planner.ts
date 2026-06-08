@@ -43,6 +43,27 @@ export interface PlanMealItem {
   carbs: number;
   fat: number;
   approx?: boolean; // true for a free-typed item we estimated (not catalog-grounded)
+  // Live quantity (Phase: plan-tab quantity). Total = base × amount, computed on
+  // the fly. All optional/additive — old saved plans derive from the catalog.
+  unitMode?: "count" | "portion";
+  baseCalories?: number; // per unit (count) or per gram (portion)
+  baseProtein?: number;
+  baseCarbs?: number;
+  baseFat?: number;
+  amount?: number; // units (count) or grams (portion)
+  servingGrams?: number | null; // one base serving (portion only)
+  unit?: string;
+}
+
+export interface ItemQtySpec {
+  unitMode: "count" | "portion";
+  baseCalories: number;
+  baseProtein: number;
+  baseCarbs: number;
+  baseFat: number;
+  amount: number;
+  servingGrams: number | null;
+  unit: string;
 }
 
 export interface PlanMeal {
@@ -169,15 +190,59 @@ function allowed(food: CatalogFood, filter: DietFilter): boolean {
   return true;
 }
 
-const toItem = (f: CatalogFood): PlanMealItem => ({
-  id: f.id,
-  name: f.name,
-  portion: f.portion,
-  calories: f.calories,
-  protein: f.protein,
-  carbs: f.carbs,
-  fat: f.fat,
-});
+// Derive a quantity spec from a catalog food's friendly portion: "~250g"/"100g"
+// → portion (per gram); "2 roti"/"1 piece" → count (per unit). Lets the user
+// adjust grams or units on the plan, recomputing macros from this base.
+function catalogSpec(f: CatalogFood): ItemQtySpec {
+  const grams = f.portion.match(/(\d+)\s*g\b/);
+  if (grams) {
+    const g = Number(grams[1]);
+    return {
+      unitMode: "portion",
+      servingGrams: g,
+      amount: g,
+      unit: "g",
+      baseCalories: f.calories / g,
+      baseProtein: f.protein / g,
+      baseCarbs: f.carbs / g,
+      baseFat: f.fat / g,
+    };
+  }
+  const lead = f.portion.match(/^(\d+)/);
+  const count = lead ? Math.max(1, Number(lead[1])) : 1;
+  const noun = f.portion.replace(/^\d+\s*/, "").split(/[\s(]/)[0] || "";
+  return {
+    unitMode: "count",
+    servingGrams: null,
+    amount: count,
+    unit: noun,
+    baseCalories: f.calories / count,
+    baseProtein: f.protein / count,
+    baseCarbs: f.carbs / count,
+    baseFat: f.fat / count,
+  };
+}
+
+const toItem = (f: CatalogFood): PlanMealItem => {
+  const s = catalogSpec(f);
+  return {
+    id: f.id,
+    name: f.name,
+    portion: f.portion,
+    calories: f.calories,
+    protein: f.protein,
+    carbs: f.carbs,
+    fat: f.fat,
+    unitMode: s.unitMode,
+    baseCalories: s.baseCalories,
+    baseProtein: s.baseProtein,
+    baseCarbs: s.baseCarbs,
+    baseFat: s.baseFat,
+    amount: s.amount,
+    servingGrams: s.servingGrams,
+    unit: s.unit,
+  };
+};
 
 const proteinDensity = (f: CatalogFood) => f.protein / Math.max(1, f.calories);
 
@@ -447,6 +512,61 @@ export function addPlanItem(plan: DietPlan, slot: MealSlot, foodId: string): Die
   const meal = mealAt(plan, slot);
   if (!food || !meal || !allowed(food, plan.filter)) return plan;
   return withMeal(plan, slot, [...meal.items, toItem(food)]);
+}
+
+/** Resolve a quantity spec for any plan item: stored fields → catalog → custom. */
+export function planItemSpec(item: PlanMealItem): ItemQtySpec {
+  if (item.unitMode && item.baseCalories != null && item.amount != null) {
+    return {
+      unitMode: item.unitMode,
+      baseCalories: item.baseCalories,
+      baseProtein: item.baseProtein ?? 0,
+      baseCarbs: item.baseCarbs ?? 0,
+      baseFat: item.baseFat ?? 0,
+      amount: item.amount,
+      servingGrams: item.servingGrams ?? null,
+      unit: item.unit ?? "",
+    };
+  }
+  const cat = CATALOG_BY_ID[item.id];
+  if (cat) return catalogSpec(cat);
+  // Custom/approx item with no catalog grounding — treat its macros as one unit.
+  return {
+    unitMode: "count",
+    baseCalories: item.calories,
+    baseProtein: item.protein,
+    baseCarbs: item.carbs,
+    baseFat: item.fat,
+    amount: 1,
+    servingGrams: null,
+    unit: "",
+  };
+}
+
+/** Set how much of a plan item — recompute its macros (base × amount) + totals. */
+export function setPlanItemAmount(plan: DietPlan, slot: MealSlot, index: number, amount: number): DietPlan {
+  const meal = mealAt(plan, slot);
+  const item = meal?.items[index];
+  if (!meal || !item) return plan;
+  const a = Math.max(1, Math.round(amount)); // grams or units, ≥ 1
+  const s = planItemSpec(item);
+  const next: PlanMealItem = {
+    ...item,
+    unitMode: s.unitMode,
+    baseCalories: s.baseCalories,
+    baseProtein: s.baseProtein,
+    baseCarbs: s.baseCarbs,
+    baseFat: s.baseFat,
+    servingGrams: s.servingGrams,
+    unit: s.unit,
+    amount: a,
+    calories: Math.round(s.baseCalories * a),
+    protein: Math.round(s.baseProtein * a),
+    carbs: Math.round(s.baseCarbs * a),
+    fat: Math.round(s.baseFat * a),
+  };
+  const items = meal.items.map((it, i) => (i === index ? next : it));
+  return withMeal(plan, slot, items);
 }
 
 /** Append a pre-built item (e.g. an AI-estimated, approximate free-typed food). */

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { listContainer, listItem } from "@/lib/motion";
 import { Card } from "@/components/ui/Card";
@@ -15,10 +15,13 @@ import {
   removeDietItem,
   addDietItem,
   addCustomDietItem,
+  setDietItemAmount,
+  getDietPlan,
 } from "./actions";
 import UsualEatingCard, { type UsualEating } from "./UsualEatingCard";
 import AddFoodPanel from "./AddFoodPanel";
-import type { DietPlan, DietFilter } from "@/lib/diet/planner";
+import QuantityControl, { type QtySpec } from "@/components/QuantityControl";
+import { planItemSpec, setPlanItemAmount, type DietPlan, type DietFilter } from "@/lib/diet/planner";
 import type { MealSlot } from "@/lib/diet/foodCatalog";
 import type { Lang } from "@/lib/database.types";
 
@@ -54,6 +57,7 @@ const T = {
   },
   swap: { en: "Swap", roman_urdu: "Badlein" },
   remove: { en: "Remove", roman_urdu: "Hatayein" },
+  adjust: { en: "Adjust amount", roman_urdu: "Miqdar adjust karein" },
   addFood: { en: "Add food", roman_urdu: "Food add karein" },
   estBadge: { en: "≈ est", roman_urdu: "≈ andaza" },
   addedEst: { en: "Added as an estimate.", roman_urdu: "Andaze ke tor par add ho gaya." },
@@ -123,6 +127,8 @@ export default function DietPlanView({
   const [itemBusy, setItemBusy] = useState<string | null>(null); // `${slot}-${index}`
   const [addOpen, setAddOpen] = useState<MealSlot | null>(null);
   const [addBusy, setAddBusy] = useState(false);
+  const [qtyOpen, setQtyOpen] = useState<string | null>(null); // which item's quantity control is open
+  const qtyTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   // Any in-flight plan mutation. We serialize edits: concurrent writes to the one
   // saved plan row would silently overwrite each other (last-write-wins), so only
   // one generate/swap/add/remove runs at a time.
@@ -273,6 +279,25 @@ export default function DietPlanView({
     } finally {
       setAddBusy(false);
     }
+  }
+
+  // Adjust how much of a plan item — optimistic + live (recomputes the meal and
+  // day totals), debounced persist. setDietItemAmount load-modifies-saves on the
+  // latest DB plan, so it won't clobber a concurrent swap; reconcile on failure.
+  useEffect(() => () => Object.values(qtyTimers.current).forEach(clearTimeout), []);
+  function changeItemAmount(slot: MealSlot, index: number, amount: number) {
+    setPlan((prev) => (prev ? setPlanItemAmount(prev, slot, index, amount) : prev));
+    const k = `${slot}-${index}`;
+    if (qtyTimers.current[k]) clearTimeout(qtyTimers.current[k]);
+    qtyTimers.current[k] = setTimeout(async () => {
+      const res = await setDietItemAmount(slot, index, amount);
+      if (res.ok) setPlan(res.plan);
+      else {
+        toast.error(res.error);
+        const fresh = await getDietPlan();
+        if (fresh) setPlan(fresh); // reconcile with DB truth
+      }
+    }, 450);
   }
 
   if (!hasTargets) {
@@ -463,49 +488,83 @@ export default function DietPlanView({
                         const key = `${meal.slot}-${i}`;
                         const rowBusy = itemBusy === key;
                         const canSwap = !item.approx; // custom estimates can't be re-selected
+                        const ps = planItemSpec(item);
+                        const spec: QtySpec = {
+                          unitMode: ps.unitMode,
+                          baseCalories: ps.baseCalories,
+                          baseProtein: ps.baseProtein,
+                          baseCarbs: ps.baseCarbs,
+                          baseFat: ps.baseFat,
+                          servingGrams: ps.servingGrams,
+                          unit: ps.unit,
+                        };
+                        const qtyExpanded = qtyOpen === key;
                         return (
                           <li
                             key={`${item.id}-${i}`}
-                            className="flex items-center gap-2 rounded-field border border-border bg-background px-3 py-2"
+                            className="rounded-field border border-border bg-background px-3 py-2"
                           >
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm text-foreground">
-                                {item.name}
-                                <span className="ml-1.5 text-xs text-muted-foreground">{item.portion}</span>
-                                {item.approx && (
-                                  <span className="ml-1.5 rounded-pill bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                                    {t("estBadge")}
-                                  </span>
-                                )}
-                              </p>
-                              {!habits && (
-                                <p className="text-xs text-muted-foreground tabular-nums">
-                                  {item.calories} · {item.protein}g
+                            <div className="flex items-center gap-2">
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm text-foreground">
+                                  {item.name}
+                                  <span className="ml-1.5 text-xs text-muted-foreground">{item.portion}</span>
+                                  {item.approx && (
+                                    <span className="ml-1.5 rounded-pill bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                                      {t("estBadge")}
+                                    </span>
+                                  )}
                                 </p>
-                              )}
-                            </div>
-                            {canSwap && (
+                                {!habits && (
+                                  <p className="text-xs text-muted-foreground tabular-nums">
+                                    {item.calories} · {item.protein}g
+                                  </p>
+                                )}
+                              </div>
                               <button
                                 type="button"
-                                aria-label={t("swap")}
+                                aria-label={t("adjust")}
+                                aria-pressed={qtyExpanded}
+                                onPointerDown={() => haptic("tap")}
+                                onClick={() => setQtyOpen(qtyExpanded ? null : key)}
+                                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-pill border text-sm transition active:scale-[0.95] ${
+                                  qtyExpanded
+                                    ? "border-primary bg-primary-soft text-primary"
+                                    : "border-border bg-card text-foreground hover:border-primary/50"
+                                }`}
+                              >
+                                ⚖
+                              </button>
+                              {canSwap && (
+                                <button
+                                  type="button"
+                                  aria-label={t("swap")}
+                                  disabled={mutating}
+                                  onPointerDown={() => haptic("tap")}
+                                  onClick={() => swapItem(meal.slot, i)}
+                                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-pill border border-border bg-card text-sm text-foreground transition hover:border-primary/50 active:scale-[0.95] disabled:opacity-40"
+                                >
+                                  {rowBusy ? "…" : "↻"}
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                aria-label={t("remove")}
                                 disabled={mutating}
                                 onPointerDown={() => haptic("tap")}
-                                onClick={() => swapItem(meal.slot, i)}
-                                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-pill border border-border bg-card text-sm text-foreground transition hover:border-primary/50 active:scale-[0.95] disabled:opacity-40"
+                                onClick={() => removeItem(meal.slot, i)}
+                                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-pill border border-border bg-card text-sm text-muted-foreground transition hover:border-destructive/50 hover:text-destructive active:scale-[0.95] disabled:opacity-40"
                               >
-                                {rowBusy ? "…" : "↻"}
+                                {rowBusy ? "…" : "✕"}
                               </button>
+                            </div>
+                            {qtyExpanded && (
+                              <QuantityControl
+                                spec={spec}
+                                amount={ps.amount}
+                                onChange={(a) => changeItemAmount(meal.slot, i, a)}
+                              />
                             )}
-                            <button
-                              type="button"
-                              aria-label={t("remove")}
-                              disabled={mutating}
-                              onPointerDown={() => haptic("tap")}
-                              onClick={() => removeItem(meal.slot, i)}
-                              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-pill border border-border bg-card text-sm text-muted-foreground transition hover:border-destructive/50 hover:text-destructive active:scale-[0.95] disabled:opacity-40"
-                            >
-                              {rowBusy ? "…" : "✕"}
-                            </button>
                           </li>
                         );
                       })}

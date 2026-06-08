@@ -104,8 +104,10 @@ type ItemResult =
   | { ok: false; error: string };
 
 /**
- * One-tap correction: overwrite an item's calories/protein and mark it as
- * user-corrected. RLS plus the explicit user_id check keep edits owner-only.
+ * Manual correction: set an item's exact calories/protein. To stay consistent
+ * with the live quantity model we store these as the per-unit base AT THE CURRENT
+ * amount (base = entered / amount), so the corrected numbers hold now and still
+ * scale if the user later changes the quantity. carbs/fat base is left as-is.
  */
 export async function correctFoodItem(
   id: string,
@@ -123,9 +125,25 @@ export async function correctFoodItem(
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Not signed in." };
 
+  const { data: row } = await supabase
+    .from("food_logs")
+    .select("*")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .single<FoodLog>();
+  if (!row) return { ok: false, error: "Item not found." };
+
+  const amount = row.amount && row.amount > 0 ? row.amount : 1;
+
   const { data, error } = await supabase
     .from("food_logs")
-    .update({ calories, protein_g, source: "corrected" })
+    .update({
+      base_calories: calories / amount,
+      base_protein_g: protein_g / amount,
+      calories,
+      protein_g,
+      source: "corrected",
+    })
     .eq("id", id)
     .eq("user_id", user.id)
     .select()
