@@ -87,6 +87,12 @@ export interface WorkoutPlan {
 export const BELLY_FAT_NOTE =
   "Belly fat reduces through overall fat loss. This plan combines full-body strength, low-impact cardio, and core so you progress safely — your diet plan creates the calorie deficit that actually reduces fat across your whole body.";
 
+// Shown on no-equipment home plans: training the back well needs something to
+// pull against. We include a bodyweight posterior move where possible, but a
+// cheap band / doorway bar (added under Equipment) unlocks real back work.
+export const BACK_NUDGE =
+  "Training your back well needs something to pull against. With no equipment we include a bodyweight posterior move where we can — adding a resistance band or a doorway pull-up bar (under Equipment) unlocks proper rows and pulldowns.";
+
 const DISCLAIMER =
   "This is a general starting plan, not medical advice. Stop if anything hurts and see a qualified professional for pain or medical conditions.";
 const WARMUP = "5 min easy cardio + 1–2 light warm-up sets on your first big lift.";
@@ -458,6 +464,24 @@ function pickForSlot(
   return notDay.find((e) => !usedWeek.has(e.id)) ?? notDay[0] ?? null;
 }
 
+const POSTERIOR_BW_MUSCLES = new Set<MuscleGroup>(["lower back", "lats", "middle back", "traps"]);
+
+/**
+ * Equipment-free back/posterior fallback for a no-equipment home plan, where the
+ * dataset has NO bodyweight horizontal/vertical pull (only bar pull-ups, which we
+ * exclude). Picks a GENUINE equipment-free posterior move (e.g. Superman) — never
+ * a core/leg-raise move, never a band/bar move. Returns null if none fits, so the
+ * slot drops gracefully (caller shows the gear nudge either way).
+ */
+function pickPosterior(pool: NormalizedExercise[], usedWeek: Set<string>, usedDay: Set<string>, level: Level): NormalizedExercise | null {
+  const slot: Slot = { pattern: "pull", role: "compound" };
+  const cands = pool
+    .filter((e) => e.normalizedEquipment === "bodyweight" && !e.requiresPullupBar && POSTERIOR_BW_MUSCLES.has(e.primaryMuscle as MuscleGroup))
+    .sort((a, b) => compareKeys(rankKey(a, slot, level), rankKey(b, slot, level)) || a.name.localeCompare(b.name));
+  const notDay = cands.filter((e) => !usedDay.has(e.id));
+  return notDay.find((e) => !usedWeek.has(e.id)) ?? notDay[0] ?? null;
+}
+
 // 7-day layout with rests baked in for recovery.
 function weekSchedule(days: number): boolean[] {
   const T = true;
@@ -519,8 +543,13 @@ export function buildWorkoutPlan(input: WorkoutInput, enriched: NormalizedExerci
     const usedDay = new Set<string>();
     const built: PlanExercise[] = [];
     for (const slot of tday.slots) {
-      const chosen = pickForSlot(slot, pool, usedWeek, usedDay, input.level);
-      if (!chosen) continue; // skip a slot we can't fill safely (e.g. no-bar pulls)
+      let chosen = pickForSlot(slot, pool, usedWeek, usedDay, input.level);
+      // No-equipment home has no real bodyweight pull (bar pull-ups are excluded);
+      // fall back to a genuine equipment-free posterior move rather than junk.
+      if (!chosen && slot.pattern === "pull" && ctx.bodyweightOnly) {
+        chosen = pickPosterior(pool, usedWeek, usedDay, input.level);
+      }
+      if (!chosen) continue; // skip a slot we can't fill safely
       usedDay.add(chosen.id);
       usedWeek.add(chosen.id);
       built.push(makePlanExercise(chosen, slot.role, input.goal, input.level));
@@ -537,6 +566,9 @@ export function buildWorkoutPlan(input: WorkoutInput, enriched: NormalizedExerci
 
   if (flags.size > 0) adjustments.push(`Adjusted around your note (${[...flags].join(", ")}) — riskier movements were left out.`);
   if (conservative && input.level === "beginner") adjustments.push("Kept impact low and movements simple while you build a base.");
+  // No-equipment home: the back/pull slot can't be filled with real pulling work.
+  const hasBackSlot = template.some((d) => d.slots.some((s) => s.pattern === "pull"));
+  if (ctx.bodyweightOnly && hasBackSlot) adjustments.push(BACK_NUDGE);
 
   const summary = `Built for: ${LOCATION_LABEL[input.location]} · ${cap(input.level)} · ${
     ctx.bodyweightOnly ? "Bodyweight" : "With equipment"

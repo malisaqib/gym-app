@@ -100,13 +100,17 @@ const RE_CARRY = /\b(carry|farmer|yoke|suitcase|waiter)\b/i;
 //            stones, olympic lifts, plyo) — never in the default plan; reachable
 //            only via an explicit "Different" swap.
 const RE_NOVELTY =
-  /\b(alternat(e|ing)|bound|diagonal|around the worlds?|anti[- ]?gravity|clock|atlas|tire|sledge|zercher|sandbag|behind the neck|guillotine|renegade|kipping|jumps?|skater|burpee|windmill|turkish|get[- ]?ups?|muscle[- ]?ups?|planche|front lever|back lever|human flag|iron cross|skin the cat|flag|plyo)\b/i;
+  /\b(alternat(e|ing)|bound|diagonal|around the worlds?|anti[- ]?gravity|clock|car drivers?|atlas|tire|sledge|zercher|sandbag|behind the neck|guillotine|renegade|kipping|jumps?|skater|burpee|windmill|turkish|get[- ]?ups?|muscle[- ]?ups?|planche|front lever|back lever|human flag|iron cross|skin the cat|flag|plyo)\b/i;
 const RE_FUNDAMENTAL =
   /\b(bench press|incline (bench press|press|dumbbell press|barbell press)|decline (press|bench press)|chest press|dumbbell bench press|overhead press|shoulder press|military press|arnold press|push press|lat ?pulldown|pulldown|pull[- ]?ups?|chin[- ]?ups?|seated (cable )?rows?|bent[- ]?over rows?|barbell rows?|dumbbell rows?|t[- ]?bar rows?|pendlay rows?|machine rows?|squats?|front squats?|hack squats?|leg press|deadlifts?|romanian deadlifts?|rdl|hip thrusts?|good ?mornings?|dips?|push[- ]?ups?)\b/i;
 const RE_ACCESSORY =
   /\b(flye?|lateral raise|side raise|rear delt|reverse fly|face pull|curls?|push[- ]?downs?|triceps?|skull ?crushers?|extensions?|leg curls?|leg extensions?|calf raises?|shrugs?|pull[- ]?overs?|kickbacks?|crossovers?|pec deck|raises?)\b/i;
 
 const LEG_MUSCLES = new Set(["quadriceps", "hamstrings", "glutes", "calves", "abductors", "adductors"]);
+// A real "pull" trains the back/arms. The dataset tags many ab/leg-raise moves
+// (Flutter Kicks, Leg Pull-In, Hip Circles) as force:"pull"; those are NOT back
+// work and must never land in a back/pull slot — they're routed to core instead.
+const BACK_PULL_MUSCLES = new Set(["lats", "middle back", "traps", "lower back", "shoulders", "biceps", "forearms"]);
 
 function normalizedEquipmentOf(raw: Exercise, requiresPullupBar: boolean): NormalizedEquipment {
   if (requiresPullupBar) return "pullup bar";
@@ -151,12 +155,18 @@ function movementPatternOf(raw: Exercise, lower: string): MovementPattern {
   }
   if (raw.mechanic === "compound") {
     if (raw.force === "push") return "push";
-    if (raw.force === "pull") return "pull";
+    if (raw.force === "pull") return pullPatternFor(raw.primaryMuscles[0]);
   }
   if (raw.mechanic === "isolation") return "isolation";
   if (raw.force === "push") return "push";
-  if (raw.force === "pull") return "pull";
+  if (raw.force === "pull") return pullPatternFor(raw.primaryMuscles[0]);
   return "isolation";
+}
+
+// A "pull" is only a real back/arm pull. A pull-forced move targeting any other
+// muscle (a leg-raise / hip move mis-tagged force:"pull") is core work, NOT back.
+function pullPatternFor(primaryMuscle: string | undefined): MovementPattern {
+  return BACK_PULL_MUSCLES.has(primaryMuscle ?? "") ? "pull" : "core";
 }
 
 function cautionTagsOf(raw: Exercise, lower: string): CautionTag[] {
