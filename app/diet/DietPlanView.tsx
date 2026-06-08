@@ -123,6 +123,10 @@ export default function DietPlanView({
   const [itemBusy, setItemBusy] = useState<string | null>(null); // `${slot}-${index}`
   const [addOpen, setAddOpen] = useState<MealSlot | null>(null);
   const [addBusy, setAddBusy] = useState(false);
+  // Any in-flight plan mutation. We serialize edits: concurrent writes to the one
+  // saved plan row would silently overwrite each other (last-write-wins), so only
+  // one generate/swap/add/remove runs at a time.
+  const mutating = busy || swapping !== null || itemBusy !== null || addBusy;
 
   const toggleAvoid = (tag: string) =>
     setAvoid((cur) => (cur.includes(tag) ? cur.filter((x) => x !== tag) : [...cur, tag]));
@@ -140,7 +144,7 @@ export default function DietPlanView({
       notes.trim().length > 0);
 
   async function generate() {
-    if (busy) return;
+    if (mutating) return;
     setBusy(true);
     setError(null);
     try {
@@ -173,7 +177,7 @@ export default function DietPlanView({
   }
 
   async function swap(slot: MealSlot) {
-    if (swapping) return;
+    if (mutating) return;
     setSwapping(slot);
     setError(null);
     try {
@@ -198,7 +202,7 @@ export default function DietPlanView({
 
   // Remove is optimistic (mirrors the server recompute) and rolls back on failure.
   async function removeItem(slot: MealSlot, index: number) {
-    if (!plan || itemBusy) return;
+    if (!plan || mutating) return;
     const prev = plan;
     setItemBusy(`${slot}-${index}`);
     setPlan(localRemove(plan, slot, index));
@@ -221,7 +225,7 @@ export default function DietPlanView({
   // Swap/add need the catalog + (for typed adds) the estimator, so they run
   // server-authoritative with a small pending state rather than optimistically.
   async function swapItem(slot: MealSlot, index: number) {
-    if (itemBusy) return;
+    if (mutating) return;
     setItemBusy(`${slot}-${index}`);
     try {
       const res = await swapDietItem(slot, index);
@@ -237,7 +241,7 @@ export default function DietPlanView({
   }
 
   async function addItem(slot: MealSlot, foodId: string) {
-    if (addBusy) return;
+    if (mutating) return;
     setAddBusy(true);
     try {
       const res = await addDietItem(slot, foodId);
@@ -254,7 +258,7 @@ export default function DietPlanView({
   }
 
   async function addCustom(slot: MealSlot, text: string) {
-    if (addBusy) return;
+    if (mutating) return;
     setAddBusy(true);
     try {
       const res = await addCustomDietItem(slot, text);
@@ -339,7 +343,7 @@ export default function DietPlanView({
           <Button
             onClick={generate}
             loading={busy}
-            disabled={busy}
+            disabled={mutating}
             fullWidth={!plan}
             size={plan ? "md" : "lg"}
           >
@@ -350,7 +354,12 @@ export default function DietPlanView({
               type="button"
               onPointerDown={() => haptic("tap")}
               onClick={() => setHabits((h) => !h)}
-              className="rounded-field border border-border bg-background px-3 py-2 text-xs font-medium text-foreground transition hover:bg-muted active:scale-[0.97]"
+              aria-pressed={habits}
+              className={`rounded-field border px-3 py-2 text-xs font-medium transition active:scale-[0.97] ${
+                habits
+                  ? "border-primary bg-primary-soft text-primary"
+                  : "border-border bg-background text-foreground hover:bg-muted"
+              }`}
             >
               {habits ? t("habitsOff") : t("habitsOn")}
             </button>
@@ -443,8 +452,8 @@ export default function DietPlanView({
                         type="button"
                         onPointerDown={() => haptic("tap")}
                         onClick={() => swap(meal.slot)}
-                        disabled={swapping === meal.slot}
-                        className="min-h-[32px] shrink-0 rounded-pill border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition hover:border-primary/50 active:scale-[0.97] disabled:opacity-40"
+                        disabled={mutating}
+                        className="min-h-[36px] shrink-0 rounded-pill border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition hover:border-primary/50 active:scale-[0.97] disabled:opacity-40"
                       >
                         {swapping === meal.slot ? "…" : `↻ ${t("swap")}`}
                       </button>
@@ -479,10 +488,10 @@ export default function DietPlanView({
                               <button
                                 type="button"
                                 aria-label={t("swap")}
-                                disabled={rowBusy}
+                                disabled={mutating}
                                 onPointerDown={() => haptic("tap")}
                                 onClick={() => swapItem(meal.slot, i)}
-                                className="shrink-0 rounded-pill border border-border bg-card px-2 py-1 text-xs text-foreground transition hover:border-primary/50 active:scale-[0.95] disabled:opacity-40"
+                                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-pill border border-border bg-card text-sm text-foreground transition hover:border-primary/50 active:scale-[0.95] disabled:opacity-40"
                               >
                                 {rowBusy ? "…" : "↻"}
                               </button>
@@ -490,12 +499,12 @@ export default function DietPlanView({
                             <button
                               type="button"
                               aria-label={t("remove")}
-                              disabled={rowBusy}
+                              disabled={mutating}
                               onPointerDown={() => haptic("tap")}
                               onClick={() => removeItem(meal.slot, i)}
-                              className="shrink-0 rounded-pill border border-border bg-card px-2 py-1 text-xs text-muted-foreground transition hover:border-destructive/50 hover:text-destructive active:scale-[0.95] disabled:opacity-40"
+                              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-pill border border-border bg-card text-sm text-muted-foreground transition hover:border-destructive/50 hover:text-destructive active:scale-[0.95] disabled:opacity-40"
                             >
-                              ✕
+                              {rowBusy ? "…" : "✕"}
                             </button>
                           </li>
                         );
@@ -507,7 +516,7 @@ export default function DietPlanView({
                       <AddFoodPanel
                         slot={meal.slot}
                         lang={lang}
-                        busy={addBusy}
+                        busy={mutating}
                         onPick={(foodId) => addItem(meal.slot, foodId)}
                         onCustom={(text) => addCustom(meal.slot, text)}
                         onCancel={() => setAddOpen(null)}
@@ -515,9 +524,10 @@ export default function DietPlanView({
                     ) : (
                       <button
                         type="button"
+                        disabled={mutating}
                         onPointerDown={() => haptic("tap")}
                         onClick={() => setAddOpen(meal.slot)}
-                        className="w-fit rounded-field border border-dashed border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-primary/50 hover:text-foreground active:scale-[0.97]"
+                        className="w-fit rounded-field border border-dashed border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-primary/50 hover:text-foreground active:scale-[0.97] disabled:opacity-40"
                       >
                         + {t("addFood")}
                       </button>
