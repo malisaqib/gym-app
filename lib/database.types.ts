@@ -133,6 +133,35 @@ export interface FoodLog {
   serving_grams: number | null; // grams in one base serving (portion only)
 }
 
+// Food reports (migration 0016) — user-submitted "missing/incorrect food".
+// 'missing'   = search/matching failed or confidence was low.
+// 'incorrect' = a displayed/logged/planned food has wrong name/portion/macros.
+export type ReportType = "missing" | "incorrect";
+// Where in the app the report was raised (mirrors the UI surfaces).
+export type ReportContext = "home_log" | "plan_add" | "plan_swap" | "edit";
+// Review lifecycle (we read these in the Supabase dashboard for now).
+export type ReportStatus = "new" | "reviewed" | "added" | "dismissed";
+
+// Optional rough numbers the user offers so we can add accurate values later.
+export interface FoodReportEstimate {
+  calories?: number;
+  protein?: number;
+}
+
+// public.food_reports — one row per submitted report
+export interface FoodReport {
+  id: string;
+  user_id: string;
+  created_at: string;
+  reported_text: string; // exact text typed / food name selected
+  report_type: ReportType;
+  context: ReportContext;
+  matched_food_id: string | null; // free-form id of the food being corrected
+  user_note: string | null; // brand, usual portion, prep style…
+  user_estimate: FoodReportEstimate | null;
+  status: ReportStatus;
+}
+
 // public.workouts — a named workout (A/B split); refined in Phase 5
 export interface Workout {
   id: string;

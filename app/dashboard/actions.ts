@@ -32,7 +32,9 @@ export async function getFoodLogs(date: string): Promise<FoodLog[]> {
 
 type LogResult =
   | { ok: true; items: FoodLog[] }
-  | { ok: false; error: string };
+  // `reason: "no_match"` flags the "we couldn't recognise any food" case so the
+  // UI can offer a "report missing food" prompt (vs a generic/network error).
+  | { ok: false; error: string; reason?: "no_match" };
 
 /** Parse free text with the LLM, then save each detected item for the day. */
 export async function logFood(input: { text: string; date: string }): Promise<LogResult> {
@@ -54,7 +56,7 @@ export async function logFood(input: { text: string; date: string }): Promise<Lo
   }
 
   if (parsed.length === 0) {
-    return { ok: false, error: "Couldn't recognise any food. Try rephrasing." };
+    return { ok: false, error: "Couldn't recognise any food. Try rephrasing.", reason: "no_match" };
   }
 
   // Each parsed item becomes a row. We keep the original text on every row so

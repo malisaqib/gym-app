@@ -75,6 +75,7 @@ export default async function DashboardPage() {
           proteinTarget={profile.protein_target_g ?? 0}
           initialItems={foodRows ?? []}
           today={today}
+          lang={lang}
         />
 
         {/* Motivation goal lives on Home now (self-contained, localStorage). */}

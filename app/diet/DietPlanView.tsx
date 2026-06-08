@@ -21,10 +21,20 @@ import {
 } from "./actions";
 import UsualEatingCard, { type UsualEating } from "./UsualEatingCard";
 import AddFoodPanel from "./AddFoodPanel";
+import ReportFoodSheet from "@/components/ReportFoodSheet";
 import QuantityControl, { type QtySpec } from "@/components/QuantityControl";
 import { planItemSpec, setPlanItemAmount, setPlanItemMacros, type DietPlan, type DietFilter } from "@/lib/diet/planner";
 import type { MealSlot } from "@/lib/diet/foodCatalog";
-import type { Lang } from "@/lib/database.types";
+import type { Lang, ReportContext, ReportType } from "@/lib/database.types";
+
+// A food report being composed (drives the shared report sheet). Kept after
+// close so the sheet's exit animation can play before it clears.
+interface ReportTarget {
+  reportType: ReportType;
+  context: ReportContext;
+  text: string;
+  matchedFoodId: string | null;
+}
 
 // Quick-tap "avoid" options (values must match foodCatalog tags).
 const AVOID: { tag: string; label: Record<Lang, string> }[] = [
@@ -58,6 +68,7 @@ const T = {
   },
   swap: { en: "Swap", roman_urdu: "Badlein" },
   remove: { en: "Remove", roman_urdu: "Hatayein" },
+  report: { en: "Report issue", roman_urdu: "Issue report karein" },
   adjust: { en: "Adjust amount", roman_urdu: "Miqdar adjust karein" },
   addFood: { en: "Add food", roman_urdu: "Food add karein" },
   estBadge: { en: "≈ est", roman_urdu: "≈ andaza" },
@@ -130,6 +141,14 @@ export default function DietPlanView({
   const [addBusy, setAddBusy] = useState(false);
   const [qtyOpen, setQtyOpen] = useState<string | null>(null); // which item's quantity control is open
   const qtyTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  // Shared report sheet: target data + open flag (data persists across close so
+  // the exit animation plays). Reporting is independent of plan mutations.
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
+  function openReport(target: ReportTarget) {
+    setReportTarget(target);
+    setReportOpen(true);
+  }
   // Any in-flight plan mutation. We serialize edits: concurrent writes to the one
   // saved plan row would silently overwrite each other (last-write-wins), so only
   // one generate/swap/add/remove runs at a time.
@@ -560,6 +579,27 @@ export default function DietPlanView({
                                   {rowBusy ? "…" : "↻"}
                                 </button>
                               )}
+                              {/* Report issue — independent of plan edits, so it
+                                  stays enabled even while a mutation is in flight.
+                                  An estimated item reports as 'missing' (so we add
+                                  accurate values); a catalog item as 'incorrect'. */}
+                              <button
+                                type="button"
+                                aria-label={t("report")}
+                                title={t("report")}
+                                onPointerDown={() => haptic("tap")}
+                                onClick={() =>
+                                  openReport({
+                                    reportType: item.approx ? "missing" : "incorrect",
+                                    context: "edit",
+                                    text: item.name,
+                                    matchedFoodId: item.approx ? null : item.id,
+                                  })
+                                }
+                                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-pill border border-border bg-card text-sm text-muted-foreground transition hover:border-primary/50 hover:text-foreground active:scale-[0.95]"
+                              >
+                                ⚐
+                              </button>
                               <button
                                 type="button"
                                 aria-label={t("remove")}
@@ -595,6 +635,14 @@ export default function DietPlanView({
                         onPick={(foodId) => addItem(meal.slot, foodId)}
                         onCustom={(text) => addCustom(meal.slot, text)}
                         onCancel={() => setAddOpen(null)}
+                        onReportMissing={(text) =>
+                          openReport({
+                            reportType: "missing",
+                            context: "plan_add",
+                            text,
+                            matchedFoodId: null,
+                          })
+                        }
                       />
                     ) : (
                       <button
@@ -614,6 +662,17 @@ export default function DietPlanView({
           </motion.div>
         </>
       )}
+
+      {/* Shared report sheet (missing from add search, incorrect/missing per item). */}
+      <ReportFoodSheet
+        open={reportOpen}
+        onClose={() => setReportOpen(false)}
+        reportType={reportTarget?.reportType ?? "missing"}
+        context={reportTarget?.context ?? "plan_add"}
+        reportedText={reportTarget?.text ?? ""}
+        matchedFoodId={reportTarget?.matchedFoodId ?? null}
+        lang={lang}
+      />
     </div>
   );
 }

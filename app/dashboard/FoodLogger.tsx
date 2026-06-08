@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import type { FoodLog } from "@/lib/database.types";
+import type { FoodLog, Lang, ReportContext, ReportType } from "@/lib/database.types";
 import { listContainer, listItem } from "@/lib/motion";
 import { sumMacros } from "@/lib/food/totals";
 import { itemMacros } from "@/lib/food/quantity";
@@ -17,6 +17,21 @@ import { Badge } from "@/components/ui/Badge";
 import { Alert } from "@/components/ui/Alert";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ProgressRing } from "@/components/ui/ProgressRing";
+import ReportFoodSheet from "@/components/ReportFoodSheet";
+
+// A food report being composed (drives the shared report sheet). Kept after
+// close so the sheet's exit animation can play before it clears.
+interface ReportTarget {
+  reportType: ReportType;
+  context: ReportContext;
+  text: string;
+  matchedFoodId: string | null;
+}
+
+const REPORT_T = {
+  cantFind: { en: "Can't find that? Tell us and we'll add it.", roman_urdu: "Nahi mila? Bataayein, hum add kar dein ge." },
+  report: { en: "Report", roman_urdu: "Report" },
+} satisfies Record<string, Record<Lang, string>>;
 
 // A meal being parsed by the LLM — shown immediately so logging feels instant.
 interface PendingLog {
@@ -29,17 +44,32 @@ export default function FoodLogger({
   proteinTarget,
   initialItems,
   today,
+  lang = "en",
 }: {
   calorieTarget: number;
   proteinTarget: number;
   initialItems: FoodLog[];
   today: string;
+  lang?: Lang;
 }) {
+  const rt = (k: keyof typeof REPORT_T) => REPORT_T[k][lang];
+
   // Seeded from the server — no mount fetch, so the list is there on first paint.
   const [items, setItems] = useState<FoodLog[]>(initialItems);
   const [pending, setPending] = useState<PendingLog[]>([]);
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // The last meal the parser couldn't recognise — offers a "report missing" CTA.
+  const [unrecognized, setUnrecognized] = useState<string | null>(null);
+  // The shared report sheet: target data + open flag (data persists across close
+  // so the exit animation plays).
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
+
+  function openReport(target: ReportTarget) {
+    setReportTarget(target);
+    setReportOpen(true);
+  }
   // Tracks in-flight logs so a focus-refetch doesn't clobber an optimistic add.
   const inFlight = useRef(0);
   // Per-item debounce timers for quantity edits (coalesce rapid +/- taps).
@@ -83,6 +113,7 @@ export default function FoodLogger({
     setPending((p) => [...p, { tempId, text: meal }]);
     setText("");
     setError(null);
+    setUnrecognized(null);
     inFlight.current += 1;
 
     try {
@@ -94,6 +125,9 @@ export default function FoodLogger({
       } else {
         setError(res.error);
         setText(meal); // never silently drop the user's input — let them retry
+        // Only offer "report missing food" when the parser genuinely found
+        // nothing (not for network/parse errors).
+        if (res.reason === "no_match") setUnrecognized(meal);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
@@ -197,6 +231,23 @@ export default function FoodLogger({
           </Button>
         </div>
         {error && <Alert tone="error">{error}</Alert>}
+        {/* Primary trigger: parser found nothing → offer to report it as missing. */}
+        {unrecognized && (
+          <button
+            type="button"
+            onClick={() =>
+              openReport({
+                reportType: "missing",
+                context: "home_log",
+                text: unrecognized,
+                matchedFoodId: null,
+              })
+            }
+            className="self-start text-sm font-medium text-primary underline-offset-2 hover:underline active:scale-[0.99]"
+          >
+            {rt("cantFind")}
+          </button>
+        )}
       </form>
 
       {/* Today's items */}
@@ -219,9 +270,18 @@ export default function FoodLogger({
                 <motion.div key={item.id} variants={listItem} exit="exit" layout>
                   <FoodItemRow
                     item={item}
+                    lang={lang}
                     onAmountChange={changeAmount}
                     onCorrect={correctItem}
                     onDelete={removeItem}
+                    onReport={(it) =>
+                      openReport({
+                        reportType: "incorrect",
+                        context: "home_log",
+                        text: it.food_name,
+                        matchedFoodId: null,
+                      })
+                    }
                   />
                 </motion.div>
               ))}
@@ -234,6 +294,17 @@ export default function FoodLogger({
           </motion.div>
         )}
       </section>
+
+      {/* Shared report sheet (missing from the log form, incorrect from a row). */}
+      <ReportFoodSheet
+        open={reportOpen}
+        onClose={() => setReportOpen(false)}
+        reportType={reportTarget?.reportType ?? "missing"}
+        context={reportTarget?.context ?? "home_log"}
+        reportedText={reportTarget?.text ?? ""}
+        matchedFoodId={reportTarget?.matchedFoodId ?? null}
+        lang={lang}
+      />
     </div>
   );
 }
@@ -255,14 +326,18 @@ function PendingRow({ text }: { text: string }) {
 
 function FoodItemRow({
   item,
+  lang,
   onAmountChange,
   onCorrect,
   onDelete,
+  onReport,
 }: {
   item: FoodLog;
+  lang: Lang;
   onAmountChange: (id: string, amount: number) => void;
   onCorrect: (id: string, patch: { calories: number; protein_g: number }) => void;
   onDelete: (id: string) => void;
+  onReport: (item: FoodLog) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const m = itemMacros(item); // live total = base × amount
@@ -309,6 +384,16 @@ function FoodItemRow({
         <div className="flex shrink-0 gap-1">
           <Button variant="ghost" size="sm" onClick={() => setEditing((v) => !v)}>
             {editing ? "Close" : "Edit"}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label={REPORT_T.report[lang]}
+            title={REPORT_T.report[lang]}
+            onClick={() => onReport(item)}
+            className="px-2 text-muted-foreground hover:text-foreground"
+          >
+            ⚐
           </Button>
           <Button
             variant="ghost"

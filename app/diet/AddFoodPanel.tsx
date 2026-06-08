@@ -19,6 +19,7 @@ const T = {
   addTyped: { en: "Add", roman_urdu: "Add karein" },
   asTyped: { en: "as typed", roman_urdu: "jaisa likha" },
   noResults: { en: "No dataset match — you can still add it as typed.", roman_urdu: "Dataset mein nahi mila — phir bhi add kar sakte hain." },
+  reportMissing: { en: "Report it as missing", roman_urdu: "Missing report karein" },
   cancel: { en: "Cancel", roman_urdu: "Cancel" },
 } satisfies Record<string, Record<Lang, string>>;
 
@@ -29,6 +30,7 @@ export default function AddFoodPanel({
   onPick,
   onCustom,
   onCancel,
+  onReportMissing,
 }: {
   slot: MealSlot;
   lang: Lang;
@@ -36,6 +38,8 @@ export default function AddFoodPanel({
   onPick: (foodId: string) => void;
   onCustom: (text: string) => void;
   onCancel: () => void;
+  // Report the current query as a missing food (independent of adding it).
+  onReportMissing?: (text: string) => void;
 }) {
   const t = (k: keyof typeof T) => T[k][lang];
   const [q, setQ] = useState("");
@@ -103,7 +107,19 @@ export default function AddFoodPanel({
       )}
 
       {!searching && q.trim().length >= 2 && results.length === 0 && (
-        <p className="px-1 text-xs text-muted-foreground">{t("noResults")}</p>
+        <div className="space-y-1 px-1">
+          <p className="text-xs text-muted-foreground">{t("noResults")}</p>
+          {onReportMissing && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => onReportMissing(q.trim())}
+              className="text-xs font-medium text-primary underline-offset-2 hover:underline active:scale-[0.99] disabled:opacity-40"
+            >
+              {t("reportMissing")}
+            </button>
+          )}
+        </div>
       )}
 
       <div className="flex items-center gap-2">

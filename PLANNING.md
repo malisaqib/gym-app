@@ -98,6 +98,34 @@ only (`keep_foods`, migration 0014).
   syncs across devices; one-time local→DB migration on first load).
 - `0014_keep_foods.sql` — keep_foods text on profiles ("rather not give up"
   comfort foods; seeded + protected by the diet generator).
+- `0015_food_quantity.sql` — live quantity/portion model on food_logs (per-unit
+  `base_*` + `amount`; total = base × amount, old totals kept as a synced cache).
+- `0016_food_reports.sql` — user-submitted "missing/incorrect food" reports
+  (additive table, RLS-scoped to the user). See "Food reports" below.
+
+### Food reports (missing / incorrect food) — shipped
+Lets users flag a food that's missing from the dataset or whose matched
+nutrition/name/portion is wrong, so we can later add/fix it. Stored data only —
+NO notifications/queues; reviewed directly in the Supabase dashboard for now.
+Architecture rules held: the food RAG pipeline and auth are untouched; schema is
+additive only (`food_reports`, migration 0016). Reporting NEVER blocks logging,
+and a report is never silently dropped (insert errors surface to the user).
+
+- **Data** — `food_reports` (user_id, reported_text, report_type
+  'missing'|'incorrect', context 'home_log'|'plan_add'|'plan_swap'|'edit',
+  matched_food_id?, user_note?, user_estimate jsonb?, status default 'new').
+  Types in `lib/database.types.ts`; server action `app/reports/actions.ts`
+  (`submitFoodReport`, validated + clamped + best-effort analytics).
+- **UI** — one shared bilingual bottom-sheet `components/ReportFoodSheet.tsx`
+  (pre-filled food, optional note, optional rough calories/protein; loading/
+  success/error states). Entry points: Home log no-match ("Can't find that?")
+  and per-item ⚐ (`FoodLogger`); Plan add-search no-match and per-item ⚐
+  (`AddFoodPanel`/`DietPlanView`). Estimated items report as 'missing'; existing
+  catalog items as 'incorrect'.
+- **Deferred** — a protected `/admin/food-reports` review screen (service-role +
+  admin gate; plug-in point noted in `app/reports/actions.ts`), and an optional
+  Coach-estimator trigger (would need a `coach_estimate` value added to the
+  `context` enum + types).
 
 ### Deferred (flagged, not built)
 - Budget-aware diet selection / "protein-per-rupee" (needs a food-cost layer; the
