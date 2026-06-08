@@ -102,6 +102,8 @@ only (`keep_foods`, migration 0014).
   `base_*` + `amount`; total = base × amount, old totals kept as a synced cache).
 - `0016_food_reports.sql` — user-submitted "missing/incorrect food" reports
   (additive table, RLS-scoped to the user). See "Food reports" below.
+- `0017_food_reports_coach_context.sql` — widen food_reports.context CHECK to
+  allow 'coach_estimate' (Coach meal estimator report trigger).
 
 ### Food reports (missing / incorrect food) — shipped
 Lets users flag a food that's missing from the dataset or whose matched
@@ -120,12 +122,11 @@ and a report is never silently dropped (insert errors surface to the user).
   (pre-filled food, optional note, optional rough calories/protein; loading/
   success/error states). Entry points: Home log no-match ("Can't find that?")
   and per-item ⚐ (`FoodLogger`); Plan add-search no-match and per-item ⚐
-  (`AddFoodPanel`/`DietPlanView`). Estimated items report as 'missing'; existing
-  catalog items as 'incorrect'.
+  (`AddFoodPanel`/`DietPlanView`); Coach meal estimator no-match
+  (`DesiFoodEstimator`, context 'coach_estimate', migration 0017). Estimated
+  items report as 'missing'; existing catalog items as 'incorrect'.
 - **Deferred** — a protected `/admin/food-reports` review screen (service-role +
-  admin gate; plug-in point noted in `app/reports/actions.ts`), and an optional
-  Coach-estimator trigger (would need a `coach_estimate` value added to the
-  `context` enum + types).
+  admin gate; plug-in point noted in `app/reports/actions.ts`).
 
 ### Deferred (flagged, not built)
 - Budget-aware diet selection / "protein-per-rupee" (needs a food-cost layer; the

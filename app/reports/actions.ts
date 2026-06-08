@@ -20,7 +20,7 @@ import type {
  */
 
 const REPORT_TYPES: ReportType[] = ["missing", "incorrect"];
-const CONTEXTS: ReportContext[] = ["home_log", "plan_add", "plan_swap", "edit"];
+const CONTEXTS: ReportContext[] = ["home_log", "plan_add", "plan_swap", "edit", "coach_estimate"];
 
 export interface SubmitFoodReportInput {
   reportedText: string;

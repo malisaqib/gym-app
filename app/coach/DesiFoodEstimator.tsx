@@ -6,6 +6,7 @@ import { estimateMeal } from "./actions";
 import { estimateDesiMeal } from "@/lib/coach/desiFoodEstimator";
 import { getGoalText } from "./localCoachTypes";
 import { loadEmotionalGoal } from "./coachData";
+import ReportFoodSheet from "@/components/ReportFoodSheet";
 import type { Lang } from "@/lib/database.types";
 
 /**
@@ -58,6 +59,10 @@ const T = {
     en: "Couldn't estimate that one — try simpler words like the main foods.",
     roman_urdu: "Ye estimate nahi hua — main foods ke simple lafz try karein.",
   },
+  reportMissing: {
+    en: "Can't find it? Tell us and we'll add it.",
+    roman_urdu: "Nahi mila? Bataayein, hum add kar dein ge.",
+  },
 } satisfies Record<string, Record<Lang, string>>;
 
 const EXAMPLES = ["2 roti, daal", "chicken biryani", "beef burger", "2 eggs and oats"];
@@ -72,6 +77,9 @@ export default function DesiFoodEstimator({ lang = "en" }: { lang?: Lang }) {
   const [result, setResult] = useState<Display | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [personalGoal, setPersonalGoal] = useState("");
+  // The last meal we couldn't estimate — offers a "report missing food" CTA.
+  const [unrecognized, setUnrecognized] = useState<string | null>(null);
+  const [reportOpen, setReportOpen] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -90,6 +98,7 @@ export default function DesiFoodEstimator({ lang = "en" }: { lang?: Lang }) {
     if (!input || loading) return;
     setLoading(true);
     setError(null);
+    setUnrecognized(null);
 
     const res = await estimateMeal(input);
     if (res.ok) {
@@ -125,6 +134,7 @@ export default function DesiFoodEstimator({ lang = "en" }: { lang?: Lang }) {
       } else {
         setResult(null);
         setError(t("noMatch"));
+        setUnrecognized(input); // nothing matched anywhere → likely a missing food
       }
     }
     setLoading(false);
@@ -181,7 +191,20 @@ export default function DesiFoodEstimator({ lang = "en" }: { lang?: Lang }) {
         </div>
       </div>
 
-      {error && <p className="text-sm text-muted-foreground">{error}</p>}
+      {error && (
+        <div className="space-y-1">
+          <p className="text-sm text-muted-foreground">{error}</p>
+          {unrecognized && (
+            <button
+              type="button"
+              onClick={() => setReportOpen(true)}
+              className="text-sm font-medium text-primary underline-offset-2 hover:underline active:scale-[0.99]"
+            >
+              {t("reportMissing")}
+            </button>
+          )}
+        </div>
+      )}
 
       {result && (
         <div className="space-y-3 rounded-field bg-background p-3">
@@ -219,6 +242,16 @@ export default function DesiFoodEstimator({ lang = "en" }: { lang?: Lang }) {
           <p className="text-xs text-muted-foreground">{t("emptyHint")}</p>
         </div>
       )}
+
+      {/* Report a food the estimator couldn't find (missing). */}
+      <ReportFoodSheet
+        open={reportOpen}
+        onClose={() => setReportOpen(false)}
+        reportType="missing"
+        context="coach_estimate"
+        reportedText={unrecognized ?? ""}
+        lang={lang}
+      />
     </Card>
   );
 }

@@ -138,7 +138,12 @@ export interface FoodLog {
 // 'incorrect' = a displayed/logged/planned food has wrong name/portion/macros.
 export type ReportType = "missing" | "incorrect";
 // Where in the app the report was raised (mirrors the UI surfaces).
-export type ReportContext = "home_log" | "plan_add" | "plan_swap" | "edit";
+export type ReportContext =
+  | "home_log"
+  | "plan_add"
+  | "plan_swap"
+  | "edit"
+  | "coach_estimate"; // Coach meal estimator (migration 0017)
 // Review lifecycle (we read these in the Supabase dashboard for now).
 export type ReportStatus = "new" | "reviewed" | "added" | "dismissed";
 
