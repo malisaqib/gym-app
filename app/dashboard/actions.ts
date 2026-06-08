@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { parseFoodText } from "@/lib/food/parse";
+import { deriveQuantity, totalsFor } from "@/lib/food/quantity";
 import { logEvent } from "@/lib/analytics";
 import type { FoodLog } from "@/lib/database.types";
 
@@ -57,20 +58,33 @@ export async function logFood(input: { text: string; date: string }): Promise<Lo
   }
 
   // Each parsed item becomes a row. We keep the original text on every row so
-  // the raw user message is stored alongside the structured macros.
-  const rows = parsed.map((p) => ({
-    user_id: user.id,
-    logged_on: input.date,
-    raw_text: text,
-    food_name: p.food_name,
-    quantity: p.quantity,
-    unit: p.unit,
-    calories: p.calories,
-    protein_g: p.protein_g,
-    carbs_g: p.carbs_g,
-    fat_g: p.fat_g,
-    source: "llm" as const,
-  }));
+  // the raw user message is stored alongside the structured macros. We also
+  // derive a per-unit/per-gram base + a live quantity so the user can adjust HOW
+  // MUCH later; the total columns are kept as a synced cache (= base × amount).
+  const rows = parsed.map((p) => {
+    const q = deriveQuantity(p);
+    const totals = totalsFor(q);
+    return {
+      user_id: user.id,
+      logged_on: input.date,
+      raw_text: text,
+      food_name: p.food_name,
+      quantity: p.quantity,
+      unit: p.unit,
+      unit_mode: q.unit_mode,
+      base_calories: q.base_calories,
+      base_protein_g: q.base_protein_g,
+      base_carbs_g: q.base_carbs_g,
+      base_fat_g: q.base_fat_g,
+      amount: q.amount,
+      serving_grams: q.serving_grams,
+      calories: totals.calories,
+      protein_g: totals.protein_g,
+      carbs_g: totals.carbs_g,
+      fat_g: totals.fat_g,
+      source: "llm" as const,
+    };
+  });
 
   const { data, error } = await supabase
     .from("food_logs")

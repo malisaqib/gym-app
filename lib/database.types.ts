@@ -122,6 +122,15 @@ export interface FoodLog {
   fat_g: number;
   source: FoodLogSource;
   created_at: string;
+  // Live quantity model (migration 0015) — all additive / nullable. Total is
+  // computed as base × amount; the columns above are a synced cache of that.
+  unit_mode: "count" | "portion" | null;
+  base_calories: number | null; // per unit (count) or per gram (portion)
+  base_protein_g: number | null;
+  base_carbs_g: number | null;
+  base_fat_g: number | null;
+  amount: number | null; // units (count) or grams (portion)
+  serving_grams: number | null; // grams in one base serving (portion only)
 }
 
 // public.workouts — a named workout (A/B split); refined in Phase 5
