@@ -148,10 +148,40 @@ test("swap stays eligible: no pull-up offered without a bar, in any direction", 
   }
 });
 
-test("bodyweight beginner: no harder *different* move → null (UI falls back to the cue)", () => {
-  const homeBeg: WorkoutInput = { ...base, location: "home", hasEquipment: false, level: "beginner" };
-  const cur = swapPlanExercise(homeBeg, "push", "", [], "different", ALL);
-  assert.ok(cur, "should find a bodyweight push");
-  const harder = swapPlanExercise(homeBeg, "push", cur!.id, [cur!.id], "harder", ALL);
-  assert.equal(harder, null, "no tougher bodyweight push as a separate exercise");
+// --- Phase 6 QA: the brief's manual-check matrix, locked as tests -----------
+
+const homeBeg: WorkoutInput = { ...base, location: "home", hasEquipment: false, level: "beginner" };
+
+test("QA(5): home beginner swaps a push-up EASIER to an incline/knee/wall variation", () => {
+  const pushups = ALL.find((e) => e.name === "Pushups");
+  assert.ok(pushups, "dataset should contain 'Pushups'");
+  const easier = swapPlanExercise(homeBeg, "push", pushups!.id, [pushups!.id], "easier", ALL);
+  assert.ok(easier, "should offer an easier push variation");
+  assert.match(easier!.name, /incline|knee|wall|assisted|negative/i, `unexpected easier swap: ${easier!.name}`);
+  assert.ok(loadScore(byId.get(easier!.id)!) < loadScore(pushups!), "easier must score lower");
+});
+
+test("QA(5): from the hardest eligible bodyweight push there is no harder swap → null (cue fallback)", () => {
+  const feet = ALL.find((e) => e.name === "Push-Ups With Feet Elevated");
+  assert.ok(feet, "dataset should contain feet-elevated push-up");
+  const harder = swapPlanExercise(homeBeg, "push", feet!.id, [feet!.id], "harder", ALL);
+  assert.equal(harder, null, "nothing tougher in a home-beginner bodyweight pool");
+});
+
+test("QA(1) GENDER RULE: female vs male, identical everything else → IDENTICAL plan (no softening by sex)", () => {
+  const cfg: Partial<WorkoutInput> = { goal: "lose_belly_fat", location: "home", hasEquipment: false, level: "beginner", daysPerWeek: 5 };
+  const female = buildWorkoutPlan({ ...base, ...cfg, sex: "female" }, ALL);
+  const male = buildWorkoutPlan({ ...base, ...cfg, sex: "male" }, ALL);
+  assert.deepEqual(female, male, "sex must NOT change selection/difficulty");
+});
+
+test("QA(4): home + no equipment → never an exercise needing a machine/cable/barbell/dumbbell/bench/bar", () => {
+  const p = plan({ goal: "gain_muscle", location: "home", hasEquipment: false, level: "intermediate", daysPerWeek: 4 });
+  for (const e of flat(p)) {
+    const n = byId.get(e.id)!;
+    assert.ok(
+      !n.requiresMachine && !n.requiresCable && !n.requiresBarbell && !n.requiresDumbbell && !n.requiresBench && !n.requiresPullupBar,
+      `needs equipment at home/no-equipment: ${e.name}`
+    );
+  }
 });

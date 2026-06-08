@@ -549,17 +549,34 @@ export type SwapDirection = "easier" | "different" | "harder";
 
 const DIFF_RANK: Record<NormalizedDifficulty, number> = { beginner: 0, intermediate: 1, advanced: 2 };
 
+// Within-tier variant signal. The dataset's "beginner/body only" tag is too
+// coarse — an Incline Push-Up and a Feet-Elevated Push-Up are both "beginner
+// bodyweight" but clearly easier/harder. These name modifiers nudge the score
+// by a FRACTION (±0.25), so they only reorder moves that are otherwise equal
+// (same difficulty + equipment + impact); they never cross a real tier.
+const RE_EASIER_VARIANT = /\b(wall|incline|knee(s|ling)?|assisted|band[- ]?assisted|negative|eccentric|supported|partial|half)\b/i;
+const RE_HARDER_VARIANT =
+  /\b(decline|feet[- ]?elevated|elevated[- ]?feet|deficit|deep|archer|diamond|close[- ]?grip|pike|one[- ]?arm|single[- ]?arm|weighted|pause|tempo|plyo|clap|explosive)\b/i;
+
+function variantRank(name: string): number {
+  let r = 0;
+  if (RE_EASIER_VARIANT.test(name)) r -= 1;
+  if (RE_HARDER_VARIANT.test(name)) r += 1;
+  return r;
+}
+
 /**
  * A coarse "how demanding is this exercise" score, used ONLY to order swaps
- * easier↔harder. Difficulty dominates; loadable equipment and impact add to it.
- * Deterministic and exported so the swap contract is unit-tested.
+ * easier↔harder. Difficulty dominates; loadable equipment and impact add to it;
+ * a small name-variant nudge breaks ties within a tier (incline vs feet-elevated
+ * push-ups). Deterministic and exported so the swap contract is unit-tested.
  */
 export function loadScore(e: NormalizedExercise): number {
   let s = DIFF_RANK[e.normalizedDifficulty] * 4;
   if (e.highImpact) s += 1;
   if (e.requiresBarbell) s += 3;
   else if (e.requiresMachine || e.requiresCable || e.requiresDumbbell) s += 2;
-  return s;
+  return s + variantRank(e.name) * 0.25;
 }
 
 /**
