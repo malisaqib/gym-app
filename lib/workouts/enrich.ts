@@ -48,6 +48,7 @@ export type GoalTag =
   | "general_fitness"
   | "mobility";
 export type CautionTag = "knee" | "back" | "shoulder" | "wrist";
+export type ExerciseTier = 1 | 2 | 3;
 
 export interface NormalizedExercise {
   id: string;
@@ -57,6 +58,7 @@ export interface NormalizedExercise {
   instructions: string[];
   rawLevel: Exercise["level"];
   normalizedDifficulty: NormalizedDifficulty;
+  tier: ExerciseTier;
   rawEquipment: Exercise["equipment"];
   normalizedEquipment: NormalizedEquipment;
   location: Location;
@@ -81,11 +83,30 @@ export interface NormalizedExercise {
 const RE_PULLUP_BAR = /\b(pull[- ]?ups?|chin[- ]?ups?|v[- ]?bar|muscle[- ]?ups?)\b|\bhang(ing)?\b|toes[- ]?to[- ]?bar/i;
 const RE_ADVANCED = /\b(muscle[- ]?up|planche|one[- ]?arm|single[- ]?arm|pistol|handstand|front lever|back lever|human flag|iron cross|sissy|nordic|dragon flag|l[- ]?sit|skin the cat)\b/i;
 const RE_HIGH_IMPACT = /\b(jump|jumping|burpee|box jump|hop|bound|plyo|skater|tuck|broad jump|depth jump|jumping jack|star jump)\b/i;
-const RE_LUNGE = /\b(lunge|split squat|step[- ]?up)\b/i;
-const RE_SQUAT = /\bsquat\b/i;
-const RE_HINGE = /\b(deadlift|romanian|rdl|good ?morning|hip thrust|glute bridge|swing|hyperextension|back extension|pull[- ]?through)\b/i;
+const RE_LUNGE = /\b(lunges?|split squats?|step[- ]?ups?)\b/i;
+const RE_SQUAT = /\b(squats?|leg press(es)?)\b/i;
+const RE_HINGE = /\b(deadlifts?|romanian|rdl|good ?mornings?|hip thrusts?|glute bridges?|swings?|hyperextensions?|back extensions?|pull[- ]?throughs?)\b/i;
 const RE_CORE = /\b(plank|crunch|sit[- ]?ups?|dead ?bug|bird ?dog|leg raise|hollow|russian twist|mountain climber|wood ?chop|oblique|toes[- ]?to[- ]?bar|knee raise)\b/i;
 const RE_CARRY = /\b(carry|farmer|yoke|suitcase|waiter)\b/i;
+
+// --- TIER signals (Phase 1) -------------------------------------------------
+// TIER is "fundamental vs novelty" and is SEPARATE from difficulty/level: a lift
+// the dataset tags "beginner" (e.g. Barbell Bench Press) is still a Tier-1
+// fundamental and stays eligible at every level. Tier drives eligibility +
+// priority (Phase 2 selector); level is only a soft ranking preference.
+//   Tier 1 — fundamental barbell/dumbbell/cable/machine lifts (always preferred)
+//   Tier 2 — standard accessories (flyes, raises, curls, pushdowns, leg curl…)
+//   Tier 3 — novelty / obscure / sport-specific (alternating, bounds, atlas
+//            stones, olympic lifts, plyo) — never in the default plan; reachable
+//            only via an explicit "Different" swap.
+const RE_NOVELTY =
+  /\b(alternat(e|ing)|bound|diagonal|around the worlds?|anti[- ]?gravity|clock|atlas|tire|sledge|zercher|sandbag|behind the neck|guillotine|renegade|kipping|jumps?|skater|burpee|windmill|turkish|get[- ]?ups?|muscle[- ]?ups?|planche|front lever|back lever|human flag|iron cross|skin the cat|flag|plyo)\b/i;
+const RE_FUNDAMENTAL =
+  /\b(bench press|incline (bench press|press|dumbbell press|barbell press)|decline (press|bench press)|chest press|dumbbell bench press|overhead press|shoulder press|military press|arnold press|push press|lat ?pulldown|pulldown|pull[- ]?ups?|chin[- ]?ups?|seated (cable )?rows?|bent[- ]?over rows?|barbell rows?|dumbbell rows?|t[- ]?bar rows?|pendlay rows?|machine rows?|squats?|front squats?|hack squats?|leg press|deadlifts?|romanian deadlifts?|rdl|hip thrusts?|good ?mornings?|dips?|push[- ]?ups?)\b/i;
+const RE_ACCESSORY =
+  /\b(flye?|lateral raise|side raise|rear delt|reverse fly|face pull|curls?|push[- ]?downs?|triceps?|skull ?crushers?|extensions?|leg curls?|leg extensions?|calf raises?|shrugs?|pull[- ]?overs?|kickbacks?|crossovers?|pec deck|raises?)\b/i;
+
+const LEG_MUSCLES = new Set(["quadriceps", "hamstrings", "glutes", "calves", "abductors", "adductors"]);
 
 function normalizedEquipmentOf(raw: Exercise, requiresPullupBar: boolean): NormalizedEquipment {
   if (requiresPullupBar) return "pullup bar";
@@ -123,6 +144,11 @@ function movementPatternOf(raw: Exercise, lower: string): MovementPattern {
   if (RE_LUNGE.test(lower)) return "lunge";
   if (RE_SQUAT.test(lower)) return "squat";
   if (RE_HINGE.test(lower)) return "hinge";
+  // Plyometric leg drills (jumps/bounds) are squat/hinge-pattern explosions, NOT
+  // presses — without this, force:"push" routes a leg bound into the chest pool.
+  if (raw.category === "plyometrics" && LEG_MUSCLES.has(raw.primaryMuscles[0] ?? "")) {
+    return /\b(deadlift|swing|hip|glute|good ?morning)\b/i.test(lower) ? "hinge" : "squat";
+  }
   if (raw.mechanic === "compound") {
     if (raw.force === "push") return "push";
     if (raw.force === "pull") return "pull";
@@ -144,6 +170,24 @@ function cautionTagsOf(raw: Exercise, lower: string): CautionTag[] {
   if (/\b(overhead|military|behind the neck|upright row|dips?|snatch|jerk|push press|handstand|pull[- ]?ups?|chin[- ]?ups?|muscle[- ]?ups?)\b/i.test(lower)) tags.add("shoulder");
   if (/\b(plank|push[- ]?ups?|handstand|planche|front lever|mountain climber|burpee)\b/i.test(lower)) tags.add("wrist");
   return [...tags];
+}
+
+/**
+ * Fundamental (1) vs accessory (2) vs novelty/obscure (3). Deterministic, from
+ * name + category only. NOTE: independent of difficulty/level — a "beginner"-
+ * tagged Barbell Bench Press is Tier 1.
+ */
+function deriveTier(raw: Exercise, lower: string): ExerciseTier {
+  // Sport-specific / explosive categories aren't default-plan material.
+  if (raw.category === "strongman" || raw.category === "olympic weightlifting" || raw.category === "plyometrics") return 3;
+  // Cardio fundamentals stay eligible for the cardio slot (checked before the
+  // novelty rule so a cardio move is never mistaken for novelty); mobility is neutral.
+  if (raw.category === "cardio") return 1;
+  if (RE_NOVELTY.test(lower)) return 3;
+  if (raw.category === "stretching" || raw.equipment === "foam roll") return 2;
+  if (RE_FUNDAMENTAL.test(lower)) return 1;
+  if (RE_ACCESSORY.test(lower)) return 2;
+  return 2;
 }
 
 function goalTagsOf(pattern: MovementPattern): GoalTag[] {
@@ -244,6 +288,7 @@ export function normalizeExercise(raw: Exercise): NormalizedExercise {
     instructions: raw.instructions,
     rawLevel: raw.level,
     normalizedDifficulty,
+    tier: deriveTier(raw, lower),
     rawEquipment: raw.equipment,
     normalizedEquipment,
     location,
