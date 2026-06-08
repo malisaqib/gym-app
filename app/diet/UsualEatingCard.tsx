@@ -21,6 +21,14 @@ const T = {
     en: "A few quick taps and I'll build the plan around your real meals — not replace them.",
     roman_urdu: "Thore se taps, aur main plan aap ke asli khane ke ird-gird banaunga — badlay ga nahi.",
   },
+  collapsedEmpty: {
+    en: "Want your plan built around your real meals? Tap to add them, then Generate.",
+    roman_urdu: "Plan apne asli khane ke ird-gird chahiye? Tap karke add karein, phir Generate.",
+  },
+  collapsedSet: {
+    en: "Built around your usual meals. Tap to edit.",
+    roman_urdu: "Aap ke usual khane par bana hai. Tap karke edit karein.",
+  },
   breakfast: { en: "Usual breakfast", roman_urdu: "Aam nashta" },
   lunch: { en: "Usual lunch", roman_urdu: "Aam dopahar" },
   dinner: { en: "Usual dinner", roman_urdu: "Aam raat ka khana" },
@@ -53,6 +61,7 @@ export default function UsualEatingCard({
   lang: Lang;
 }) {
   const t = (k: keyof typeof T) => T[k][lang];
+  const [open, setOpen] = useState(false);
   const [dismissed, setDismissed] = useState<string[]>([]);
 
   const set = (key: keyof UsualEating, v: string) => onChange({ ...value, [key]: v });
@@ -68,14 +77,31 @@ export default function UsualEatingCard({
   // Suggestions read the user's own words across every field (deterministic).
   const allText = [value.breakfast, value.lunch, value.dinner, value.foods, value.keep].join(" ");
   const ideas = suggestUpgrades(allText, lang, 3).filter((i) => !dismissed.includes(i.id));
+  const hasContent = Boolean(value.breakfast || value.lunch || value.dinner || value.foods || value.keep);
 
   return (
-    <Card className="space-y-4 p-4">
-      <div className="space-y-1">
-        <h2 className="font-display text-base font-semibold text-foreground">{t("title")}</h2>
-        <p className="text-sm text-muted-foreground">{t("intro")}</p>
-      </div>
+    <Card className="p-4">
+      {/* Collapsible: a short invite that opens the capture on tap, closes again. */}
+      <button
+        type="button"
+        onClick={() => {
+          haptic("tap");
+          setOpen((o) => !o);
+        }}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-3 text-left"
+      >
+        <div className="space-y-0.5">
+          <h2 className="font-display text-base font-semibold text-foreground">{t("title")}</h2>
+          <p className="text-sm text-muted-foreground">
+            {open ? t("intro") : hasContent ? t("collapsedSet") : t("collapsedEmpty")}
+          </p>
+        </div>
+        <span className={`shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}>▾</span>
+      </button>
 
+      {open && (
+        <div className="mt-4 space-y-4">
       <Field label={t("breakfast")} value={value.breakfast} onChange={(v) => set("breakfast", v)} placeholder={t("ph")} chips={CHIPS.breakfast} onChip={(w) => addChip("breakfast", w)} />
       <Field label={t("lunch")} value={value.lunch} onChange={(v) => set("lunch", v)} placeholder={t("ph")} chips={CHIPS.lunch} onChip={(w) => addChip("lunch", w)} />
       <Field label={t("dinner")} value={value.dinner} onChange={(v) => set("dinner", v)} placeholder={t("ph")} chips={CHIPS.dinner} onChip={(w) => addChip("dinner", w)} />
@@ -102,6 +128,8 @@ export default function UsualEatingCard({
               </li>
             ))}
           </ul>
+        </div>
+      )}
         </div>
       )}
     </Card>
