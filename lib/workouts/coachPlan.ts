@@ -1,5 +1,5 @@
 import type { MuscleGroup } from "./exerciseDb.ts";
-import type { CautionTag, MovementPattern, NormalizedExercise } from "./enrich.ts";
+import type { CautionTag, MovementPattern, NormalizedDifficulty, NormalizedExercise } from "./enrich.ts";
 
 export type { MovementPattern } from "./enrich.ts";
 
@@ -542,23 +542,79 @@ function roleForPattern(p: MovementPattern): Role {
 }
 
 /**
+ * Phase 5 — directional swap. "easier"/"harder" move along a difficulty
+ * continuum; "different" is a lateral swap at the same level.
+ */
+export type SwapDirection = "easier" | "different" | "harder";
+
+const DIFF_RANK: Record<NormalizedDifficulty, number> = { beginner: 0, intermediate: 1, advanced: 2 };
+
+/**
+ * A coarse "how demanding is this exercise" score, used ONLY to order swaps
+ * easier↔harder. Difficulty dominates; loadable equipment and impact add to it.
+ * Deterministic and exported so the swap contract is unit-tested.
+ */
+export function loadScore(e: NormalizedExercise): number {
+  let s = DIFF_RANK[e.normalizedDifficulty] * 4;
+  if (e.highImpact) s += 1;
+  if (e.requiresBarbell) s += 3;
+  else if (e.requiresMachine || e.requiresCable || e.requiresDumbbell) s += 2;
+  return s;
+}
+
+/**
  * Deterministic, context-safe swap: another eligible exercise of the SAME
  * movement pattern the user can actually do (never a pull-up without a bar, never
- * a gym machine at home, never above their level). Returns null if none fits.
+ * a gym machine at home, never above their level).
+ *
+ *  - "different": the next valid exercise at (preferably) the same difficulty.
+ *  - "easier":   the closest valid exercise that is genuinely LESS demanding.
+ *  - "harder":   the closest valid exercise that is genuinely MORE demanding.
+ *
+ * Returns null when nothing fits in that direction — e.g. a bodyweight beginner
+ * asking "harder" has no tougher *different* movement available, so the UI falls
+ * back to the per-exercise make-it-harder cue (which scales the SAME movement).
  */
 export function swapPlanExercise(
   input: WorkoutInput,
   pattern: MovementPattern,
+  currentId: string,
   excludeIds: string[],
+  direction: SwapDirection,
   enriched: NormalizedExercise[]
 ): PlanExercise | null {
   const flags = injuryFlags(input.injuriesNote);
   const conservative = isConservative(input, flags);
   const ctx = equipCtx(input);
   const exclude = new Set(excludeIds);
-  const pool = enriched
-    .filter((e) => e.movementPattern === pattern && !exclude.has(e.id) && eligible(e, ctx, input, flags, conservative))
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const pool = enriched.filter(
+    (e) => e.movementPattern === pattern && !exclude.has(e.id) && eligible(e, ctx, input, flags, conservative)
+  );
   if (!pool.length) return null;
-  return makePlanExercise(pool[0], roleForPattern(pattern), input.goal, input.level);
+
+  const current = enriched.find((e) => e.id === currentId);
+  const currentScore = current ? loadScore(current) : null;
+
+  let chosen: NormalizedExercise | null = null;
+  if (direction === "different" || currentScore === null) {
+    // Lateral: prefer the same difficulty band as the current move, else any.
+    const byName = [...pool].sort((a, b) => a.name.localeCompare(b.name));
+    const same = currentScore === null ? [] : byName.filter((e) => loadScore(e) === currentScore);
+    chosen = same[0] ?? byName[0];
+  } else if (direction === "easier") {
+    // Closest easier: highest score still strictly below the current one.
+    chosen =
+      pool
+        .filter((e) => loadScore(e) < currentScore)
+        .sort((a, b) => loadScore(b) - loadScore(a) || a.name.localeCompare(b.name))[0] ?? null;
+  } else {
+    // Closest harder: lowest score still strictly above the current one.
+    chosen =
+      pool
+        .filter((e) => loadScore(e) > currentScore)
+        .sort((a, b) => loadScore(a) - loadScore(b) || a.name.localeCompare(b.name))[0] ?? null;
+  }
+
+  if (!chosen) return null;
+  return makePlanExercise(chosen, roleForPattern(pattern), input.goal, input.level);
 }

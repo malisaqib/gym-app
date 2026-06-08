@@ -11,6 +11,7 @@ import {
   resolveWorkoutGoal,
   type MovementPattern,
   type PlanExercise,
+  type SwapDirection,
   type WorkoutInput,
   type WorkoutPlan,
 } from "@/lib/workouts/coachPlan";
@@ -102,15 +103,26 @@ export async function buildProgram(raw: TrainingSetup): Promise<BuildProgramResu
   return { ok: true, plan, history, today };
 }
 
+// Direction-aware "nothing fits" messages — they point back to the per-exercise
+// make-easier/harder cue, which scales the SAME movement when no swap exists.
+const SWAP_EMPTY: Record<SwapDirection, string> = {
+  easier: "This is already about as easy as it gets here — use the “Make it easier” tip to scale the movement itself.",
+  harder: "No tougher alternative fits your setup — use the “Make it harder” tip on this exercise instead.",
+  different: "No other safe option fits your setup for this movement.",
+};
+
 /**
- * Swap one exercise for another VALID one of the SAME movement pattern.
- * Deterministic + grounded: only ever returns an exercise the user can actually
- * do (same equipment availability, ≤ their level, injury/impact-safe).
+ * Swap one exercise for another VALID one of the SAME movement pattern, in the
+ * requested direction (easier / different / harder). Deterministic + grounded:
+ * only ever returns an exercise the user can actually do (same equipment
+ * availability, ≤ their level, injury/impact-safe).
  */
 export async function swapWorkoutExercise(
   raw: TrainingSetup,
   pattern: MovementPattern,
-  excludeIds: string[]
+  currentId: string,
+  excludeIds: string[],
+  direction: SwapDirection
 ): Promise<{ ok: true; exercise: PlanExercise } | { ok: false; error: string }> {
   const supabase = await createClient();
   const {
@@ -120,8 +132,8 @@ export async function swapWorkoutExercise(
 
   const setup = normalizeTrainingSetup(raw);
   const input = await workoutInputFrom(supabase, user.id, setup);
-  const exercise = swapPlanExercise(input, pattern, excludeIds, ENRICHED);
-  if (!exercise) return { ok: false, error: "No other safe option fits your setup for this movement." };
+  const exercise = swapPlanExercise(input, pattern, currentId, excludeIds, direction, ENRICHED);
+  if (!exercise) return { ok: false, error: SWAP_EMPTY[direction] };
   return { ok: true, exercise };
 }
 

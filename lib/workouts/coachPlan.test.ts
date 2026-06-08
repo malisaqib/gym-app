@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildWorkoutPlan, type WorkoutInput, type WorkoutPlan } from "./coachPlan.ts";
+import { buildWorkoutPlan, swapPlanExercise, loadScore, type SwapDirection, type WorkoutInput, type WorkoutPlan } from "./coachPlan.ts";
 import { enrichExercises, type NormalizedExercise } from "./enrich.ts";
 import type { Exercise } from "./exerciseDb.ts";
 
@@ -109,4 +109,49 @@ test("plan is deterministic for the same input", () => {
   const a = plan({ goal: "gain_muscle", location: "gym", hasEquipment: true, level: "intermediate", daysPerWeek: 5 });
   const b = plan({ goal: "gain_muscle", location: "gym", hasEquipment: true, level: "intermediate", daysPerWeek: 5 });
   assert.deepEqual(a, b);
+});
+
+// --- Phase 5: directional swap ----------------------------------------------
+
+const gymAdv: WorkoutInput = { ...base, location: "gym", hasEquipment: true, level: "advanced", daysPerWeek: 4 };
+
+test("swap 'different' is deterministic, same pattern, and never an excluded id", () => {
+  const a = swapPlanExercise(gymAdv, "squat", "", [], "different", ALL);
+  const b = swapPlanExercise(gymAdv, "squat", "", [], "different", ALL);
+  assert.ok(a, "should find a squat");
+  assert.equal(a!.id, b!.id, "must be deterministic");
+  assert.equal(a!.pattern, "squat");
+  const c = swapPlanExercise(gymAdv, "squat", "", [a!.id], "different", ALL);
+  assert.notEqual(c?.id, a!.id, "excluded id must not come back");
+});
+
+test("swap 'harder' is strictly more demanding; 'easier' strictly less demanding", () => {
+  const push = ALL.filter((e) => e.movementPattern === "push");
+  const scored = push.map((e) => ({ e, s: loadScore(e) })).sort((x, y) => x.s - y.s);
+  const low = scored[0].e;
+  const high = scored[scored.length - 1].e;
+
+  const harder = swapPlanExercise(gymAdv, "push", low.id, [low.id], "harder", ALL);
+  assert.ok(harder, "a harder push should exist");
+  assert.ok(loadScore(byId.get(harder!.id)!) > loadScore(low), "harder must score higher");
+
+  const easier = swapPlanExercise(gymAdv, "push", high.id, [high.id], "easier", ALL);
+  assert.ok(easier, "an easier push should exist");
+  assert.ok(loadScore(byId.get(easier!.id)!) < loadScore(high), "easier must score lower");
+});
+
+test("swap stays eligible: no pull-up offered without a bar, in any direction", () => {
+  const homeDb: WorkoutInput = { ...base, location: "home", hasEquipment: true, equipment: ["dumbbells"], level: "intermediate" };
+  for (const dir of ["easier", "different", "harder"] as SwapDirection[]) {
+    const r = swapPlanExercise(homeDb, "pull", "", [], dir, ALL);
+    if (r) assert.equal(byId.get(r.id)!.requiresPullupBar, false, `${dir} offered a bar pull: ${r.name}`);
+  }
+});
+
+test("bodyweight beginner: no harder *different* move → null (UI falls back to the cue)", () => {
+  const homeBeg: WorkoutInput = { ...base, location: "home", hasEquipment: false, level: "beginner" };
+  const cur = swapPlanExercise(homeBeg, "push", "", [], "different", ALL);
+  assert.ok(cur, "should find a bodyweight push");
+  const harder = swapPlanExercise(homeBeg, "push", cur!.id, [cur!.id], "harder", ALL);
+  assert.equal(harder, null, "no tougher bodyweight push as a separate exercise");
 });

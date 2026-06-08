@@ -12,7 +12,7 @@ import { localDateString } from "@/lib/localDate";
 import { Button } from "@/components/ui/Button";
 import { toast } from "@/lib/toast";
 import { Sheet } from "@/components/ui/Sheet";
-import type { PlanDay, PlanExercise, WorkoutGoal, WorkoutPlan } from "@/lib/workouts/coachPlan";
+import type { PlanDay, PlanExercise, SwapDirection, WorkoutGoal, WorkoutPlan } from "@/lib/workouts/coachPlan";
 import type { TrainingSetup as TrainingSetupData } from "@/lib/workouts/trainingSetup";
 import { logSet, deleteSet } from "./actions";
 import { swapWorkoutExercise, askAboutExercise } from "./programActions";
@@ -262,7 +262,8 @@ function ExerciseCard({
 
   const [showHow, setShowHow] = useState(false);
   const [askOpen, setAskOpen] = useState(false);
-  const [swapping, setSwapping] = useState(false);
+  // Which swap direction is in flight (null = idle), so we can spin just that button.
+  const [swapping, setSwapping] = useState<SwapDirection | null>(null);
   const [swapError, setSwapError] = useState<string | null>(null);
 
   const { repMax, repUnit } = parseTarget(exercise.reps);
@@ -315,12 +316,14 @@ function ExerciseCard({
     }
   }
 
-  async function doSwap() {
-    if (!setup) return;
-    setSwapping(true);
+  async function doSwap(direction: SwapDirection) {
+    if (!setup || swapping) return;
+    setSwapping(direction);
     setSwapError(null);
-    const res = await swapWorkoutExercise(setup, exercise.pattern, dayExerciseIds);
-    setSwapping(false);
+    // currentId scores "this" exercise; dayExerciseIds keep the swap off today's
+    // other moves so we never get a duplicate in the same session.
+    const res = await swapWorkoutExercise(setup, exercise.pattern, exercise.id, dayExerciseIds, direction);
+    setSwapping(null);
     if (res.ok) {
       haptic("success");
       onSwapped(res.exercise);
@@ -366,15 +369,27 @@ function ExerciseCard({
 
       <p className={`mt-2 text-xs ${advice.graduate ? "text-primary" : "text-muted-foreground"}`}>{advice.message}</p>
 
-      {/* How to / Swap / Ask */}
+      {/* How to / Ask */}
       <div className="mt-3 flex flex-wrap gap-2">
         <SmallButton active={showHow} onClick={() => setShowHow((v) => !v)}>
           How to
         </SmallButton>
-        <SmallButton onClick={doSwap} disabled={swapping || !setup}>
-          {swapping ? "Swapping…" : "↺ Swap"}
-        </SmallButton>
         <SmallButton onClick={() => setAskOpen(true)}>Ask coach</SmallButton>
+      </div>
+
+      {/* Explicit directional swap — replace this move with an easier / different
+          / harder one of the same pattern that the user can actually do. */}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <span className="text-xs font-medium text-muted-foreground">Swap for:</span>
+        <SmallButton onClick={() => doSwap("easier")} disabled={!!swapping || !setup}>
+          {swapping === "easier" ? "…" : "Easier"}
+        </SmallButton>
+        <SmallButton onClick={() => doSwap("different")} disabled={!!swapping || !setup}>
+          {swapping === "different" ? "…" : "↺ Different"}
+        </SmallButton>
+        <SmallButton onClick={() => doSwap("harder")} disabled={!!swapping || !setup}>
+          {swapping === "harder" ? "…" : "Harder"}
+        </SmallButton>
       </div>
       {swapError && <p className="mt-1 text-xs text-muted-foreground">{swapError}</p>}
 
