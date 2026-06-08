@@ -53,7 +53,38 @@ the numbers.** The food RAG pipeline (lib/food/*, lib/embeddings.ts, migrations
   AI parses free-text prefs only (with a deterministic fallback).
   `lib/diet/{foodCatalog,planner}.ts`, `lib/coach/dietCoach.ts`, `app/diet/*`.
 
-### Migrations (run in Supabase SQL editor, in order)
+### Flagship Diet upgrade (Phases 0–5, shipped)
+The Plan tab became the app's flagship feature via a 6-phase pass. Same rule:
+deterministic + unit-tested math/selection (98 tests); AI only interprets
+free-text and finds matching foods — it never invents foods/numbers or overrides
+the calorie/protein targets. Food RAG pipeline, auth untouched; schema additive
+only (`keep_foods`, migration 0014).
+
+- **P0 Audit** — confirmed the avoid/veg filter IS applied at selection (the
+  "veg still shows chicken" report didn't reproduce); surfaced the real defects.
+- **P1 Hard filter + veg semantics** — `vegetarian` redefined as lacto-ovo
+  (drops only meat/fish; egg/dairy/nuts are independent avoids). `matchesAvoidedFood`
+  now word-boundary safe (a short term can't nuke unrelated foods). Plan shows an
+  "out of date — Regenerate" cue when on-screen prefs differ from the built plan.
+- **P2 "What you usually eat"** — a collapsible capture (chips + free text) for
+  usual breakfast/lunch/dinner, go-to foods, and "rather not give up". Seeds the
+  plan and PROTECTS keep foods (never swapped out). Deterministic, opt-in,
+  non-shaming upgrade ideas (`lib/diet/upgrades.ts`) — never labels food bad/junk.
+- **P3 Per-item editing** — each item has Swap (similar in-budget catalog food)
+  and Remove (optimistic + rollback); each meal has Add (filter-aware dataset
+  search, or free-typed → RAG/AI estimate flagged "≈ est"). Live totals; adds can
+  go OVER target with a gentle, non-shaming note. Pure ops in `lib/diet/planner.ts`.
+- **P4 Coverage** — catalog 41 → 71: veg protein (paneer/rajma/lobia/soya/tofu/
+  chana chaat), desi staples (naan/nihari/haleem/pulao/kebabs/karahi/etc.),
+  western/fast food, and coffee. Additive `aliases` (incl. Roman Urdu) wired into
+  matching/search; macros web-checked.
+- **P5 Polish** — all plan edits serialized via one `mutating` flag (concurrent
+  writes can't silently overwrite); "Focus on habits" toggle shows active state;
+  bigger mobile touch targets. Loading/empty/error states throughout.
+- Files: `lib/diet/{foodCatalog,planner,upgrades}.ts`,
+  `app/diet/{actions,page,DietPlanView,UsualEatingCard,AddFoodPanel}.tsx`.
+
+### Migrations (run in Supabase SQL editor, in order) — all applied as of 2026-06-08
 - `0009_goal_targets.sql` — goal/activity/macro columns + re-run-safe backfill.
 - `0010_meal_plans.sql` — saved diet plans table.
 - `0011_usual_eating.sql` — usual breakfast/lunch/dinner + likes/dislikes.
@@ -65,11 +96,16 @@ the numbers.** The food RAG pipeline (lib/food/*, lib/embeddings.ts, migrations
 - `0013_training_setup.sql` — training_setup jsonb on profiles (the "Set up your
   training" inputs moved off localStorage → Supabase, read DB-first so the plan
   syncs across devices; one-time local→DB migration on first load).
+- `0014_keep_foods.sql` — keep_foods text on profiles ("rather not give up"
+  comfort foods; seeded + protected by the diet generator).
 
 ### Deferred (flagged, not built)
-- Budget-aware diet selection / "protein-per-rupee" (needs a food-cost layer).
+- Budget-aware diet selection / "protein-per-rupee" (needs a food-cost layer; the
+  budget capture UI was removed, so this would re-add a lightweight cost input).
 - One-time "confirm your activity" prompt for existing users after the backfill.
 - One-tap "apply" on the plateau nudge (currently advisory only).
+- One-tap "apply" on a diet upgrade idea (currently advisory/dismissible; the
+  per-item edit flow from P3 is where an "accept" would hook in).
 
 ## Core product direction
 The app should feel like a friendly desi fitness coach — not a strict medical app
