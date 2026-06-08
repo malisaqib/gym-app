@@ -136,6 +136,62 @@ export async function correctFoodItem(
   return { ok: true, item: data };
 }
 
+/**
+ * Set HOW MUCH of an item was eaten. The per-unit/per-gram `base_*` is the source
+ * of truth; we recompute the stored totals = round(base × amount). Self-heals a
+ * legacy row whose base_* is null (treats its current total as one unit).
+ */
+export async function setFoodItemAmount(id: string, amount: number): Promise<ItemResult> {
+  const amt = Number(amount);
+  if (!Number.isFinite(amt) || amt <= 0) return { ok: false, error: "Enter a valid amount." };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const { data: row } = await supabase
+    .from("food_logs")
+    .select("*")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .single<FoodLog>();
+  if (!row) return { ok: false, error: "Item not found." };
+
+  const base = {
+    base_calories: row.base_calories ?? row.calories,
+    base_protein_g: row.base_protein_g ?? row.protein_g,
+    base_carbs_g: row.base_carbs_g ?? row.carbs_g,
+    base_fat_g: row.base_fat_g ?? row.fat_g,
+  };
+  const mode = row.unit_mode ?? "count";
+  // Sane caps: grams up to 5000, units up to 100.
+  const clamped = Math.min(amt, mode === "portion" ? 5000 : 100);
+  const totals = totalsFor({ ...base, amount: clamped });
+
+  const { data, error } = await supabase
+    .from("food_logs")
+    .update({
+      ...base,
+      unit_mode: mode,
+      amount: clamped,
+      calories: totals.calories,
+      protein_g: totals.protein_g,
+      carbs_g: totals.carbs_g,
+      fat_g: totals.fat_g,
+      source: "corrected",
+    })
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .select()
+    .single<FoodLog>();
+
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/dashboard");
+  return { ok: true, item: data };
+}
+
 /** Delete one of the user's food items. */
 export async function deleteFoodItem(id: string): Promise<{ ok: boolean; error?: string }> {
   const supabase = await createClient();

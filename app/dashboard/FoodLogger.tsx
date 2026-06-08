@@ -5,8 +5,10 @@ import { AnimatePresence, motion } from "motion/react";
 import type { FoodLog } from "@/lib/database.types";
 import { listContainer, listItem } from "@/lib/motion";
 import { sumMacros } from "@/lib/food/totals";
+import { itemMacros } from "@/lib/food/quantity";
 import { localDateString } from "@/lib/localDate";
-import { logFood, getFoodLogs, correctFoodItem, deleteFoodItem } from "./actions";
+import { logFood, getFoodLogs, setFoodItemAmount, deleteFoodItem } from "./actions";
+import QuantityControl from "./QuantityControl";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
@@ -40,8 +42,11 @@ export default function FoodLogger({
   const [error, setError] = useState<string | null>(null);
   // Tracks in-flight logs so a focus-refetch doesn't clobber an optimistic add.
   const inFlight = useRef(0);
+  // Per-item debounce timers for quantity edits (coalesce rapid +/- taps).
+  const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
-  const eaten = sumMacros(items);
+  // Totals are computed on the fly (base × amount) — never a frozen number.
+  const eaten = sumMacros(items.map(itemMacros));
 
   // Re-read the day's items when the tab regains focus, and re-align if the
   // CLIENT's local day differs from the server-rendered day (first-visit UTC
@@ -99,21 +104,33 @@ export default function FoodLogger({
     }
   }
 
-  // OPTIMISTIC edit: apply locally, reconcile with the server, roll back on error.
-  async function correctItem(id: string, patch: { calories: number; protein_g: number }) {
-    const snapshot = items;
-    setItems((prev) =>
-      prev.map((i) =>
-        i.id === id ? { ...i, calories: patch.calories, protein_g: patch.protein_g, source: "corrected" } : i
-      )
-    );
-    const res = await correctFoodItem(id, patch);
-    if (!res.ok) {
-      setItems(snapshot);
-      setError(res.error);
-    } else {
-      setItems((prev) => prev.map((i) => (i.id === id ? res.item : i)));
-    }
+  // Clear any pending quantity-save timers on unmount.
+  useEffect(() => () => Object.values(timers.current).forEach(clearTimeout), []);
+
+  // Adjust HOW MUCH was eaten: optimistic + live (itemMacros recomputes the row
+  // AND the rings), persisted on a short debounce. On failure we reconcile with
+  // the DB so a change is never silently dropped or left phantom.
+  function changeAmount(id: string, amount: number) {
+    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, amount, source: "corrected" } : i)));
+    setError(null);
+    if (timers.current[id]) clearTimeout(timers.current[id]);
+    timers.current[id] = setTimeout(async () => {
+      inFlight.current += 1;
+      try {
+        const res = await setFoodItemAmount(id, amount);
+        if (res.ok) {
+          setItems((prev) => prev.map((i) => (i.id === id ? res.item : i)));
+        } else {
+          setError(res.error);
+          setItems(await getFoodLogs(localDateString())); // reconcile with DB truth
+        }
+      } catch {
+        setError("Couldn't save the amount. Please try again.");
+        setItems(await getFoodLogs(localDateString()));
+      } finally {
+        inFlight.current -= 1;
+      }
+    }, 450);
   }
 
   // OPTIMISTIC delete: remove now, restore on error.
@@ -173,7 +190,7 @@ export default function FoodLogger({
             <AnimatePresence initial={false} mode="popLayout">
               {items.map((item) => (
                 <motion.div key={item.id} variants={listItem} exit="exit" layout>
-                  <FoodItemRow item={item} onCorrect={correctItem} onDelete={removeItem} />
+                  <FoodItemRow item={item} onAmountChange={changeAmount} onDelete={removeItem} />
                 </motion.div>
               ))}
               {pending.map((p) => (
@@ -206,21 +223,20 @@ function PendingRow({ text }: { text: string }) {
 
 function FoodItemRow({
   item,
-  onCorrect,
+  onAmountChange,
   onDelete,
 }: {
   item: FoodLog;
-  onCorrect: (id: string, patch: { calories: number; protein_g: number }) => void;
+  onAmountChange: (id: string, amount: number) => void;
   onDelete: (id: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
-  const [cal, setCal] = useState(String(item.calories));
-  const [protein, setProtein] = useState(String(item.protein_g));
-
-  function save() {
-    onCorrect(item.id, { calories: Number(cal), protein_g: Number(protein) });
-    setEditing(false); // optimistic — close immediately
-  }
+  const m = itemMacros(item); // live total = base × amount
+  const amount = item.amount ?? 1;
+  const qtyLabel =
+    item.unit_mode === "portion"
+      ? `${amount} g`
+      : `${amount}${item.unit && item.unit !== "item" ? ` ${item.unit}` : ""}`;
 
   return (
     <Card className="p-3">
@@ -228,15 +244,10 @@ function FoodItemRow({
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-foreground">
             {item.food_name}
-            {item.quantity ? (
-              <span className="text-muted-foreground">
-                {" "}
-                · {item.quantity} {item.unit}
-              </span>
-            ) : null}
+            <span className="text-muted-foreground"> · {qtyLabel}</span>
           </p>
           <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-            {item.calories} kcal · {item.protein_g}g protein
+            {m.calories} kcal · {m.protein_g}g protein
             {item.source === "corrected" && <Badge tone="primary">edited</Badge>}
           </p>
         </div>
@@ -255,26 +266,7 @@ function FoodItemRow({
         </div>
       </div>
 
-      {editing && (
-        <div className="mt-3 flex items-end gap-2">
-          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-            Calories
-            <Input type="number" value={cal} onChange={(e) => setCal(e.target.value)} className="h-9 w-24" />
-          </label>
-          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-            Protein (g)
-            <Input
-              type="number"
-              value={protein}
-              onChange={(e) => setProtein(e.target.value)}
-              className="h-9 w-24"
-            />
-          </label>
-          <Button size="sm" onClick={save}>
-            Save
-          </Button>
-        </div>
-      )}
+      {editing && <QuantityControl item={item} amount={amount} onChange={(a) => onAmountChange(item.id, a)} />}
     </Card>
   );
 }
