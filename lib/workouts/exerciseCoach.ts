@@ -1,4 +1,3 @@
-import type { ProgramExercise, WeeklyProgram } from "./generator";
 import { aiConfigError, aiHttpError } from "@/lib/ai/errors";
 
 /**
@@ -16,24 +15,29 @@ const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const MODEL = process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile";
 
 export interface ExerciseCoachContext {
-  exercise: ProgramExercise;
+  name: string;
+  muscles: string[];
+  sets: number;
+  reps: string;
+  restSeconds: number;
+  instructions: string[];
   // A little plan context so answers fit the user's situation.
-  level: WeeklyProgram["level"];
-  emphasis: WeeklyProgram["emphasis"];
+  level: string;
+  goalLabel: string;
 }
 
 function buildSystemPrompt(ctx: ExerciseCoachContext): string {
-  const ex = ctx.exercise;
-  const steps = ex.instructions.length
-    ? ex.instructions.map((s, i) => `${i + 1}. ${s}`).join("\n")
+  const steps = ctx.instructions.length
+    ? ctx.instructions.map((s, i) => `${i + 1}. ${s}`).join("\n")
     : "(no step text available — use your own reliable, general form knowledge for this exact movement)";
 
   return `You are a friendly, beginner-first fitness coach for both Western and South Asian users. Answer the user's question about ONE specific exercise from their plan.
 
-EXERCISE: ${ex.name}
-TARGET MUSCLES: ${ex.targetMuscles.join(", ") || "general"}
-PRESCRIBED: ${ex.sets} sets × ${ex.repRange}, ${ex.restSeconds}s rest
+EXERCISE: ${ctx.name}
+TARGET MUSCLES: ${ctx.muscles.join(", ") || "general"}
+PRESCRIBED: ${ctx.sets} sets × ${ctx.reps}, ${ctx.restSeconds}s rest
 USER LEVEL: ${ctx.level}
+USER GOAL: ${ctx.goalLabel}
 OFFICIAL STEPS (ground your form advice in these):
 ${steps}
 

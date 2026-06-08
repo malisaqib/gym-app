@@ -1,4 +1,5 @@
 import type { Goal } from "@/lib/database.types";
+import type { FocusArea, WorkoutGoal } from "./coachPlan";
 
 /**
  * Workout rebuild — Phase 2: the user's training setup.
@@ -47,6 +48,8 @@ export interface TrainingSetup {
   experienceLevel: ExperienceLevel;
   trainingDaysPerWeek: number; // clamped 2–6
   injuriesNote: string; // optional free text
+  focusArea: FocusArea; // optional emphasis region — defaults to full body
+  goal: WorkoutGoal | null; // workout goal for this plan; null = derive from profile
   updatedAt: string; // ISO; "" means not set up yet
 }
 
@@ -62,6 +65,8 @@ export const DEFAULT_TRAINING_SETUP: TrainingSetup = {
   experienceLevel: "beginner",
   trainingDaysPerWeek: 3,
   injuriesNote: "",
+  focusArea: "full_body",
+  goal: null,
   updatedAt: "",
 };
 
@@ -76,6 +81,16 @@ export function goalToEmphasis(goal: Goal | null | undefined): TrainingEmphasis 
 
 const LOCATIONS: TrainingLocation[] = ["gym", "home", "both"];
 const LEVELS: ExperienceLevel[] = ["beginner", "intermediate", "advanced"];
+const FOCUS_AREAS: FocusArea[] = ["full_body", "lower_body", "glutes", "upper_body"];
+const WORKOUT_GOALS: WorkoutGoal[] = [
+  "lose_belly_fat",
+  "lose_weight",
+  "gain_muscle",
+  "gain_weight",
+  "build_strength",
+  "tone",
+  "stay_fit",
+];
 
 function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n));
@@ -105,6 +120,8 @@ export function normalizeTrainingSetup(raw: Partial<TrainingSetup>): TrainingSet
       : [];
 
   const injuriesNote = typeof raw.injuriesNote === "string" ? raw.injuriesNote.trim().slice(0, 500) : "";
+  const focusArea = FOCUS_AREAS.includes(raw.focusArea as FocusArea) ? (raw.focusArea as FocusArea) : "full_body";
+  const goal = WORKOUT_GOALS.includes(raw.goal as WorkoutGoal) ? (raw.goal as WorkoutGoal) : null;
 
   return {
     trainingLocation,
@@ -113,6 +130,8 @@ export function normalizeTrainingSetup(raw: Partial<TrainingSetup>): TrainingSet
     experienceLevel,
     trainingDaysPerWeek,
     injuriesNote,
+    focusArea,
+    goal,
     updatedAt: raw.updatedAt || "",
   };
 }

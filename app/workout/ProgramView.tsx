@@ -12,30 +12,32 @@ import { localDateString } from "@/lib/localDate";
 import { Button } from "@/components/ui/Button";
 import { toast } from "@/lib/toast";
 import { Sheet } from "@/components/ui/Sheet";
-import type { ProgramDay, ProgramExercise, WeeklyProgram } from "@/lib/workouts/generator";
-import type { TrainingEmphasis, TrainingSetup as TrainingSetupData } from "@/lib/workouts/trainingSetup";
+import type { PlanDay, PlanExercise, WorkoutGoal, WorkoutPlan } from "@/lib/workouts/coachPlan";
+import type { TrainingSetup as TrainingSetupData } from "@/lib/workouts/trainingSetup";
 import { logSet, deleteSet } from "./actions";
-import { swapExercise, askAboutExercise } from "./programActions";
+import { swapWorkoutExercise, askAboutExercise } from "./programActions";
 
 /**
- * Workout rebuild — Phase 5/6: render, log, and interact with the plan.
- *
- * Per-exercise: optimistic set logging + last-session progression hint, a
- * YouTube form-search link, "How to" (grounded in dataset instructions), "Swap"
- * (deterministic alternative of the same pattern), and "Ask" (the AI coach,
- * grounded in the exercise — the only AI in this feature).
+ * Workout rebuild — Phase 4: render, log, and interact with the deterministic
+ * plan. Per-exercise: optimistic set logging (unchanged), why-this-exercise,
+ * How-to (grounded in dataset instructions) with make-easier/harder + a safe
+ * cue, Swap (deterministic same-pattern alternative), and Ask (the AI coach).
  */
 
-const EMPHASIS_LABEL: Record<TrainingEmphasis, string> = {
-  fatLoss: "Fat loss",
-  muscleGain: "Muscle gain",
-  strength: "Strength",
-  general: "General fitness",
+const GOAL_LABEL: Record<WorkoutGoal, string> = {
+  lose_belly_fat: "Lose belly fat",
+  lose_weight: "Lose weight",
+  gain_muscle: "Gain muscle",
+  gain_weight: "Gain weight",
+  build_strength: "Build strength",
+  tone: "Tone / look better",
+  stay_fit: "Stay fit",
 };
 
 const emptyHistory: ExerciseHistory = { today: [], lastSessionDate: null, lastSessionSets: [] };
 
 function formatRest(seconds: number): string {
+  if (seconds <= 0) return "—";
   if (seconds >= 90 && seconds % 60 === 0) return `${seconds / 60} min rest`;
   if (seconds >= 90) return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")} rest`;
   return `${seconds}s rest`;
@@ -45,45 +47,47 @@ function formVideoUrl(name: string): string {
   return `https://www.youtube.com/results?search_query=${encodeURIComponent(`${name} exercise form`)}`;
 }
 
-function parseTarget(repRange: string): { repMax: number; repUnit: "reps" | "seconds" } {
-  const isSeconds = /sec/i.test(repRange);
-  const nums = repRange.match(/\d+/g)?.map(Number) ?? [];
+function parseTarget(reps: string): { repMax: number; repUnit: "reps" | "seconds" } {
+  const isSeconds = /sec|min/i.test(reps);
+  const nums = reps.match(/\d+/g)?.map(Number) ?? [];
   const repMax = nums.length ? Math.max(...nums) : 0;
   return { repMax, repUnit: isSeconds ? "seconds" : "reps" };
 }
 
 export default function ProgramView({
-  program,
+  plan,
   today,
   history,
   setup,
   setToday,
   onReplaceExercise,
 }: {
-  program: WeeklyProgram;
+  plan: WorkoutPlan;
   today: string;
   history: Record<string, ExerciseHistory>;
   setup: TrainingSetupData | null;
   setToday: (name: string, updater: (sets: WorkoutLog[]) => WorkoutLog[]) => void;
-  onReplaceExercise: (dayIndex: number, oldId: string, next: ProgramExercise) => void;
+  onReplaceExercise: (dayIndex: number, oldId: string, next: PlanExercise) => void;
 }) {
-  const firstTrainingIndex = program.days.findIndex((d) => !d.isRest);
+  const firstTrainingIndex = plan.days.findIndex((d) => !d.isRest);
   const [selected, setSelected] = useState(firstTrainingIndex === -1 ? 0 : firstTrainingIndex);
-  const day = program.days[selected];
+  const day = plan.days[selected];
 
   return (
     <section className="space-y-4">
       <div className="rounded-card border border-border bg-card p-4 shadow-soft">
         <p className="text-xs font-medium uppercase tracking-wide text-primary">Your plan</p>
-        <h2 className="mt-1 font-display text-lg font-semibold text-foreground">{program.split}</h2>
-        <p className="mt-0.5 text-sm text-muted-foreground">
-          {program.daysPerWeek} days/week · {EMPHASIS_LABEL[program.emphasis]} ·{" "}
-          {program.level.charAt(0).toUpperCase() + program.level.slice(1)}
-        </p>
+        <h2 className="mt-1 font-display text-lg font-semibold text-foreground">{plan.split}</h2>
+        <p className="mt-0.5 text-sm text-muted-foreground">{plan.summary}</p>
 
-        {program.adjustedForInjuries.length > 0 && (
+        {/* Truth rule: belly fat reduces through overall fat loss + diet deficit. */}
+        {plan.bellyFatNote && (
+          <p className="mt-3 rounded-field bg-primary-soft px-3 py-2 text-xs leading-relaxed text-primary">{plan.bellyFatNote}</p>
+        )}
+
+        {plan.adjustments.length > 0 && (
           <ul className="mt-3 space-y-1">
-            {program.adjustedForInjuries.map((note) => (
+            {plan.adjustments.map((note) => (
               <li key={note} className="flex gap-2 text-xs text-muted-foreground">
                 <span aria-hidden className="text-primary">
                   ✓
@@ -96,12 +100,12 @@ export default function ProgramView({
 
         <p className="mt-3 rounded-field bg-muted px-3 py-2 text-xs leading-relaxed text-muted-foreground">
           <span className="font-medium text-foreground">Progress: </span>
-          {program.progression}
+          {plan.progressionNote}
         </p>
       </div>
 
       <div className="flex gap-1.5">
-        {program.days.map((d, i) => {
+        {plan.days.map((d, i) => {
           const isSelected = i === selected;
           return (
             <button
@@ -144,15 +148,15 @@ export default function ProgramView({
             today={today}
             history={history}
             setup={setup}
-            level={program.level}
-            emphasis={program.emphasis}
+            level={plan.level}
+            goal={plan.goal}
             setToday={setToday}
             onReplaceExercise={onReplaceExercise}
           />
         </motion.div>
       </AnimatePresence>
 
-      <p className="px-1 text-[11px] leading-relaxed text-muted-foreground">{program.disclaimer}</p>
+      <p className="px-1 text-[11px] leading-relaxed text-muted-foreground">{plan.disclaimer}</p>
     </section>
   );
 }
@@ -164,19 +168,19 @@ function DayPanel({
   history,
   setup,
   level,
-  emphasis,
+  goal,
   setToday,
   onReplaceExercise,
 }: {
-  day: ProgramDay;
+  day: PlanDay;
   dayIndex: number;
   today: string;
   history: Record<string, ExerciseHistory>;
   setup: TrainingSetupData | null;
-  level: WeeklyProgram["level"];
-  emphasis: WeeklyProgram["emphasis"];
+  level: WorkoutPlan["level"];
+  goal: WorkoutGoal;
   setToday: (name: string, updater: (sets: WorkoutLog[]) => WorkoutLog[]) => void;
-  onReplaceExercise: (dayIndex: number, oldId: string, next: ProgramExercise) => void;
+  onReplaceExercise: (dayIndex: number, oldId: string, next: PlanExercise) => void;
 }) {
   if (day.isRest) {
     return (
@@ -189,7 +193,7 @@ function DayPanel({
     );
   }
 
-  const dayExerciseIds = day.exercises.map((e) => e.exerciseId);
+  const dayExerciseIds = day.exercises.map((e) => e.id);
 
   return (
     <div className="space-y-3">
@@ -207,19 +211,19 @@ function DayPanel({
 
       <motion.div variants={listContainer} initial="hidden" animate="show" className="flex flex-col gap-3">
         {day.exercises.map((ex) => (
-          <motion.div key={`${day.name}-${ex.exerciseId}`} variants={listItem}>
+          <motion.div key={`${day.name}-${ex.id}`} variants={listItem}>
             <ExerciseCard
               exercise={ex}
               today={today}
               history={history[ex.name] ?? emptyHistory}
               setup={setup}
               level={level}
-              emphasis={emphasis}
+              goal={goal}
               dayExerciseIds={dayExerciseIds}
               onAdd={(item) => setToday(ex.name, (s) => [...s, item])}
               onReplace={(tempId, item) => setToday(ex.name, (s) => s.map((x) => (x.id === tempId ? item : x)))}
               onRemove={(id) => setToday(ex.name, (s) => s.filter((x) => x.id !== id))}
-              onSwapped={(next) => onReplaceExercise(dayIndex, ex.exerciseId, next)}
+              onSwapped={(next) => onReplaceExercise(dayIndex, ex.id, next)}
             />
           </motion.div>
         ))}
@@ -234,24 +238,24 @@ function ExerciseCard({
   history,
   setup,
   level,
-  emphasis,
+  goal,
   dayExerciseIds,
   onAdd,
   onReplace,
   onRemove,
   onSwapped,
 }: {
-  exercise: ProgramExercise;
+  exercise: PlanExercise;
   today: string;
   history: ExerciseHistory;
   setup: TrainingSetupData | null;
-  level: WeeklyProgram["level"];
-  emphasis: WeeklyProgram["emphasis"];
+  level: WorkoutPlan["level"];
+  goal: WorkoutGoal;
   dayExerciseIds: string[];
   onAdd: (item: WorkoutLog) => void;
   onReplace: (tempId: string, item: WorkoutLog) => void;
   onRemove: (id: string) => void;
-  onSwapped: (next: ProgramExercise) => void;
+  onSwapped: (next: PlanExercise) => void;
 }) {
   const [reps, setReps] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -261,7 +265,7 @@ function ExerciseCard({
   const [swapping, setSwapping] = useState(false);
   const [swapError, setSwapError] = useState<string | null>(null);
 
-  const { repMax, repUnit } = parseTarget(exercise.repRange);
+  const { repMax, repUnit } = parseTarget(exercise.reps);
   const unit = repUnit === "seconds" ? "sec" : "reps";
   const advice = suggestProgression(
     history.lastSessionSets.map((s) => ({ reps: s.reps ?? 0 })),
@@ -274,9 +278,6 @@ function ExerciseCard({
       setError(`Enter ${unit}.`);
       return;
     }
-    // Persist with the LIVE local day (not the render-time prop, which goes
-    // stale across midnight). The optimistic row is replaced by the saved row
-    // (with the real date) on success, so its placeholder date is cosmetic.
     const date = localDateString();
     const tempId = crypto.randomUUID();
     const setNumber = history.today.length + 1;
@@ -318,7 +319,7 @@ function ExerciseCard({
     if (!setup) return;
     setSwapping(true);
     setSwapError(null);
-    const res = await swapExercise(setup, exercise.pattern, dayExerciseIds);
+    const res = await swapWorkoutExercise(setup, exercise.pattern, dayExerciseIds);
     setSwapping(false);
     if (res.ok) {
       haptic("success");
@@ -332,9 +333,11 @@ function ExerciseCard({
   return (
     <div className="rounded-card border border-border bg-card p-4 shadow-soft">
       <div className="flex items-start justify-between gap-2">
-        <div>
+        <div className="min-w-0">
           <p className="font-semibold text-foreground">{exercise.name}</p>
-          <p className="mt-0.5 text-xs capitalize text-muted-foreground">{exercise.targetMuscles.join(", ")}</p>
+          <p className="mt-0.5 text-xs capitalize text-muted-foreground">
+            {exercise.primaryMuscle ?? "general"} · {exercise.difficulty} · {exercise.equipment}
+          </p>
         </div>
         <a
           href={formVideoUrl(exercise.name)}
@@ -348,7 +351,7 @@ function ExerciseCard({
 
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-foreground">
         <span className="font-medium">
-          {exercise.sets} × {exercise.repRange}
+          {exercise.sets} × {exercise.reps}
         </span>
         <span className="text-xs text-muted-foreground">{formatRest(exercise.restSeconds)}</span>
         {exercise.isCompound && (
@@ -358,7 +361,8 @@ function ExerciseCard({
         )}
       </div>
 
-      {exercise.note && <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{exercise.note}</p>}
+      {/* Why this exercise (deterministic, from the enrichment layer). */}
+      <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{exercise.whyThisExercise}</p>
 
       <p className={`mt-2 text-xs ${advice.graduate ? "text-primary" : "text-muted-foreground"}`}>{advice.message}</p>
 
@@ -394,13 +398,26 @@ function ExerciseCard({
                 No step-by-step text for this one — tap ▶ Form for a video, or ask the coach.
               </p>
             )}
+
+            <div className="mt-3 space-y-1.5">
+              <Guidance label="Make it easier" text={exercise.regression} />
+              <Guidance label="Make it harder" text={exercise.progression} />
+              <Guidance
+                label="Safe performance"
+                text={
+                  exercise.cautionTags.length
+                    ? `Move under control and stop if it hurts. Be mindful of your ${exercise.cautionTags.join(", ")}.`
+                    : "Move under control through a full range and stop if anything hurts."
+                }
+              />
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
 
       {/* AI coach in an iOS-style bottom sheet. */}
       <Sheet open={askOpen} onClose={() => setAskOpen(false)} title={`Ask about ${exercise.name}`}>
-        <AskCoach exercise={exercise} level={level} emphasis={emphasis} />
+        <AskCoach exercise={exercise} level={level} goal={goal} />
       </Sheet>
 
       {/* Today's sets */}
@@ -418,11 +435,7 @@ function ExerciseCard({
                 className="flex items-center gap-1 rounded-pill bg-muted px-2 py-1 text-xs text-foreground"
               >
                 Set {i + 1}: {s.reps} {unit}
-                <button
-                  onClick={() => removeSet(s.id)}
-                  className="text-destructive active:scale-90"
-                  aria-label="Delete set"
-                >
+                <button onClick={() => removeSet(s.id)} className="text-destructive active:scale-90" aria-label="Delete set">
                   ×
                 </button>
               </motion.span>
@@ -454,24 +467,32 @@ function ExerciseCard({
   );
 }
 
-function AskCoach({
-  exercise,
-  level,
-  emphasis,
-}: {
-  exercise: ProgramExercise;
-  level: WeeklyProgram["level"];
-  emphasis: WeeklyProgram["emphasis"];
-}) {
+function Guidance({ label, text }: { label: string; text: string }) {
+  return (
+    <p className="text-xs leading-relaxed text-muted-foreground">
+      <span className="font-medium text-foreground">{label}: </span>
+      {text}
+    </p>
+  );
+}
+
+function AskCoach({ exercise, level, goal }: { exercise: PlanExercise; level: WorkoutPlan["level"]; goal: WorkoutGoal }) {
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState<string | null>(null);
 
-  // The coach call goes through useAsyncAction: a 25s timeout (so it can't spin
-  // forever), a duplicate-click guard, and unmount-safety. We throw on a
-  // business error so the hook surfaces it as `error`.
   const { run, pending, error } = useAsyncAction(
     async (q: string) => {
-      const res = await askAboutExercise({ exercise, level, emphasis, question: q });
+      const res = await askAboutExercise({
+        name: exercise.name,
+        muscles: exercise.primaryMuscle ? [exercise.primaryMuscle] : [],
+        sets: exercise.sets,
+        reps: exercise.reps,
+        restSeconds: exercise.restSeconds,
+        instructions: exercise.instructions,
+        level,
+        goalLabel: GOAL_LABEL[goal],
+        question: q,
+      });
       if (!res.ok) throw new Error(res.error);
       return res.answer;
     },
@@ -502,9 +523,7 @@ function AskCoach({
       </div>
       {error && <p className="text-xs text-muted-foreground">{error}</p>}
       {answer && (
-        <p className="whitespace-pre-wrap rounded-field bg-muted px-3 py-2 text-xs leading-relaxed text-foreground">
-          {answer}
-        </p>
+        <p className="whitespace-pre-wrap rounded-field bg-muted px-3 py-2 text-xs leading-relaxed text-foreground">{answer}</p>
       )}
       <p className="text-[10px] text-muted-foreground">
         AI guidance — general info, not medical advice. Stop if anything hurts.

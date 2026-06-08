@@ -1,6 +1,8 @@
 import type { MuscleGroup } from "./exerciseDb.ts";
 import type { CautionTag, MovementPattern, NormalizedExercise } from "./enrich.ts";
 
+export type { MovementPattern } from "./enrich.ts";
+
 /**
  * Workout rebuild — Phases 2 + 3: deterministic templates + the plan generator.
  *
@@ -472,26 +474,7 @@ export function buildWorkoutPlan(input: WorkoutInput, enriched: NormalizedExerci
       if (!chosen) continue; // skip a slot we can't fill safely (e.g. no-bar pulls)
       usedDay.add(chosen.id);
       usedWeek.add(chosen.id);
-      const sc = schemeFor(input.goal, input.level, slot.role, chosen);
-      const compound = isCompoundPattern(chosen.movementPattern);
-      built.push({
-        id: chosen.id,
-        name: chosen.name,
-        pattern: chosen.movementPattern,
-        primaryMuscle: chosen.primaryMuscle,
-        isCompound: compound,
-        difficulty: chosen.normalizedDifficulty,
-        equipment: chosen.normalizedEquipment,
-        sets: sc.sets,
-        reps: sc.reps,
-        restSeconds: sc.rest,
-        whyThisExercise: chosen.whyThisExercise,
-        instructions: chosen.instructions,
-        regression: chosen.regression,
-        progression: chosen.progression,
-        highImpact: chosen.highImpact,
-        cautionTags: chosen.cautionTags,
-      });
+      built.push(makePlanExercise(chosen, slot.role, input.goal, input.level));
     }
 
     // Compounds first, then everything else (stable within group).
@@ -528,4 +511,54 @@ export function buildWorkoutPlan(input: WorkoutInput, enriched: NormalizedExerci
 
 function cap(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function makePlanExercise(e: NormalizedExercise, role: Role, goal: WorkoutGoal, level: Level): PlanExercise {
+  const sc = schemeFor(goal, level, role, e);
+  return {
+    id: e.id,
+    name: e.name,
+    pattern: e.movementPattern,
+    primaryMuscle: e.primaryMuscle,
+    isCompound: isCompoundPattern(e.movementPattern),
+    difficulty: e.normalizedDifficulty,
+    equipment: e.normalizedEquipment,
+    sets: sc.sets,
+    reps: sc.reps,
+    restSeconds: sc.rest,
+    whyThisExercise: e.whyThisExercise,
+    instructions: e.instructions,
+    regression: e.regression,
+    progression: e.progression,
+    highImpact: e.highImpact,
+    cautionTags: e.cautionTags,
+  };
+}
+
+function roleForPattern(p: MovementPattern): Role {
+  if (p === "core") return "core";
+  if (p === "cardio") return "cardio";
+  return isCompoundPattern(p) ? "compound" : "accessory";
+}
+
+/**
+ * Deterministic, context-safe swap: another eligible exercise of the SAME
+ * movement pattern the user can actually do (never a pull-up without a bar, never
+ * a gym machine at home, never above their level). Returns null if none fits.
+ */
+export function swapPlanExercise(
+  input: WorkoutInput,
+  pattern: MovementPattern,
+  excludeIds: string[],
+  enriched: NormalizedExercise[]
+): PlanExercise | null {
+  const flags = injuryFlags(input.injuriesNote);
+  const conservative = isConservative(input, flags);
+  const ctx = equipCtx(input);
+  const exclude = new Set(excludeIds);
+  const pool = enriched
+    .filter((e) => e.movementPattern === pattern && !exclude.has(e.id) && eligible(e, ctx, input, flags, conservative))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  if (!pool.length) return null;
+  return makePlanExercise(pool[0], roleForPattern(pattern), input.goal, input.level);
 }

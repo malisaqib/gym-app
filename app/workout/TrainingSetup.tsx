@@ -21,6 +21,7 @@ import {
   type TrainingLocation,
   type TrainingSetup as TrainingSetupData,
 } from "@/lib/workouts/trainingSetup";
+import type { FocusArea, WorkoutGoal } from "@/lib/workouts/coachPlan";
 import { loadTrainingSetup, saveTrainingSetup } from "./setupActions";
 
 /**
@@ -47,11 +48,31 @@ const LEVELS: { value: ExperienceLevel; label: string }[] = [
 
 const DAY_CHOICES = Array.from({ length: MAX_DAYS - MIN_DAYS + 1 }, (_, i) => MIN_DAYS + i);
 
+const GOAL_OPTIONS: { value: WorkoutGoal; label: string }[] = [
+  { value: "lose_belly_fat", label: "Lose belly fat" },
+  { value: "lose_weight", label: "Lose weight" },
+  { value: "gain_muscle", label: "Gain muscle" },
+  { value: "gain_weight", label: "Gain weight" },
+  { value: "build_strength", label: "Build strength" },
+  { value: "tone", label: "Tone / look better" },
+  { value: "stay_fit", label: "Stay fit" },
+];
+
+const FOCUS_OPTIONS: { value: FocusArea; label: string }[] = [
+  { value: "full_body", label: "Full body" },
+  { value: "lower_body", label: "Lower body" },
+  { value: "glutes", label: "Glutes" },
+  { value: "upper_body", label: "Upper body" },
+];
+
 export default function TrainingSetup({
   profileDefaults,
+  resolvedGoal,
   onSetupChange,
 }: {
   profileDefaults: ProfileTrainingDefaults;
+  // The workout goal derived from the user's profile — the picker default.
+  resolvedGoal: WorkoutGoal;
   // Emitted on mount (if already configured) and after each save, so the parent
   // can (re)build the deterministic program. null = not configured yet.
   onSetupChange?: (setup: TrainingSetupData | null) => void;
@@ -240,6 +261,15 @@ export default function TrainingSetup({
         </div>
       </Field>
 
+      <Field label="Your goal for this plan">
+        <ChipRow options={GOAL_OPTIONS} selected={draft.goal ?? resolvedGoal} onSelect={(v) => patch({ goal: v })} />
+      </Field>
+
+      <Field label="Focus area (optional)">
+        <ChipRow options={FOCUS_OPTIONS} selected={draft.focusArea} onSelect={(v) => patch({ focusArea: v })} />
+        <p className="mt-1 text-xs text-muted-foreground">Adds a little extra volume to that area. Defaults to full body.</p>
+      </Field>
+
       <Field label="Any injuries or limitations? (optional)">
         <textarea
           value={draft.injuriesNote}
@@ -307,6 +337,8 @@ function SetupSummary({
       </div>
 
       <dl className="grid grid-cols-2 gap-2 text-sm">
+        {setup.goal && <SummaryItem label="Goal" value={GOAL_OPTIONS.find((g) => g.value === setup.goal)?.label ?? setup.goal} />}
+        <SummaryItem label="Focus" value={FOCUS_OPTIONS.find((f) => f.value === setup.focusArea)?.label ?? "Full body"} />
         <SummaryItem label="Equipment" value={equipmentLabels} />
         {setup.injuriesNote && <SummaryItem label="Notes" value={setup.injuriesNote} wide />}
       </dl>

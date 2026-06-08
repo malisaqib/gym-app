@@ -9,17 +9,19 @@ import BottomNav from "@/components/BottomNav";
 import TrainingSetup from "./TrainingSetup";
 import ProgramView from "./ProgramView";
 import type { ProfileTrainingDefaults, TrainingSetup as TrainingSetupData } from "@/lib/workouts/trainingSetup";
-import type { ProgramExercise, WeeklyProgram } from "@/lib/workouts/generator";
+import type { PlanExercise, WorkoutGoal, WorkoutPlan } from "@/lib/workouts/coachPlan";
 
 export default function WorkoutLogger({
   today,
   profileDefaults,
+  resolvedGoal,
 }: {
   today: string;
   profileDefaults: ProfileTrainingDefaults;
+  resolvedGoal: WorkoutGoal;
 }) {
   // The deterministic plan + its logging history, built server-side from setup.
-  const [program, setProgram] = useState<WeeklyProgram | null>(null);
+  const [plan, setPlan] = useState<WorkoutPlan | null>(null);
   const [history, setHistory] = useState<Record<string, ExerciseHistory>>({});
   const [programLoading, setProgramLoading] = useState(false);
   // Keep the current setup so Swap can re-query against the same constraints.
@@ -34,11 +36,11 @@ export default function WorkoutLogger({
   }
 
   // Replace one exercise (after a Swap) in the given day.
-  function replaceExercise(dayIndex: number, oldId: string, next: ProgramExercise) {
-    setProgram((prev) => {
+  function replaceExercise(dayIndex: number, oldId: string, next: PlanExercise) {
+    setPlan((prev) => {
       if (!prev) return prev;
       const days = prev.days.map((d, i) =>
-        i === dayIndex ? { ...d, exercises: d.exercises.map((e) => (e.exerciseId === oldId ? next : e)) } : d
+        i === dayIndex ? { ...d, exercises: d.exercises.map((e) => (e.id === oldId ? next : e)) } : d
       );
       return { ...prev, days };
     });
@@ -48,20 +50,20 @@ export default function WorkoutLogger({
   const handleSetupChange = useCallback(async (next: TrainingSetupData | null) => {
     setSetup(next);
     if (!next) {
-      setProgram(null);
+      setPlan(null);
       return;
     }
     setProgramLoading(true);
     try {
       const res = await buildProgram(next);
       if (res.ok) {
-        setProgram(res.program);
+        setPlan(res.plan);
         setHistory(res.history);
       } else {
-        setProgram(null);
+        setPlan(null);
       }
     } catch {
-      setProgram(null);
+      setPlan(null);
     } finally {
       setProgramLoading(false);
     }
@@ -78,7 +80,7 @@ export default function WorkoutLogger({
         </div>
 
         {/* Training setup — emits to (re)build the deterministic plan below. */}
-        <TrainingSetup profileDefaults={profileDefaults} onSetupChange={handleSetupChange} />
+        <TrainingSetup profileDefaults={profileDefaults} resolvedGoal={resolvedGoal} onSetupChange={handleSetupChange} />
 
         {programLoading && (
           <div className="flex items-center gap-3 rounded-card border border-border bg-card p-4 shadow-soft">
@@ -87,9 +89,9 @@ export default function WorkoutLogger({
           </div>
         )}
 
-        {program && (
+        {plan && (
           <ProgramView
-            program={program}
+            plan={plan}
             today={today}
             history={history}
             setup={setup}

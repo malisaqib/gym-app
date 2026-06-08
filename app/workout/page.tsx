@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getLocalToday } from "@/lib/date";
+import { resolveWorkoutGoal } from "@/lib/workouts/coachPlan";
 import WorkoutLogger from "./WorkoutLogger";
 
 // Protected: must be signed in and onboarded.
@@ -19,7 +20,7 @@ export default async function WorkoutPage() {
   // fetched by the buildProgram action per the generated exercises).
   const { data: profile } = await supabase
     .from("profiles")
-    .select("onboarded, training_location, experience, training_days")
+    .select("onboarded, training_location, experience, training_days, relatable_goal, goal")
     .eq("id", user.id)
     .single();
 
@@ -31,5 +32,9 @@ export default async function WorkoutPage() {
     trainingDays: profile?.training_days ?? null,
   };
 
-  return <WorkoutLogger today={today} profileDefaults={profileDefaults} />;
+  // The workout goal defaults from the user's onboarding goal; they can override
+  // it (and pick a focus area) in the Workout-tab setup.
+  const resolvedGoal = resolveWorkoutGoal(profile?.relatable_goal ?? null, profile?.goal ?? null);
+
+  return <WorkoutLogger today={today} profileDefaults={profileDefaults} resolvedGoal={resolvedGoal} />;
 }
