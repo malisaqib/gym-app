@@ -95,7 +95,11 @@ test("keeps the user's 'don't give up' foods in the plan, even under a high prot
     usual: { keep: "paratha" },
   });
   const ids = plan.meals.flatMap((m) => m.items.map((i) => i.id));
-  assert.ok(ids.includes("paratha"), `kept food was dropped: ${ids.join(",")}`);
+  // "paratha" legitimately matches both plain and aloo paratha — either kept is fine.
+  assert.ok(
+    ids.includes("paratha") || ids.includes("aloo_paratha"),
+    `kept paratha was dropped: ${ids.join(",")}`
+  );
   assert.ok(plan.totalCalories <= 2200, "still within the calorie cap");
 });
 
@@ -267,6 +271,25 @@ test("bestCatalogMatch maps free text to a catalog food, or null", () => {
   const m = bestCatalogMatch("some grilled chicken", openFilter, "dinner");
   assert.ok(m && m.tags.includes("chicken"));
   assert.equal(bestCatalogMatch("zzz unknown alien food", openFilter, "dinner"), null);
+});
+
+test("aliases (incl. Roman Urdu) match free text and search (Phase 4)", () => {
+  assert.equal(bestCatalogMatch("nehari please", openFilter, "dinner")?.id, "nihari");
+  assert.ok(searchCatalog("aam", openFilter, "snack").some((f) => f.id === "mango"));
+  assert.ok(searchCatalog("panir", openFilter, "lunch").some((f) => f.id === "paneer"));
+});
+
+test("vegetarian protein coverage improved — a strict veg plan can now be built", () => {
+  // Veg + avoid egg/dairy/nuts used to collapse to daal/chana (shortfall). With
+  // the Phase 4 additions (rajma/lobia/soya/tofu/chana chaat) it should fill out.
+  const plan = buildPlan({
+    calorieTarget: 2000,
+    proteinTargetG: 110,
+    filter: { vegetarian: true, excludeTags: ["egg", "dairy", "nuts"], excludeFoods: [], regionFocus: null },
+    seed: 5,
+  });
+  assert.equal(plan.caloriesShort, false, "should now fill the day for a strict veg user");
+  assert.ok(plan.totalCalories <= 2000, "still within the calorie cap");
 });
 
 test("mergeFilters unions excludes, ORs vegetarian, last regionFocus wins", () => {

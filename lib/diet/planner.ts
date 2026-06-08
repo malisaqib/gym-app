@@ -154,6 +154,8 @@ function mentioned(food: CatalogFood, text: string): boolean {
   const name = food.name.toLowerCase();
   if (t.includes(name)) return true;
   if (food.tags.some((tag) => tag.length >= 3 && t.includes(tag))) return true;
+  // Aliases incl. Roman Urdu (e.g. "nehari", "aam", "panir").
+  if ((food.aliases ?? []).some((a) => a.length >= 3 && t.includes(a.toLowerCase()))) return true;
   const tokens = name.replace(/[^a-z]+/g, " ").split(" ").filter((w) => w.length >= 4);
   return tokens.some((tok) => t.includes(tok));
 }
@@ -499,7 +501,7 @@ export function searchCatalog(query: string, filter: DietFilter, slot?: MealSlot
   return FOOD_CATALOG.filter((f) => {
     if (!allowed(f, filter)) return false;
     if (slot && !f.slots.includes(slot)) return false;
-    const hay = `${f.name} ${f.tags.join(" ")}`.toLowerCase();
+    const hay = `${f.name} ${f.tags.join(" ")} ${(f.aliases ?? []).join(" ")}`.toLowerCase();
     return tokens.every((tok) => hay.includes(tok));
   }).slice(0, 12);
 }
