@@ -239,18 +239,59 @@ const PROGRESSION: Record<MovementPattern, string> = {
   carry: "Make it harder: heavier load or longer distance.",
   isolation: "Make it harder: add load or slow the tempo.",
 };
-const WHY: Record<MovementPattern, string> = {
-  push: "Builds pressing strength in your chest, shoulders and triceps.",
-  pull: "Strengthens your back and improves posture.",
-  squat: "Builds lower-body strength through your quads and glutes.",
-  hinge: "Strengthens hamstrings, glutes and lower back the safe way.",
-  lunge: "Single-leg strength and balance for everyday movement.",
-  core: "Trains your midsection to brace and protect your spine.",
-  cardio: "Raises your heart rate to support overall fat loss and conditioning.",
-  mobility: "Improves mobility so you move and recover better.",
-  carry: "Builds full-body stability and a strong grip.",
-  isolation: "Targets the muscle directly to build and shape it.",
+// Phase 3: per-exercise "why" is built from the exercise's REAL primary muscle
+// plus its movement — never a pattern-only string. A leg move can never claim it
+// "builds pressing strength in your chest", and a posterior move (Superman) reads
+// as strengthening the lower back, not "improves mobility".
+const MUSCLE_PHRASE: Partial<Record<MuscleGroup, string>> = {
+  chest: "your chest",
+  shoulders: "your shoulders",
+  triceps: "your triceps",
+  biceps: "your biceps",
+  forearms: "your forearms and grip",
+  lats: "your lats and upper back",
+  "middle back": "your mid-back",
+  "lower back": "your lower back",
+  traps: "your traps",
+  neck: "your neck",
+  quadriceps: "your quads",
+  hamstrings: "your hamstrings and glutes",
+  glutes: "your glutes",
+  calves: "your calves",
+  abdominals: "your core",
+  abductors: "your outer hips",
+  adductors: "your inner thighs",
 };
+
+// Posterior muscles that still mean "strength" even when the dataset tags a move
+// as mobility/static (e.g. Superman → lower back).
+const POSTERIOR_STRENGTH = new Set<MuscleGroup>(["lower back", "lats", "middle back", "traps", "hamstrings", "glutes"]);
+
+function whyFor(pattern: MovementPattern, primaryMuscle: MuscleGroup | null): string {
+  if (pattern === "cardio") return "Raises your heart rate to support overall fat loss and conditioning.";
+  if (pattern === "core") return "Trains your core to brace and protect your spine.";
+  const m = (primaryMuscle && MUSCLE_PHRASE[primaryMuscle]) || (primaryMuscle ? `your ${primaryMuscle}` : "the target muscle");
+  switch (pattern) {
+    case "push":
+      return `Builds pressing strength, mainly in ${m}.`;
+    case "pull":
+      return `Builds pulling strength for ${m}.`;
+    case "squat":
+      return `Builds lower-body strength, mainly ${m}.`;
+    case "lunge":
+      return `Single-leg strength and balance, working ${m}.`;
+    case "hinge":
+      return `Strengthens your posterior chain — mainly ${m}.`;
+    case "carry":
+      return `Builds grip and full-body stability while loading ${m}.`;
+    case "isolation":
+      return `Targets ${m} directly to build and shape it.`;
+    case "mobility":
+      return primaryMuscle && POSTERIOR_STRENGTH.has(primaryMuscle) ? `Strengthens ${m}.` : `Improves mobility and control around ${m}.`;
+    default:
+      return `Trains ${m}.`;
+  }
+}
 
 /** Derive the app-level, safety-aware fields for ONE raw exercise. Pure. */
 export function normalizeExercise(raw: Exercise): NormalizedExercise {
@@ -285,10 +326,7 @@ export function normalizeExercise(raw: Exercise): NormalizedExercise {
   const cautionTags = cautionTagsOf(raw, lower);
   const primaryMuscle = raw.primaryMuscles[0] ?? null;
 
-  const whyThisExercise =
-    movementPattern === "isolation" && primaryMuscle
-      ? `Targets your ${primaryMuscle} directly to build and shape it.`
-      : WHY[movementPattern];
+  const whyThisExercise = whyFor(movementPattern, primaryMuscle);
 
   return {
     id: raw.id,
