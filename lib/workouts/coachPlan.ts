@@ -229,18 +229,18 @@ interface TemplateDay {
   slots: Slot[];
 }
 
-const C = (pattern: MovementPattern): Slot => ({ pattern, role: "compound" });
+const C = (pattern: MovementPattern, muscle?: MuscleGroup): Slot => ({ pattern, role: "compound", muscle });
 const A = (pattern: MovementPattern, muscle?: MuscleGroup): Slot => ({ pattern, role: "accessory", muscle });
 const CORE: Slot = { pattern: "core", role: "core" };
 const CARDIO: Slot = { pattern: "cardio", role: "cardio" };
 
 // Fat loss / belly fat: full-body strength + low-impact cardio + core. Never split.
 function fatLossDays(days: number): TemplateDay[] {
-  const FB: TemplateDay = { focus: "Full Body", slots: [C("squat"), C("push"), C("pull"), C("hinge"), CORE] };
-  const FBC: TemplateDay = { focus: "Full Body + Core", slots: [C("squat"), C("push"), C("pull"), C("hinge"), CORE, CORE] };
+  const FB: TemplateDay = { focus: "Full Body", slots: [C("squat", "quadriceps"), C("push", "chest"), C("pull", "lats"), C("hinge", "hamstrings"), CORE] };
+  const FBC: TemplateDay = { focus: "Full Body + Core", slots: [C("squat", "quadriceps"), C("push", "chest"), C("pull", "lats"), C("hinge", "hamstrings"), CORE, CORE] };
   const CC: TemplateDay = { focus: "Low-impact Cardio + Core", slots: [CARDIO, CARDIO, CORE, CORE] };
-  const LG: TemplateDay = { focus: "Lower + Glutes", slots: [C("squat"), C("hinge"), A("lunge", "glutes"), A("hinge", "glutes"), CORE] };
-  const UP: TemplateDay = { focus: "Upper + Posture", slots: [C("push"), C("pull"), A("pull", "middle back"), CORE] };
+  const LG: TemplateDay = { focus: "Lower + Glutes", slots: [C("squat", "quadriceps"), C("hinge", "hamstrings"), A("lunge", "glutes"), A("hinge", "glutes"), CORE] };
+  const UP: TemplateDay = { focus: "Upper + Posture", slots: [C("push", "chest"), C("pull", "lats"), A("pull", "middle back"), CORE] };
   switch (days) {
     case 2:
       return [FBC, FB];
@@ -259,16 +259,16 @@ function fatLossDays(days: number): TemplateDay[] {
 function muscleDays(days: number, level: Level): TemplateDay[] {
   const Upper: TemplateDay = {
     focus: "Upper",
-    slots: [C("push"), C("pull"), A("push", "shoulders"), A("pull", "biceps"), A("isolation", "triceps")],
+    slots: [C("push", "chest"), C("pull", "lats"), A("isolation", "shoulders"), A("isolation", "biceps"), A("isolation", "triceps")],
   };
   const Lower: TemplateDay = {
     focus: "Lower",
-    slots: [C("squat"), C("hinge"), A("lunge", "quadriceps"), A("isolation", "calves"), CORE],
+    slots: [C("squat", "quadriceps"), C("hinge", "hamstrings"), A("lunge", "quadriceps"), A("isolation", "calves"), CORE],
   };
   if (level === "beginner") {
-    const FBA: TemplateDay = { focus: "Full Body A", slots: [C("squat"), C("push"), C("pull"), C("hinge"), CORE] };
-    const FBB: TemplateDay = { focus: "Full Body B", slots: [C("hinge"), C("push"), C("pull"), C("lunge"), CORE] };
-    const FBC2: TemplateDay = { focus: "Full Body C", slots: [C("squat"), C("push"), C("pull"), A("isolation", "biceps"), CORE] };
+    const FBA: TemplateDay = { focus: "Full Body A", slots: [C("squat", "quadriceps"), C("push", "chest"), C("pull", "lats"), C("hinge", "hamstrings"), CORE] };
+    const FBB: TemplateDay = { focus: "Full Body B", slots: [C("hinge", "hamstrings"), C("push", "shoulders"), C("pull", "middle back"), C("lunge", "quadriceps"), CORE] };
+    const FBC2: TemplateDay = { focus: "Full Body C", slots: [C("squat", "quadriceps"), C("push", "chest"), C("pull", "lats"), A("isolation", "biceps"), CORE] };
     switch (days) {
       case 2:
         return [FBA, FBB];
@@ -280,12 +280,12 @@ function muscleDays(days: number, level: Level): TemplateDay[] {
         return [Upper, Lower, FBA, Upper, Lower]; // 5 (6 capped to 5 for beginners)
     }
   }
-  const Push: TemplateDay = { focus: "Push", slots: [C("push"), C("push"), A("push", "shoulders"), A("isolation", "triceps")] };
-  const Pull: TemplateDay = { focus: "Pull", slots: [C("pull"), C("pull"), A("pull", "middle back"), A("isolation", "biceps")] };
-  const Legs: TemplateDay = { focus: "Legs", slots: [C("squat"), C("hinge"), A("lunge", "quadriceps"), A("isolation", "calves"), CORE] };
+  const Push: TemplateDay = { focus: "Push", slots: [C("push", "chest"), C("push", "shoulders"), A("push", "chest"), A("isolation", "shoulders"), A("isolation", "triceps")] };
+  const Pull: TemplateDay = { focus: "Pull", slots: [C("pull", "lats"), C("pull", "middle back"), A("pull", "middle back"), A("isolation", "biceps")] };
+  const Legs: TemplateDay = { focus: "Legs", slots: [C("squat", "quadriceps"), C("hinge", "hamstrings"), A("lunge", "quadriceps"), A("isolation", "calves"), CORE] };
   const ShouldersArms: TemplateDay = {
     focus: "Shoulders + Arms",
-    slots: [C("push"), A("isolation", "shoulders"), A("isolation", "biceps"), A("isolation", "triceps")],
+    slots: [C("push", "shoulders"), A("isolation", "shoulders"), A("isolation", "biceps"), A("isolation", "triceps")],
   };
   switch (days) {
     case 2:
@@ -304,18 +304,18 @@ function muscleDays(days: number, level: Level): TemplateDay[] {
 // Strength: compound-led, fewer accessories (lower reps come from the scheme).
 function strengthDays(days: number, level: Level): TemplateDay[] {
   if (level === "beginner") return muscleDays(days, "beginner");
-  const Squat: TemplateDay = { focus: "Squat focus", slots: [C("squat"), C("push"), C("pull"), CORE] };
-  const Hinge: TemplateDay = { focus: "Hinge focus", slots: [C("hinge"), C("push"), C("pull"), CORE] };
-  const Press: TemplateDay = { focus: "Press focus", slots: [C("push"), C("squat"), C("pull"), A("isolation", "triceps")] };
+  const Squat: TemplateDay = { focus: "Squat focus", slots: [C("squat", "quadriceps"), C("push", "chest"), C("pull", "lats"), CORE] };
+  const Hinge: TemplateDay = { focus: "Hinge focus", slots: [C("hinge", "hamstrings"), C("push", "shoulders"), C("pull", "middle back"), CORE] };
+  const Press: TemplateDay = { focus: "Press focus", slots: [C("push", "shoulders"), C("squat", "quadriceps"), C("pull", "lats"), A("isolation", "triceps")] };
   switch (days) {
     case 2:
       return [Squat, Hinge];
     case 3:
       return [Squat, Press, Hinge];
     case 4:
-      return [Squat, Press, Hinge, { focus: "Pull focus", slots: [C("pull"), C("hinge"), A("pull", "middle back"), A("isolation", "biceps")] }];
+      return [Squat, Press, Hinge, { focus: "Pull focus", slots: [C("pull", "lats"), C("hinge", "hamstrings"), A("pull", "middle back"), A("isolation", "biceps")] }];
     case 5:
-      return [Squat, Press, Hinge, { focus: "Pull focus", slots: [C("pull"), C("hinge"), A("pull", "middle back"), CORE] }, Squat];
+      return [Squat, Press, Hinge, { focus: "Pull focus", slots: [C("pull", "lats"), C("hinge", "hamstrings"), A("pull", "middle back"), CORE] }, Squat];
     default:
       return [Squat, Press, Hinge, Squat, Press, Hinge];
   }
@@ -323,7 +323,7 @@ function strengthDays(days: number, level: Level): TemplateDay[] {
 
 // General / tone: balanced full-body (beginner) or upper/lower, moderate reps.
 function generalDays(days: number, level: Level): TemplateDay[] {
-  const FB: TemplateDay = { focus: "Full Body", slots: [C("squat"), C("push"), C("pull"), C("hinge"), CORE] };
+  const FB: TemplateDay = { focus: "Full Body", slots: [C("squat", "quadriceps"), C("push", "chest"), C("pull", "lats"), C("hinge", "hamstrings"), CORE] };
   if (level === "beginner" || days <= 3) {
     return Array.from({ length: days }, (_, i) => ({ ...FB, focus: days > 1 ? `Full Body ${String.fromCharCode(65 + i)}` : "Full Body" }));
   }
@@ -391,22 +391,69 @@ const PROGRESSION: Record<Level, string> = {
 
 // --- selection --------------------------------------------------------------
 
+// --- selection ranking (Phase 2 — the real fix) ----------------------------
+// Candidates are ranked by an ORDERED key; name.localeCompare is ONLY the final
+// tiebreak. Alphabetical order is no longer primary (that was the core bug that
+// surfaced "Alternate Leg Diagonal Bound" etc.). The key, most-significant first:
+//   1) muscle fit     — the slot's target muscle (primary > secondary > none). MUST
+//                       lead, else a Tier-1 chest move would fill a shoulder slot.
+//   2) tier          — within the right muscle: fundamentals (1) before accessories (2)
+//   3) equipment fit  — loaded barbell/dumbbell > machine/cable > bodyweight > bands
+//   4) level fit      — never above the user's level (soft nudge; hard caps live in eligible)
+//   5) compound-first — a real compound before an isolation in a compound slot
+// Equipment + level HARD filtering already happened in eligible(); this only orders.
+// Tier 3 is excluded from the pool, so it never reaches here.
+
+function equipFit(e: NormalizedExercise): number {
+  switch (e.normalizedEquipment) {
+    case "barbell":
+    case "dumbbell":
+      return 0;
+    case "machine":
+    case "cable":
+      return 1;
+    case "kettlebell":
+    case "bodyweight":
+      return 2;
+    case "bands":
+      return 3;
+    default:
+      return 2;
+  }
+}
+
+function muscleFit(e: NormalizedExercise, muscle?: MuscleGroup): number {
+  if (!muscle) return 0;
+  if (e.primaryMuscle === muscle) return 0;
+  if (e.secondaryMuscles.includes(muscle)) return 1;
+  return 2;
+}
+
+function rankKey(e: NormalizedExercise, slot: Slot, level: Level): number[] {
+  return [
+    muscleFit(e, slot.muscle),
+    e.tier,
+    equipFit(e),
+    Math.max(0, DIFF_RANK[e.normalizedDifficulty] - DIFF_RANK[level]),
+    slot.role === "compound" && !isCompoundPattern(e.movementPattern) ? 1 : 0,
+  ];
+}
+
+function compareKeys(a: number[], b: number[]): number {
+  for (let i = 0; i < a.length; i += 1) if (a[i] !== b[i]) return a[i] - b[i];
+  return 0;
+}
+
 function pickForSlot(
   slot: Slot,
   pool: NormalizedExercise[],
   usedWeek: Set<string>,
-  usedDay: Set<string>
+  usedDay: Set<string>,
+  level: Level
 ): NormalizedExercise | null {
-  let cands = pool.filter((e) => e.movementPattern === slot.pattern);
-  if (slot.muscle) {
-    const byMuscle = cands.filter((e) => e.primaryMuscle === slot.muscle);
-    if (byMuscle.length) cands = byMuscle; // don't empty the pool if the muscle is unavailable
-  }
-  if (slot.role === "compound") {
-    const comp = cands.filter((e) => isCompoundPattern(e.movementPattern));
-    if (comp.length) cands = comp;
-  }
-  cands = [...cands].sort((a, b) => a.name.localeCompare(b.name));
+  const cands = pool
+    .filter((e) => e.movementPattern === slot.pattern)
+    .sort((a, b) => compareKeys(rankKey(a, slot, level), rankKey(b, slot, level)) || a.name.localeCompare(b.name));
   const notDay = cands.filter((e) => !usedDay.has(e.id));
   return notDay.find((e) => !usedWeek.has(e.id)) ?? notDay[0] ?? null;
 }
@@ -451,7 +498,9 @@ export function buildWorkoutPlan(input: WorkoutInput, enriched: NormalizedExerci
   const template = applyFocusBias(rawTemplate, focusArea);
 
   const ctx = equipCtx(input);
-  const pool = enriched.filter((e) => eligible(e, ctx, input, flags, conservative));
+  // Tier 3 (novelty/obscure) is EXCLUDED from the default plan — it is only ever
+  // reachable through an explicit "Different" swap.
+  const pool = enriched.filter((e) => e.tier !== 3 && eligible(e, ctx, input, flags, conservative));
 
   const usedWeek = new Set<string>();
   const schedule = weekSchedule(days);
@@ -470,7 +519,7 @@ export function buildWorkoutPlan(input: WorkoutInput, enriched: NormalizedExerci
     const usedDay = new Set<string>();
     const built: PlanExercise[] = [];
     for (const slot of tday.slots) {
-      const chosen = pickForSlot(slot, pool, usedWeek, usedDay);
+      const chosen = pickForSlot(slot, pool, usedWeek, usedDay, input.level);
       if (!chosen) continue; // skip a slot we can't fill safely (e.g. no-bar pulls)
       usedDay.add(chosen.id);
       usedWeek.add(chosen.id);
