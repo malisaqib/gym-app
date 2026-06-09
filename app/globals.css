@@ -59,6 +59,46 @@
   --destructive-foreground: 28 12 10;
 }
 
+/*
+  Apple-Fitness-inspired DEEP-BLACK theme. It OVERRIDES the existing token names
+  with deep-black + vivid values, so existing components (Button, Card…) adopt
+  the new look automatically once a screen opts in. Scoped to `.fitness` during
+  the phased rollout; applied globally once every screen is migrated.
+  Accents are OURS — emerald + amber (+ a cool sky for a 3rd ring) — not Apple's.
+*/
+.fitness {
+  --background: 0 0 0; /* true black (OLED) */
+  --foreground: 250 250 252; /* bright near-white — metric numbers */
+  --card: 24 24 27; /* floating surface on black */
+  --card-foreground: 250 250 252;
+  --muted: 32 32 36; /* subtle fills / inputs */
+  --muted-foreground: 143 143 152; /* muted grey — small labels */
+  --border: 39 39 44; /* hairline */
+  --input: 39 39 44;
+  --ring: 45 226 142; /* focus = primary emerald */
+
+  --primary: 45 226 142; /* vivid emerald */
+  --primary-foreground: 0 0 0;
+  --primary-soft: 16 40 29; /* deep emerald tint */
+
+  --accent: 251 176 59; /* saturated amber (our marigold) */
+  --accent-foreground: 24 16 0;
+
+  --success: 45 226 142;
+  --success-foreground: 0 0 0;
+  --warning: 251 176 59;
+  --warning-foreground: 24 16 0;
+  --destructive: 255 99 99; /* coral */
+  --destructive-foreground: 0 0 0;
+
+  /* Signature activity-ring palette (ours): emerald / amber / sky. */
+  --ring-1: 45 226 142;
+  --ring-2: 251 176 59;
+  --ring-3: 90 200 255;
+
+  color-scheme: dark;
+}
+
 @layer base {
   /* Make the bare `border` utility use our token by default. */
   * {
@@ -171,5 +211,15 @@
      or Card — gentle, GPU-only, with the same iOS easing. */
   .pressable {
     @apply touch-manipulation select-none transition duration-200 ease-ios active:scale-[0.98];
+  }
+
+  /* Typography rhythm for the Apple-Fitness look: a very large, bold, tabular
+     metric number paired with a small, muted, uppercase-tracked label. */
+  .stat-value {
+    @apply font-display font-extrabold tracking-tight;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-label {
+    @apply text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground;
   }
 }

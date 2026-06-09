@@ -1,12 +1,18 @@
 import type { Metadata, Viewport } from "next";
+import { Inter } from "next/font/google";
 import "./globals.css";
 import ServiceWorkerRegister from "./ServiceWorkerRegister";
 import TimezoneCookie from "@/components/TimezoneCookie";
 import { ToastViewport } from "@/components/ui/Toast";
 
-// Typography: we deliberately use the native system font (San Francisco on
-// iOS/macOS) via the stack in tailwind.config. No web-font download — it loads
-// instantly and gives the app a true, native iPhone-app look and feel.
+// Typography: Inter (self-hosted via next/font) is the app-wide typeface — the
+// closest open match to San Francisco for the Apple-Fitness feel. Exposed as the
+// --font-inter CSS variable, which the Tailwind `sans`/`display` stacks consume.
+const inter = Inter({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-inter",
+});
 
 export const metadata: Metadata = {
   title: "FitCoach",
@@ -37,7 +43,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" className={inter.variable}>
       <body className="min-h-screen font-sans antialiased">
         {/* Follow the OS light/dark setting (and react to live changes). Runs
             during parse so the theme is set before content paints. */}

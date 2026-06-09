@@ -3,20 +3,21 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import type { FoodLog, Lang, ReportContext, ReportType } from "@/lib/database.types";
-import { listContainer, listItem } from "@/lib/motion";
+import { listContainer, listItem, fadeUp } from "@/lib/motion";
 import { sumMacros } from "@/lib/food/totals";
 import { itemMacros } from "@/lib/food/quantity";
 import { localDateString } from "@/lib/localDate";
 import { logFood, getFoodLogs, setFoodItemAmount, correctFoodItem, deleteFoodItem } from "./actions";
 import QuantityControl, { type QtySpec } from "@/components/QuantityControl";
-import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
 import { Input } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
 import { Alert } from "@/components/ui/Alert";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { ProgressRing } from "@/components/ui/ProgressRing";
+import { ActivityRing } from "@/components/ui/ActivityRing";
+import { Counter } from "@/components/ui/Counter";
+import { WeekStrip } from "@/components/ui/WeekStrip";
 import ReportFoodSheet from "@/components/ReportFoodSheet";
 
 // A food report being composed (drives the shared report sheet). Kept after
@@ -77,6 +78,8 @@ export default function FoodLogger({
 
   // Totals are computed on the fly (base × amount) — never a frozen number.
   const eaten = sumMacros(items.map(itemMacros));
+  const calLeft = Math.round(calorieTarget - eaten.calories);
+  const calOver = calorieTarget > 0 && eaten.calories > calorieTarget;
 
   // Re-read the day's items when the tab regains focus, and re-align if the
   // CLIENT's local day differs from the server-rendered day (first-visit UTC
@@ -208,24 +211,56 @@ export default function FoodLogger({
   const count = items.length + pending.length;
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* Progress vs target — the calm hero of the screen */}
-      <Card className="p-5">
-        <div className="grid grid-cols-2 gap-2">
-          <ProgressRing label="Calories" value={eaten.calories} max={calorieTarget} unit="kcal" tone="primary" />
-          <ProgressRing label="Protein" value={eaten.protein_g} max={proteinTarget} unit="g" tone="accent" />
+    <motion.div variants={listContainer} initial="hidden" animate="show" className="flex flex-col gap-7">
+      {/* Current-week date strip (visual only). */}
+      <motion.div variants={fadeUp}>
+        <WeekStrip />
+      </motion.div>
+
+      {/* Hero: concentric activity rings (calories + protein) with the big metric. */}
+      <motion.section variants={fadeUp} className="flex flex-col items-center gap-6">
+        <div className="relative grid place-items-center" style={{ width: 248, height: 248 }}>
+          <ActivityRing
+            value={eaten.calories}
+            max={calorieTarget}
+            color={calOver ? "rgb(var(--destructive))" : "rgb(var(--ring-1))"}
+            size={248}
+            stroke={24}
+            className="absolute"
+          />
+          <ActivityRing
+            value={eaten.protein_g}
+            max={proteinTarget}
+            color="rgb(var(--ring-2))"
+            size={186}
+            stroke={24}
+            delay={0.08}
+            className="absolute"
+          />
+          <div className="absolute inset-0 grid place-items-center">
+            <div className="flex flex-col items-center">
+              <Counter value={eaten.calories} className="stat-value text-[3.25rem] leading-none text-foreground" />
+              <span className="stat-label mt-1.5">of {calorieTarget} kcal</span>
+              <span className={`mt-2 text-xs font-semibold ${calOver ? "text-destructive" : "text-primary"}`}>
+                {calOver ? `${Math.abs(calLeft)} over` : `${calLeft} left`}
+              </span>
+            </div>
+          </div>
         </div>
-      </Card>
+
+        {/* Macro tiles — big number / small label rhythm. */}
+        <div className="grid w-full grid-cols-3 gap-3">
+          <MacroTile label="Protein" value={eaten.protein_g} target={proteinTarget} unit="g" tone="accent" />
+          <MacroTile label="Carbs" value={eaten.carbs_g} unit="g" />
+          <MacroTile label="Fat" value={eaten.fat_g} unit="g" />
+        </div>
+      </motion.section>
 
       {/* Log food by text */}
-      <form onSubmit={handleLog} className="flex flex-col gap-2">
-        <label className="text-sm font-medium text-foreground">What did you eat?</label>
+      <motion.form variants={fadeUp} onSubmit={handleLog} className="flex flex-col gap-2">
+        <label className="stat-label">What did you eat?</label>
         <div className="flex gap-2">
-          <Input
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="do roti, ek pyali daal"
-          />
+          <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="do roti, ek pyali daal" />
           <Button type="submit" disabled={!text.trim()}>
             Log
           </Button>
@@ -236,35 +271,25 @@ export default function FoodLogger({
           <button
             type="button"
             onClick={() =>
-              openReport({
-                reportType: "missing",
-                context: "home_log",
-                text: unrecognized,
-                matchedFoodId: null,
-              })
+              openReport({ reportType: "missing", context: "home_log", text: unrecognized, matchedFoodId: null })
             }
             className="self-start text-sm font-medium text-primary underline-offset-2 hover:underline active:scale-[0.99]"
           >
             {rt("cantFind")}
           </button>
         )}
-      </form>
+      </motion.form>
 
       {/* Today's items */}
-      <section className="flex flex-col gap-3">
-        <h2 className="font-display text-lg font-semibold text-foreground">
+      <motion.section variants={fadeUp} className="flex flex-col gap-3">
+        <h2 className="font-display text-lg font-bold tracking-tight text-foreground">
           Today{count > 0 ? ` · ${count}` : ""}
         </h2>
 
         {count === 0 ? (
           <EmptyState icon="🍽️" title="Nothing logged yet" hint="Type a meal above to get started." />
         ) : (
-          <motion.div
-            variants={listContainer}
-            initial="hidden"
-            animate="show"
-            className="flex flex-col gap-2"
-          >
+          <motion.div variants={listContainer} initial="hidden" animate="show" className="flex flex-col gap-2.5">
             <AnimatePresence initial={false} mode="popLayout">
               {items.map((item) => (
                 <motion.div key={item.id} variants={listItem} exit="exit" layout>
@@ -275,12 +300,7 @@ export default function FoodLogger({
                     onCorrect={correctItem}
                     onDelete={removeItem}
                     onReport={(it) =>
-                      openReport({
-                        reportType: "incorrect",
-                        context: "home_log",
-                        text: it.food_name,
-                        matchedFoodId: null,
-                      })
+                      openReport({ reportType: "incorrect", context: "home_log", text: it.food_name, matchedFoodId: null })
                     }
                   />
                 </motion.div>
@@ -293,7 +313,7 @@ export default function FoodLogger({
             </AnimatePresence>
           </motion.div>
         )}
-      </section>
+      </motion.section>
 
       {/* Shared report sheet (missing from the log form, incorrect from a row). */}
       <ReportFoodSheet
@@ -305,6 +325,32 @@ export default function FoodLogger({
         matchedFoodId={reportTarget?.matchedFoodId ?? null}
         lang={lang}
       />
+    </motion.div>
+  );
+}
+
+// A daily macro readout: big tabular number + tiny muted label (Apple rhythm).
+function MacroTile({
+  label,
+  value,
+  target,
+  unit,
+  tone,
+}: {
+  label: string;
+  value: number;
+  target?: number;
+  unit: string;
+  tone?: "accent";
+}) {
+  return (
+    <div className="rounded-card-lg border border-border bg-card px-3 py-3.5 text-center">
+      <div className="flex items-baseline justify-center gap-0.5">
+        <Counter value={value} className={`stat-value text-2xl ${tone === "accent" ? "text-accent" : "text-foreground"}`} />
+        <span className="text-xs font-medium text-muted-foreground">{unit}</span>
+      </div>
+      <p className="stat-label mt-1.5">{label}</p>
+      {target ? <p className="mt-0.5 text-[10px] text-muted-foreground">of {Math.round(target)}{unit}</p> : null}
     </div>
   );
 }
@@ -312,13 +358,13 @@ export default function FoodLogger({
 // A meal still being parsed — instant feedback while the LLM works.
 function PendingRow({ text }: { text: string }) {
   return (
-    <Card className="flex items-center gap-3 p-3 opacity-70">
+    <div className="flex items-center gap-3 rounded-card-lg border border-border bg-card p-4 opacity-70">
       <Spinner size="sm" className="text-primary" label="Reading your meal" />
       <div className="min-w-0">
         <p className="truncate text-sm font-medium text-foreground">{text}</p>
         <p className="text-xs text-muted-foreground">Reading…</p>
       </div>
-    </Card>
+    </div>
   );
 }
 
@@ -369,15 +415,16 @@ function FoodItemRow({
   };
 
   return (
-    <Card className="p-3">
+    <div className="rounded-card-lg border border-border bg-card p-4">
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-foreground">
+          <p className="truncate text-sm font-semibold text-foreground">
             {item.food_name}
-            <span className="text-muted-foreground"> · {qtyLabel}</span>
+            <span className="font-normal text-muted-foreground"> · {qtyLabel}</span>
           </p>
-          <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-            {m.calories} kcal · {m.protein_g}g protein
+          <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="font-semibold text-foreground tabular-nums">{m.calories}</span> kcal ·{" "}
+            <span className="font-semibold text-accent tabular-nums">{m.protein_g}g</span> protein
             {item.source === "corrected" && <Badge tone="primary">edited</Badge>}
           </p>
         </div>
@@ -426,6 +473,6 @@ function FoodItemRow({
           </div>
         </>
       )}
-    </Card>
+    </div>
   );
 }

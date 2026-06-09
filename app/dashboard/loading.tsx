@@ -1,47 +1,49 @@
 import { Screen } from "@/components/ui/Screen";
-import { Card } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
 import BottomNav from "@/components/BottomNav";
 
-// Shown instantly while the dashboard server-renders. Mirrors the real layout.
+// Shown instantly while the dashboard server-renders. Mirrors the new layout
+// (deep-black theme, ring hero + macro tiles).
 export default function DashboardLoading() {
   return (
-    <>
+    <div className="fitness min-h-screen bg-background">
       <Screen>
         <div className="flex items-start justify-between">
           <div className="space-y-2">
-            <Skeleton className="h-7 w-28" />
+            <Skeleton className="h-8 w-28" />
             <Skeleton className="h-4 w-40" />
           </div>
           <Skeleton className="h-9 w-20 rounded-field" />
         </div>
 
-        <Card className="p-5">
-          <div className="grid grid-cols-2 gap-2">
-            <div className="flex flex-col items-center gap-2">
-              <Skeleton className="h-4 w-16" />
-              <Skeleton className="h-32 w-32 rounded-full" />
-              <Skeleton className="h-4 w-20" />
-            </div>
-            <div className="flex flex-col items-center gap-2">
-              <Skeleton className="h-4 w-16" />
-              <Skeleton className="h-32 w-32 rounded-full" />
-              <Skeleton className="h-4 w-20" />
-            </div>
+        {/* Week strip */}
+        <div className="flex justify-between gap-1.5">
+          {Array.from({ length: 7 }).map((_, i) => (
+            <Skeleton key={i} className="h-14 flex-1 rounded-card-lg" />
+          ))}
+        </div>
+
+        {/* Ring hero */}
+        <div className="flex flex-col items-center gap-6">
+          <Skeleton className="h-[248px] w-[248px] rounded-full" />
+          <div className="grid w-full grid-cols-3 gap-3">
+            <Skeleton className="h-20 rounded-card-lg" />
+            <Skeleton className="h-20 rounded-card-lg" />
+            <Skeleton className="h-20 rounded-card-lg" />
           </div>
-        </Card>
+        </div>
 
         <div className="space-y-2">
-          <Skeleton className="h-5 w-24" />
+          <Skeleton className="h-4 w-32" />
           <Skeleton className="h-11 w-full rounded-field" />
         </div>
 
-        <div className="space-y-2">
-          <Skeleton className="h-16 w-full rounded-card" />
-          <Skeleton className="h-16 w-full rounded-card" />
+        <div className="space-y-2.5">
+          <Skeleton className="h-16 w-full rounded-card-lg" />
+          <Skeleton className="h-16 w-full rounded-card-lg" />
         </div>
       </Screen>
       <BottomNav />
-    </>
+    </div>
   );
 }

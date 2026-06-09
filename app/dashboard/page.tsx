@@ -51,7 +51,10 @@ export default async function DashboardPage() {
     RELATABLE_GOALS.find((g) => g.key === profile.relatable_goal)?.label[lang] ?? null;
 
   return (
-    <>
+    // Phase 1: the dashboard adopts the Apple-Fitness deep-black theme. Scoped to
+    // this screen for now (other tabs migrate in later phases); `bg-background`
+    // paints the true-black canvas behind the content.
+    <div className="fitness min-h-screen bg-background">
       <Screen>
         <LargeTitle
           title="Today"
@@ -88,6 +91,6 @@ export default async function DashboardPage() {
       <LocalDataGuard userId={user.id} />
       {/* One-time, skippable walkthrough of the tabs (first visit only). */}
       <IntroTour lang={lang} />
-    </>
+    </div>
   );
 }

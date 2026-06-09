@@ -22,6 +22,15 @@ export const springSoft: Transition = {
   damping: 30,
 };
 
+// Gentle, slow fill for the activity rings — eases around the circle and settles
+// softly (no snap, a touch of life). Used by ActivityRing / count-ups.
+export const springGentle: Transition = {
+  type: "spring",
+  stiffness: 70,
+  damping: 18,
+  mass: 1,
+};
+
 // Fade + small rise — the house entrance.
 export const fadeUp: Variants = {
   hidden: { opacity: 0, y: 8 },

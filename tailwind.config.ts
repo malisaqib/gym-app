@@ -38,12 +38,12 @@ const config: Config = {
         "destructive-foreground": color("destructive-foreground"),
       },
       fontFamily: {
-        // Native system font — renders San Francisco on iOS/macOS (the true
-        // iPhone-app feel), Segoe UI on Windows, Roboto on Android. Zero download.
+        // Inter (via next/font, --font-inter) — the closest open match to San
+        // Francisco for the Apple-Fitness feel; system stack as the fallback.
         sans: [
+          "var(--font-inter)",
           "-apple-system",
           "BlinkMacSystemFont",
-          '"SF Pro Text"',
           '"Segoe UI"',
           "system-ui",
           "Roboto",
@@ -53,11 +53,11 @@ const config: Config = {
           '"Apple Color Emoji"',
           '"Segoe UI Emoji"',
         ],
-        // Larger headings use SF Pro Display on Apple devices automatically.
+        // Display = same family, used where we want big bold optical weight.
         display: [
+          "var(--font-inter)",
           "-apple-system",
           "BlinkMacSystemFont",
-          '"SF Pro Display"',
           '"Segoe UI"',
           "system-ui",
           "Roboto",
@@ -68,7 +68,9 @@ const config: Config = {
       },
       borderRadius: {
         field: "0.875rem", // 14px — inputs & buttons
-        card: "1.125rem", // 18px — cards
+        card: "1.125rem", // 18px — cards (legacy/light)
+        "card-lg": "1.5rem", // 24px — Apple-Fitness cards
+        "card-xl": "2rem", // 32px — hero panels
         pill: "9999px",
       },
       boxShadow: {
@@ -77,6 +79,10 @@ const config: Config = {
         pop: "0 2px 8px rgb(28 26 22 / 0.06), 0 12px 32px rgb(28 26 22 / 0.10)",
         nav: "0 -1px 0 rgb(28 26 22 / 0.04), 0 -10px 32px rgb(28 26 22 / 0.10)",
         ring: "0 0 0 1px rgb(28 26 22 / 0.04)", // crisp hairline on light surfaces
+        // Deep-black theme: real depth comes from a soft dark drop + coloured glow.
+        elevated: "0 10px 40px rgb(0 0 0 / 0.55)",
+        "glow-primary": "0 0 28px rgb(45 226 142 / 0.45)",
+        "glow-accent": "0 0 28px rgb(251 176 59 / 0.45)",
       },
       transitionTimingFunction: {
         // iOS-ish ease-out: quick to react, gentle to settle.
