@@ -219,24 +219,22 @@ export default function FoodLogger({
 
       {/* Hero: concentric activity rings (calories + protein) with the big metric. */}
       <motion.section variants={fadeUp} className="flex flex-col items-center gap-6">
-        <div className="relative grid place-items-center" style={{ width: 248, height: 248 }}>
-          <ActivityRing
-            value={eaten.calories}
-            max={calorieTarget}
-            color={calOver ? "rgb(var(--destructive))" : "rgb(var(--ring-1))"}
-            size={248}
-            stroke={24}
-            className="absolute"
-          />
-          <ActivityRing
-            value={eaten.protein_g}
-            max={proteinTarget}
-            color="rgb(var(--ring-2))"
-            size={186}
-            stroke={24}
-            delay={0.08}
-            className="absolute"
-          />
+        <div className="relative" style={{ width: 248, height: 248 }}>
+          {/* Each ring is centered in its own inset-0 overlay so they're truly
+              concentric (a plain className="absolute" loses to the component's
+              own `relative`, which previously dropped the inner ring out of place). */}
+          <div className="absolute inset-0 grid place-items-center">
+            <ActivityRing
+              value={eaten.calories}
+              max={calorieTarget}
+              color={calOver ? "rgb(var(--destructive))" : "rgb(var(--ring-1))"}
+              size={248}
+              stroke={24}
+            />
+          </div>
+          <div className="absolute inset-0 grid place-items-center">
+            <ActivityRing value={eaten.protein_g} max={proteinTarget} color="rgb(var(--ring-2))" size={186} stroke={24} delay={0.08} />
+          </div>
           <div className="absolute inset-0 grid place-items-center">
             <div className="flex flex-col items-center">
               <Counter value={eaten.calories} className="stat-value text-[3.25rem] leading-none text-foreground" />

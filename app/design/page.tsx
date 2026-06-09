@@ -66,10 +66,16 @@ export default function DesignPreview() {
 
         {/* Signature concentric rings (our palette) */}
         <section className="flex flex-col items-center gap-3">
-          <div className="relative grid h-[240px] w-[240px] place-items-center">
-            <ActivityRing value={1650} max={2200} color="rgb(var(--ring-1))" size={240} stroke={22} className="absolute" delay={0} />
-            <ActivityRing value={88} max={140} color="rgb(var(--ring-2))" size={184} stroke={22} className="absolute" delay={0.08} />
-            <ActivityRing value={5} max={6} color="rgb(var(--ring-3))" size={128} stroke={22} className="absolute" delay={0.16} />
+          <div className="relative h-[240px] w-[240px]">
+            <div className="absolute inset-0 grid place-items-center">
+              <ActivityRing value={1650} max={2200} color="rgb(var(--ring-1))" size={240} stroke={22} delay={0} />
+            </div>
+            <div className="absolute inset-0 grid place-items-center">
+              <ActivityRing value={88} max={140} color="rgb(var(--ring-2))" size={184} stroke={22} delay={0.08} />
+            </div>
+            <div className="absolute inset-0 grid place-items-center">
+              <ActivityRing value={5} max={6} color="rgb(var(--ring-3))" size={128} stroke={22} delay={0.16} />
+            </div>
           </div>
           <div className="flex gap-5 text-xs">
             <span className="text-[rgb(var(--ring-1))]">● Calories</span>
