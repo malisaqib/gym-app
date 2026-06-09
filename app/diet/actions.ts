@@ -9,6 +9,7 @@ import {
   mergeFilters,
   swapPlanItem,
   removePlanItem,
+  insertPlanItem,
   addPlanItem,
   appendPlanItem,
   setPlanItemAmount,
@@ -247,6 +248,19 @@ async function persistPlan(supabase: Supa, userId: string, plan: DietPlan): Prom
   return { ok: true };
 }
 
+function isRestorablePlanItem(item: PlanMealItem): item is PlanMealItem {
+  return (
+    !!item &&
+    typeof item.id === "string" &&
+    typeof item.name === "string" &&
+    typeof item.portion === "string" &&
+    Number.isFinite(item.calories) &&
+    Number.isFinite(item.protein) &&
+    Number.isFinite(item.carbs) &&
+    Number.isFinite(item.fat)
+  );
+}
+
 /** Swap a single food item for a similar one (same role, in-budget, allowed). */
 export async function swapDietItem(slot: MealSlot, index: number): Promise<PlanResult> {
   if (!SLOTS.includes(slot)) return { ok: false, error: "Unknown meal." };
@@ -264,6 +278,17 @@ export async function removeDietItem(slot: MealSlot, index: number): Promise<Pla
   const ctx = await planContext();
   if (!ctx.ok) return ctx;
   const next = removePlanItem(ctx.plan, slot, index);
+  const saved = await persistPlan(ctx.supabase, ctx.userId, next);
+  return saved.ok ? { ok: true, plan: next } : { ok: false, error: saved.error! };
+}
+
+/** Restore a just-removed item, preserving any other plan edits made since. */
+export async function restoreDietItem(slot: MealSlot, index: number, item: PlanMealItem): Promise<PlanResult> {
+  if (!SLOTS.includes(slot)) return { ok: false, error: "Unknown meal." };
+  if (!isRestorablePlanItem(item)) return { ok: false, error: "Couldn't restore that food." };
+  const ctx = await planContext();
+  if (!ctx.ok) return ctx;
+  const next = insertPlanItem(ctx.plan, slot, index, item);
   const saved = await persistPlan(ctx.supabase, ctx.userId, next);
   return saved.ok ? { ok: true, plan: next } : { ok: false, error: saved.error! };
 }

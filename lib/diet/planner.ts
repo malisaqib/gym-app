@@ -506,6 +506,18 @@ export function removePlanItem(plan: DietPlan, slot: MealSlot, index: number): D
   return withMeal(plan, slot, meal.items.filter((_, i) => i !== index));
 }
 
+/** Insert one item back into a meal (used by remove undo). */
+export function insertPlanItem(plan: DietPlan, slot: MealSlot, index: number, item: PlanMealItem): DietPlan {
+  const meal = mealAt(plan, slot);
+  if (!meal) return plan;
+  const safeIndex = Math.max(0, Math.min(index, meal.items.length));
+  return withMeal(plan, slot, [
+    ...meal.items.slice(0, safeIndex),
+    item,
+    ...meal.items.slice(safeIndex),
+  ]);
+}
+
 /** Add a catalog food to a meal. Never adds an avoided food. */
 export function addPlanItem(plan: DietPlan, slot: MealSlot, foodId: string): DietPlan {
   const food = CATALOG_BY_ID[foodId];

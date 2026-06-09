@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Leaf, AlertTriangle, UtensilsCrossed, RefreshCw, Scale, Flag, X } from "lucide-react";
+import { Leaf, AlertTriangle, UtensilsCrossed, RefreshCw, Flag, MoreVertical, X } from "lucide-react";
 import { listContainer, listItem } from "@/lib/motion";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -14,6 +14,7 @@ import {
   swapDietMeal,
   swapDietItem,
   removeDietItem,
+  restoreDietItem,
   addDietItem,
   addCustomDietItem,
   setDietItemAmount,
@@ -24,7 +25,15 @@ import UsualEatingCard, { type UsualEating } from "./UsualEatingCard";
 import AddFoodPanel from "./AddFoodPanel";
 import ReportFoodSheet from "@/components/ReportFoodSheet";
 import QuantityControl, { type QtySpec } from "@/components/QuantityControl";
-import { planItemSpec, setPlanItemAmount, setPlanItemMacros, type DietPlan, type DietFilter } from "@/lib/diet/planner";
+import {
+  insertPlanItem,
+  planItemSpec,
+  setPlanItemAmount,
+  setPlanItemMacros,
+  type DietPlan,
+  type DietFilter,
+  type PlanMealItem,
+} from "@/lib/diet/planner";
 import type { MealSlot } from "@/lib/diet/foodCatalog";
 import type { Lang, ReportContext, ReportType } from "@/lib/database.types";
 
@@ -36,6 +45,15 @@ interface ReportTarget {
   text: string;
   matchedFoodId: string | null;
 }
+
+interface RemovedUndo {
+  id: string;
+  slot: MealSlot;
+  index: number;
+  item: PlanMealItem;
+}
+
+const REMOVE_UNDO_MS = 4500;
 
 // Quick-tap "avoid" options (values must match foodCatalog tags).
 const AVOID: { tag: string; label: Record<Lang, string> }[] = [
@@ -71,6 +89,9 @@ const T = {
   remove: { en: "Remove", roman_urdu: "Hatayein" },
   report: { en: "Report issue", roman_urdu: "Issue report karein" },
   adjust: { en: "Adjust amount", roman_urdu: "Miqdar adjust karein" },
+  more: { en: "More actions", roman_urdu: "More actions" },
+  removed: { en: "Removed", roman_urdu: "Removed" },
+  undo: { en: "Undo", roman_urdu: "Undo" },
   addFood: { en: "Add food", roman_urdu: "Food add karein" },
   estBadge: { en: "≈ est", roman_urdu: "≈ andaza" },
   addedEst: { en: "Added as an estimate.", roman_urdu: "Andaze ke tor par add ho gaya." },
@@ -146,6 +167,11 @@ export default function DietPlanView({
   // the exit animation plays). Reporting is independent of plan mutations.
   const [reportOpen, setReportOpen] = useState(false);
   const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const menuRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const [removeUndo, setRemoveUndo] = useState<RemovedUndo | null>(null);
+  const [undoBusy, setUndoBusy] = useState(false);
+  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   function openReport(target: ReportTarget) {
     setReportTarget(target);
     setReportOpen(true);
@@ -153,7 +179,46 @@ export default function DietPlanView({
   // Any in-flight plan mutation. We serialize edits: concurrent writes to the one
   // saved plan row would silently overwrite each other (last-write-wins), so only
   // one generate/swap/add/remove runs at a time.
-  const mutating = busy || swapping !== null || itemBusy !== null || addBusy;
+  const mutating = busy || swapping !== null || itemBusy !== null || addBusy || undoBusy;
+
+  useEffect(() => {
+    if (!openMenu) return;
+    const menuKey = openMenu;
+    function closeMenu(event: PointerEvent) {
+      const menu = menuRefs.current[menuKey];
+      if (menu && !menu.contains(event.target as Node)) setOpenMenu(null);
+    }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpenMenu(null);
+    }
+    document.addEventListener("pointerdown", closeMenu);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeMenu);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [openMenu]);
+
+  function clearRemoveUndo() {
+    if (undoTimer.current) {
+      clearTimeout(undoTimer.current);
+      undoTimer.current = null;
+    }
+    setRemoveUndo(null);
+  }
+
+  function showRemoveUndo(target: Omit<RemovedUndo, "id">) {
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    const id =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : String(Date.now() + Math.random());
+    setRemoveUndo({ id, ...target });
+    undoTimer.current = setTimeout(() => {
+      setRemoveUndo((cur) => (cur?.id === id ? null : cur));
+      undoTimer.current = null;
+    }, REMOVE_UNDO_MS);
+  }
 
   const toggleAvoid = (tag: string) =>
     setAvoid((cur) => (cur.includes(tag) ? cur.filter((x) => x !== tag) : [...cur, tag]));
@@ -172,6 +237,8 @@ export default function DietPlanView({
 
   async function generate() {
     if (mutating) return;
+    clearRemoveUndo();
+    setOpenMenu(null);
     setBusy(true);
     setError(null);
     try {
@@ -205,6 +272,8 @@ export default function DietPlanView({
 
   async function swap(slot: MealSlot) {
     if (mutating) return;
+    clearRemoveUndo();
+    setOpenMenu(null);
     setSwapping(slot);
     setError(null);
     try {
@@ -230,14 +299,20 @@ export default function DietPlanView({
   // Remove is optimistic (mirrors the server recompute) and rolls back on failure.
   async function removeItem(slot: MealSlot, index: number) {
     if (!plan || mutating) return;
+    const item = plan.meals.find((m) => m.slot === slot)?.items[index];
+    if (!item) return;
     const prev = plan;
+    clearRemoveUndo();
+    setOpenMenu(null);
     setItemBusy(`${slot}-${index}`);
     setPlan(localRemove(plan, slot, index));
     haptic("tap");
     try {
       const res = await removeDietItem(slot, index);
-      if (res.ok) setPlan(res.plan);
-      else {
+      if (res.ok) {
+        setPlan(res.plan);
+        showRemoveUndo({ slot, index, item });
+      } else {
         setPlan(prev);
         toast.error(res.error);
       }
@@ -249,10 +324,35 @@ export default function DietPlanView({
     }
   }
 
+  async function undoRemove(target: RemovedUndo) {
+    if (undoBusy) return;
+    clearRemoveUndo();
+    setUndoBusy(true);
+    setPlan((prev) => (prev ? insertPlanItem(prev, target.slot, target.index, target.item) : prev));
+    haptic("tap");
+    try {
+      const res = await restoreDietItem(target.slot, target.index, target.item);
+      if (res.ok) setPlan(res.plan);
+      else {
+        toast.error(res.error);
+        const fresh = await getDietPlan();
+        if (fresh) setPlan(fresh);
+      }
+    } catch {
+      toast.error("Couldn't restore that - please try again.");
+      const fresh = await getDietPlan();
+      if (fresh) setPlan(fresh);
+    } finally {
+      setUndoBusy(false);
+    }
+  }
+
   // Swap/add need the catalog + (for typed adds) the estimator, so they run
   // server-authoritative with a small pending state rather than optimistically.
   async function swapItem(slot: MealSlot, index: number) {
     if (mutating) return;
+    clearRemoveUndo();
+    setOpenMenu(null);
     setItemBusy(`${slot}-${index}`);
     try {
       const res = await swapDietItem(slot, index);
@@ -269,6 +369,8 @@ export default function DietPlanView({
 
   async function addItem(slot: MealSlot, foodId: string) {
     if (mutating) return;
+    clearRemoveUndo();
+    setOpenMenu(null);
     setAddBusy(true);
     try {
       const res = await addDietItem(slot, foodId);
@@ -286,6 +388,8 @@ export default function DietPlanView({
 
   async function addCustom(slot: MealSlot, text: string) {
     if (mutating) return;
+    clearRemoveUndo();
+    setOpenMenu(null);
     setAddBusy(true);
     try {
       const res = await addCustomDietItem(slot, text);
@@ -305,8 +409,15 @@ export default function DietPlanView({
   // Adjust how much of a plan item — optimistic + live (recomputes the meal and
   // day totals), debounced persist. setDietItemAmount load-modifies-saves on the
   // latest DB plan, so it won't clobber a concurrent swap; reconcile on failure.
-  useEffect(() => () => Object.values(qtyTimers.current).forEach(clearTimeout), []);
+  useEffect(
+    () => () => {
+      Object.values(qtyTimers.current).forEach(clearTimeout);
+      if (undoTimer.current) clearTimeout(undoTimer.current);
+    },
+    []
+  );
   function changeItemAmount(slot: MealSlot, index: number, amount: number) {
+    clearRemoveUndo();
     setPlan((prev) => (prev ? setPlanItemAmount(prev, slot, index, amount) : prev));
     const k = `${slot}-${index}`;
     if (qtyTimers.current[k]) clearTimeout(qtyTimers.current[k]);
@@ -323,6 +434,7 @@ export default function DietPlanView({
 
   // Manual exact calories/protein override for a plan item (optimistic + persist).
   async function correctItem(slot: MealSlot, index: number, patch: { calories: number; protein_g: number }) {
+    clearRemoveUndo();
     setPlan((prev) => (prev ? setPlanItemMacros(prev, slot, index, patch) : prev));
     const res = await correctDietItem(slot, index, patch);
     if (res.ok) setPlan(res.plan);
@@ -548,8 +660,20 @@ export default function DietPlanView({
                             className="rounded-field border border-border bg-background px-3 py-2"
                           >
                             <div className="flex items-center gap-2">
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate text-sm text-foreground">
+                              <button
+                                type="button"
+                                aria-label={`${t("adjust")}: ${item.name}`}
+                                aria-pressed={qtyExpanded}
+                                onPointerDown={() => haptic("tap")}
+                                onClick={() => {
+                                  setOpenMenu(null);
+                                  setQtyOpen(qtyExpanded ? null : key);
+                                }}
+                                className={`min-h-[48px] min-w-0 flex-1 rounded-field px-2 py-1 text-left transition focus:outline-none focus:ring-2 focus:ring-ring/60 active:scale-[0.99] ${
+                                  qtyExpanded ? "bg-primary-soft" : "hover:bg-muted"
+                                }`}
+                              >
+                                <span className="block truncate text-sm text-foreground">
                                   {item.name}
                                   <span className="ml-1.5 text-xs text-muted-foreground">{item.portion}</span>
                                   {item.approx && (
@@ -557,70 +681,96 @@ export default function DietPlanView({
                                       {t("estBadge")}
                                     </span>
                                   )}
-                                </p>
+                                </span>
                                 {!habits && (
-                                  <p className="text-xs text-muted-foreground tabular-nums">
+                                  <span className="block text-xs text-muted-foreground tabular-nums">
                                     {item.calories} · {item.protein}g
-                                  </p>
+                                  </span>
                                 )}
-                              </div>
-                              <button
-                                type="button"
-                                aria-label={t("adjust")}
-                                aria-pressed={qtyExpanded}
-                                onPointerDown={() => haptic("tap")}
-                                onClick={() => setQtyOpen(qtyExpanded ? null : key)}
-                                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-pill border text-sm transition active:scale-[0.95] ${
-                                  qtyExpanded
-                                    ? "border-primary bg-primary-soft text-primary"
-                                    : "border-border bg-card text-foreground hover:border-primary/50"
-                                }`}
-                              >
-                                <Scale size={16} aria-hidden />
                               </button>
                               {canSwap && (
                                 <button
                                   type="button"
-                                  aria-label={t("swap")}
+                                  aria-label={`${t("swap")}: ${item.name}`}
                                   disabled={mutating}
                                   onPointerDown={() => haptic("tap")}
                                   onClick={() => swapItem(meal.slot, i)}
-                                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-pill border border-border bg-card text-sm text-foreground transition hover:border-primary/50 active:scale-[0.95] disabled:opacity-40"
+                                  className="inline-flex min-h-[40px] min-w-[76px] shrink-0 items-center justify-center gap-1.5 rounded-pill border border-border bg-card px-3 py-2 text-xs font-medium text-foreground transition hover:border-primary/50 active:scale-[0.97] disabled:opacity-40"
                                 >
-                                  {rowBusy ? "…" : <RefreshCw size={15} aria-hidden />}
+                                  {rowBusy ? (
+                                    "…"
+                                  ) : (
+                                    <>
+                                      <RefreshCw size={14} aria-hidden />
+                                      <span>{t("swap")}</span>
+                                    </>
+                                  )}
                                 </button>
                               )}
-                              {/* Report issue — independent of plan edits, so it
-                                  stays enabled even while a mutation is in flight.
-                                  An estimated item reports as 'missing' (so we add
-                                  accurate values); a catalog item as 'incorrect'. */}
-                              <button
-                                type="button"
-                                aria-label={t("report")}
-                                title={t("report")}
-                                onPointerDown={() => haptic("tap")}
-                                onClick={() =>
-                                  openReport({
-                                    reportType: item.approx ? "missing" : "incorrect",
-                                    context: "edit",
-                                    text: item.name,
-                                    matchedFoodId: item.approx ? null : item.id,
-                                  })
-                                }
-                                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-pill border border-border bg-card text-sm text-muted-foreground transition hover:border-primary/50 hover:text-foreground active:scale-[0.95]"
+                              <div
+                                ref={(node) => {
+                                  menuRefs.current[key] = node;
+                                }}
+                                className="relative shrink-0"
                               >
-                                <Flag size={15} aria-hidden />
-                              </button>
-                              <button
-                                type="button"
-                                aria-label={t("remove")}
-                                disabled={mutating}
-                                onPointerDown={() => haptic("tap")}
-                                onClick={() => removeItem(meal.slot, i)}
-                                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-pill border border-border bg-card text-sm text-muted-foreground transition hover:border-destructive/50 hover:text-destructive active:scale-[0.95] disabled:opacity-40"
-                              >
-                                {rowBusy ? "…" : <X size={15} aria-hidden />}
-                              </button>
+                                <button
+                                  type="button"
+                                  aria-label={`${t("more")}: ${item.name}`}
+                                  aria-haspopup="menu"
+                                  aria-expanded={openMenu === key}
+                                  onPointerDown={() => haptic("tap")}
+                                  onClick={() => setOpenMenu((cur) => (cur === key ? null : key))}
+                                  className={`flex h-10 w-10 items-center justify-center rounded-pill border text-foreground transition active:scale-[0.95] ${
+                                    openMenu === key
+                                      ? "border-primary bg-primary-soft text-primary"
+                                      : "border-border bg-card hover:border-primary/50"
+                                  }`}
+                                >
+                                  <MoreVertical size={17} aria-hidden />
+                                </button>
+                                <AnimatePresence>
+                                  {openMenu === key && (
+                                    <motion.div
+                                      role="menu"
+                                      initial={{ opacity: 0, y: -4, scale: 0.98 }}
+                                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                                      exit={{ opacity: 0, y: -4, scale: 0.98, transition: { duration: 0.12 } }}
+                                      className="absolute right-0 top-full z-30 mt-1 w-44 origin-top-right rounded-field border border-border bg-card p-1 shadow-pop"
+                                    >
+                                      {/* Reporting is independent of plan edits; it just opens the shared report sheet. */}
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        onPointerDown={() => haptic("tap")}
+                                        onClick={() => {
+                                          setOpenMenu(null);
+                                          openReport({
+                                            reportType: item.approx ? "missing" : "incorrect",
+                                            context: "edit",
+                                            text: item.name,
+                                            matchedFoodId: item.approx ? null : item.id,
+                                          });
+                                        }}
+                                        className="flex min-h-[40px] w-full items-center gap-2 rounded-field px-3 py-2 text-left text-sm text-foreground transition hover:bg-muted active:scale-[0.98]"
+                                      >
+                                        <Flag size={15} aria-hidden />
+                                        {t("report")}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        disabled={mutating}
+                                        onPointerDown={() => haptic("tap")}
+                                        onClick={() => removeItem(meal.slot, i)}
+                                        className="flex min-h-[40px] w-full items-center gap-2 rounded-field px-3 py-2 text-left text-sm text-destructive transition hover:bg-muted active:scale-[0.98] disabled:opacity-40"
+                                      >
+                                        <X size={15} aria-hidden />
+                                        {rowBusy ? "…" : t("remove")}
+                                      </button>
+                                    </motion.div>
+                                  )}
+                                </AnimatePresence>
+                              </div>
                             </div>
                             {qtyExpanded && (
                               <PlanItemEditor
@@ -673,6 +823,32 @@ export default function DietPlanView({
           </motion.div>
         </>
       )}
+
+      <AnimatePresence>
+        {removeUndo && (
+          <motion.div
+            initial={{ opacity: 0, y: 24, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 12, scale: 0.96, transition: { duration: 0.15 } }}
+            className="pointer-events-none fixed inset-x-0 bottom-0 z-[70] flex justify-center px-4 pb-[calc(env(safe-area-inset-bottom)+5.5rem)]"
+            aria-live="polite"
+          >
+            <div className="pointer-events-auto flex w-full max-w-sm items-center gap-2 rounded-field bg-foreground px-4 py-3 text-sm font-medium text-background shadow-pop">
+              <span>{t("removed")}</span>
+              <span className="text-background/60">·</span>
+              <button
+                type="button"
+                disabled={undoBusy}
+                onPointerDown={() => haptic("tap")}
+                onClick={() => undoRemove(removeUndo)}
+                className="rounded-field px-1 font-semibold underline-offset-4 transition hover:underline active:scale-[0.97] disabled:opacity-60"
+              >
+                {undoBusy ? "…" : t("undo")}
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Shared report sheet (missing from add search, incorrect/missing per item). */}
       <ReportFoodSheet
