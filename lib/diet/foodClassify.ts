@@ -29,16 +29,20 @@ export interface RawFoodRow {
   source?: string | null;
 }
 
-// Animal flesh / products → not vegetarian.
+// Animal flesh / products → not vegetarian. When in doubt we err NON-veg so a
+// vegetarian never gets an accidental meat (covers game meats + processed forms
+// like patty/cutlet/kebab whose veg status is ambiguous).
 const NONVEG =
-  /\b(beef|veal|steak|brisket|pork|bacon|ham|sausages?|salami|pepperoni|lamb|mutton|goat|chicken|turkey|duck|quail|poultry|fish|salmon|tuna|cod|tilapia|trout|sardines?|anchov(?:y|ies)|mackerel|herring|haddock|catfish|shrimps?|prawns?|crab|lobster|clams?|oysters?|mussels?|scallops?|squid|octopus|meat|liver|kidney|tripe|gelatin|broth)\b/i;
+  /\b(beef|veal|steak|brisket|pork|bacon|ham|sausages?|salami|pepperoni|lamb|mutton|goat|chicken|turkey|duck|goose|quail|pheasant|partridge|poultry|game meat|venison|elk|bison|buffalo|boar|rabbit|hare|ostrich|emu|antelope|moose|caribou|deer|fish|salmon|tuna|cod|tilapia|trout|sardines?|anchov(?:y|ies)|mackerel|herring|haddock|catfish|shrimps?|prawns?|crab|lobster|clams?|oysters?|mussels?|scallops?|squid|octopus|frog|snails?|escargot|meat|meatballs?|kebabs?|kababs?|kabobs?|kofta|cutlets?|nuggets?|patt(?:y|ies)|frankfurters?|hot ?dogs?|bratwurst|chorizo|jerky|liver|kidney|tripe|gelatin|broth)\b/i;
 
 // Hard excludes — ingredients / pure fats / sugars / condiments / beverages /
 // dry mixes. Gated by NUT_OK so nut butters & nuts survive.
 // NOTE: "water" is intentionally NOT here — names like "tuna, canned in water"
 // must survive; actual water/diet drinks are dropped by the calorie floor below.
+// Also excludes SUPPLEMENT/DRIED/POWDER forms (protein isolate, dried meat/egg,
+// milk powder…): they have extreme macro density and otherwise dominate plans.
 const EXCLUDE =
-  /\b(oils?|fats?|lard|shortening|tallow|margarine|ghee|butter|sugars?|syrups?|molasses|salts?|spices?|seasonings?|cinnamon|cumin|coriander seed|paprika|nutmeg|cloves?|turmeric|chil(?:i|li) powder|cayenne|extracts?|flavou?ring|leavening|baking powder|baking soda|yeast|cornstarch|starch|flours?|gelatin|vinegars?|sauces?|gravy|gravies|frosting|icing|dressings?|mayonnaise|ketchup|mustard|relish|pickles?|jams?|jell(?:y|ies)|preserves|marmalade|candies|candy|gums?|alcoholic|wine|beer|liquor|vodka|whiskey|rum|infant formula|baby ?food|formula|dry mix|dehydrated|concentrate|bouillon|stock|leavening|malt\b|tapioca)\b/i;
+  /\b(oils?|fats?|lard|shortening|tallow|margarine|ghee|butter|sugars?|syrups?|molasses|salts?|spices?|seasonings?|cinnamon|cumin|coriander seed|paprika|nutmeg|cloves?|turmeric|chil(?:i|li) powder|cayenne|extracts?|flavou?ring|leavening|baking powder|baking soda|yeast|cornstarch|starch|flours?|gelatin|vinegars?|sauces?|gravy|gravies|frosting|icing|dressings?|mayonnaise|ketchup|mustard|relish|pickles?|jams?|jell(?:y|ies)|preserves|marmalade|candies|candy|gums?|alcoholic|wine|beer|liquor|vodka|whiskey|rum|infant formula|baby ?food|formula|dry mix|dehydrated|dried|powders?|powdered|isolate|concentrate|whey|casein|wheat gluten|defatted|supplements?|meal replacement|bars?|chips?|crisps?|bouillon|stock|leavening|malt\b|tapioca)\b/i;
 
 // High-fat but legitimate whole foods (so the fat-fraction rule doesn't drop them).
 const NUT_OK = /\b(almonds?|peanuts?|cashews?|walnuts?|pistachios?|pecans?|hazelnuts?|nuts?|seeds?|avocados?)\b/i;
@@ -113,7 +117,12 @@ export function classifyFood(raw: RawFoodRow): CatalogFood | null {
   const lower = raw.name.toLowerCase();
   if (!lower.trim() || !Number.isFinite(raw.calories)) return null;
 
-  // 1) Hard ingredient/condiment excludes (nuts & nut butters survive).
+  // 0) Branded entries (ALL-CAPS brand prefix, e.g. "WENDY'S, ..." / "KELLOGG'S")
+  // aren't generic meal foods — generic USDA items start with a normal-case word.
+  const firstSeg = raw.name.split(",")[0]?.trim() ?? "";
+  if (firstSeg.length > 2 && /[A-Z]/.test(firstSeg) && !/[a-z]/.test(firstSeg)) return null;
+
+  // 1) Hard ingredient/condiment/supplement excludes (nuts & nut butters survive).
   if (EXCLUDE.test(lower) && !NUT_OK.test(lower)) return null;
 
   const baseG = raw.portion_grams && raw.portion_grams > 0 ? raw.portion_grams : 100;

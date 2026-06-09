@@ -399,18 +399,22 @@ export function buildPlan(input: {
   filter: DietFilter;
   usual?: UsualMeals;
   seed?: number;
+  // The food pool to build from. Defaults to the curated catalog (tests); the
+  // diet action passes catalog ∪ classified USDA foods for full breadth.
+  pool?: CatalogFood[];
 }): DietPlan {
+  const pool = input.pool ?? FOOD_CATALOG;
   const seed = input.seed ?? 1;
   const rng = mulberry32(seed);
   // Likes (a fill-time bonus) come from go-to foods AND keep foods.
   const likeText = [input.usual?.foods, input.usual?.keep].filter(Boolean).join(" ");
   const likeIds = new Set(
-    likeText ? FOOD_CATALOG.filter((f) => mentioned(f, likeText)).map((f) => f.id) : []
+    likeText ? pool.filter((f) => mentioned(f, likeText)).map((f) => f.id) : []
   );
 
   const built: BuiltMeal[] = slotBudgets(input.calorieTarget).map((s) => {
     const slotProtein = input.proteinTargetG * (input.calorieTarget > 0 ? s.cal / input.calorieTarget : 0);
-    const cands = FOOD_CATALOG.filter((f) => f.slots.includes(s.slot) && allowed(f, input.filter));
+    const cands = pool.filter((f) => f.slots.includes(s.slot) && allowed(f, input.filter));
     // Seed from this slot's usual meal PLUS any "keep" foods (keep applies to
     // every slot the food fits). Both become protected (never swapped for protein).
     const usualText =
@@ -441,14 +445,14 @@ export function buildPlan(input: {
 }
 
 /** Re-select a single meal (used by "swap this meal"). No usual-food seed, so it varies. */
-export function swapMeal(plan: DietPlan, slot: MealSlot, newSeed: number): DietPlan {
+export function swapMeal(plan: DietPlan, slot: MealSlot, newSeed: number, pool: CatalogFood[] = FOOD_CATALOG): DietPlan {
   const target = plan.meals.find((m) => m.slot === slot);
   if (!target) return plan;
   const meta = SLOT_META.find((x) => x.slot === slot)!;
   const rng = mulberry32(newSeed);
   const budget = target.budget;
   const slotProtein = plan.proteinTargetG * (plan.calorieTarget > 0 ? budget / plan.calorieTarget : 0);
-  const cands = FOOD_CATALOG.filter((f) => f.slots.includes(slot) && allowed(f, plan.filter));
+  const cands = pool.filter((f) => f.slots.includes(slot) && allowed(f, plan.filter));
   const chosen = buildMealItems(budget, slotProtein, slot, cands, rng, undefined, new Set());
 
   const meal = finalizeMeal({ slot, title: meta.title, budget, chosen });
@@ -518,9 +522,9 @@ export function insertPlanItem(plan: DietPlan, slot: MealSlot, index: number, it
   ]);
 }
 
-/** Add a catalog food to a meal. Never adds an avoided food. */
-export function addPlanItem(plan: DietPlan, slot: MealSlot, foodId: string): DietPlan {
-  const food = CATALOG_BY_ID[foodId];
+/** Add a pool food to a meal. Never adds an avoided food. */
+export function addPlanItem(plan: DietPlan, slot: MealSlot, foodId: string, pool: CatalogFood[] = FOOD_CATALOG): DietPlan {
+  const food = pool.find((f) => f.id === foodId) ?? CATALOG_BY_ID[foodId];
   const meal = mealAt(plan, slot);
   if (!food || !meal || !allowed(food, plan.filter)) return plan;
   return withMeal(plan, slot, [...meal.items, toItem(food)]);
@@ -628,18 +632,24 @@ export function appendPlanItem(plan: DietPlan, slot: MealSlot, item: PlanMealIte
  * fits the slot budget and the avoid filter, never duplicating the meal's items.
  * Deterministic for a seed. No-op for a custom item, or when nothing fits.
  */
-export function swapPlanItem(plan: DietPlan, slot: MealSlot, index: number, newSeed: number): DietPlan {
+export function swapPlanItem(
+  plan: DietPlan,
+  slot: MealSlot,
+  index: number,
+  newSeed: number,
+  pool: CatalogFood[] = FOOD_CATALOG
+): DietPlan {
   const meal = mealAt(plan, slot);
   const item = meal?.items[index];
   if (!meal || !item) return plan;
-  const current = CATALOG_BY_ID[item.id];
+  const current = pool.find((f) => f.id === item.id) ?? CATALOG_BY_ID[item.id];
   if (!current) return plan; // custom/approx item — can't ground a swap
 
   const rng = mulberry32(newSeed);
   const otherCal = meal.calories - item.calories;
   const used = new Set(meal.items.map((i) => i.id));
   const base = (extra: (f: CatalogFood) => boolean) =>
-    FOOD_CATALOG.filter(
+    pool.filter(
       (f) =>
         f.slots.includes(slot) &&
         allowed(f, plan.filter) &&
@@ -647,8 +657,8 @@ export function swapPlanItem(plan: DietPlan, slot: MealSlot, index: number, newS
         otherCal + f.calories <= meal.budget && // keep the meal within its budget
         extra(f)
     );
-  const pool = base((f) => f.role === current.role);
-  const finalPool = pool.length ? pool : base(() => true);
+  const rolePool = base((f) => f.role === current.role);
+  const finalPool = rolePool.length ? rolePool : base(() => true);
   if (finalPool.length === 0) return plan;
 
   const pick = chooseTop(
@@ -660,12 +670,12 @@ export function swapPlanItem(plan: DietPlan, slot: MealSlot, index: number, newS
   return withMeal(plan, slot, meal.items.map((it, i) => (i === index ? toItem(pick) : it)));
 }
 
-/** Deterministic catalog search for the "add food" picker (respects the filter). */
-export function searchCatalog(query: string, filter: DietFilter, slot?: MealSlot): CatalogFood[] {
+/** Deterministic pool search for the "add food" picker (respects the filter). */
+export function searchCatalog(query: string, filter: DietFilter, slot?: MealSlot, pool: CatalogFood[] = FOOD_CATALOG): CatalogFood[] {
   const q = query.toLowerCase().trim();
   if (q.length < 2) return [];
   const tokens = q.split(/\s+/).filter(Boolean);
-  return FOOD_CATALOG.filter((f) => {
+  return pool.filter((f) => {
     if (!allowed(f, filter)) return false;
     if (slot && !f.slots.includes(slot)) return false;
     const hay = `${f.name} ${f.tags.join(" ")} ${(f.aliases ?? []).join(" ")}`.toLowerCase();
@@ -673,10 +683,10 @@ export function searchCatalog(query: string, filter: DietFilter, slot?: MealSlot
   }).slice(0, 12);
 }
 
-/** Best deterministic catalog match for free-typed text, or null if none. */
-export function bestCatalogMatch(text: string, filter: DietFilter, slot?: MealSlot): CatalogFood | null {
+/** Best deterministic pool match for free-typed text, or null if none. */
+export function bestCatalogMatch(text: string, filter: DietFilter, slot?: MealSlot, pool: CatalogFood[] = FOOD_CATALOG): CatalogFood | null {
   return (
-    FOOD_CATALOG.find(
+    pool.find(
       (f) => (!slot || f.slots.includes(slot)) && allowed(f, filter) && mentioned(f, text)
     ) ?? null
   );

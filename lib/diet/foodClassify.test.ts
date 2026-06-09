@@ -82,6 +82,25 @@ test("almonds → snack, nuts tag, kept despite high fat", () => {
   assert.equal(f.vegetarian, true);
 });
 
+test("excludes supplement / dried / powdered forms (they'd dominate plans)", () => {
+  assert.equal(classifyFood(usda("Soy protein, isolate", { kcal: 335, p: 81, c: 7, f: 4 })), null);
+  assert.equal(classifyFood(usda("Beef, cured, dried", { kcal: 410, p: 33, c: 3, f: 30 })), null);
+  assert.equal(classifyFood(usda("Egg, white, dried, powder", { kcal: 382, p: 81, c: 8, f: 0 })), null);
+  assert.equal(classifyFood(usda("Beverages, whey protein powder isolate", { kcal: 359, p: 80, c: 8, f: 1 })), null);
+});
+
+test("excludes snack-bar / chips / defatted-meal junk", () => {
+  assert.equal(classifyFood(usda("Formulated bar, high protein", { kcal: 400, p: 30, c: 40, f: 12 })), null);
+  assert.equal(classifyFood(usda("Snacks, potato chips, salted", { kcal: 536, p: 7, c: 53, f: 35 })), null);
+  assert.equal(classifyFood(usda("Soy meal, defatted, raw", { kcal: 337, p: 49, c: 34, f: 3 })), null);
+});
+
+test("excludes ALL-CAPS branded entries", () => {
+  assert.equal(classifyFood(usda("WENDY'S, CLASSIC SINGLE Hamburger, no cheese", { kcal: 250, p: 15, c: 20, f: 12 })), null);
+  // generic USDA (normal case) is kept
+  assert.ok(classifyFood(usda("Chicken, breast, cooked", { kcal: 165, p: 31, c: 0, f: 3.6 })));
+});
+
 test("canned tuna in water → protein kept (the 'water' false-exclude is fixed)", () => {
   const f = classifyFood(usda("Fish, tuna, light, canned in water, drained solids", { kcal: 116, p: 26, c: 0, f: 0.8 }))!;
   assert.ok(f, "tuna in water should be kept");
@@ -93,6 +112,13 @@ test("processed meats (meatballs) → protein", () => {
   const f = classifyFood(usda("Meatballs, meatless", { kcal: 197, p: 18, c: 8, f: 11 }));
   // "meatless" still contains "meat" → protein (vegetarian flag handles the rest).
   assert.equal(f?.role, "protein");
+});
+
+test("game & processed meats are non-veg (never leak into a vegetarian plan)", () => {
+  for (const n of ["Elk, free range, top sirloin", "Game meat, bison, ground", "Beef patty, cooked", "Chicken nuggets"]) {
+    const f = classifyFood(usda(n, { kcal: 200, p: 25, c: 2, f: 10 }));
+    if (f) assert.equal(f.vegetarian, false, `${n} should be non-veg`);
+  }
 });
 
 test("avocado → fruit", () => {

@@ -21,10 +21,50 @@ import {
 } from "@/lib/diet/planner";
 import { parsePreferences, keywordPreferences } from "@/lib/coach/dietCoach";
 import { estimateMeal } from "@/app/coach/actions";
-import type { MealSlot } from "@/lib/diet/foodCatalog";
+import { FOOD_CATALOG, type CatalogFood, type MealSlot } from "@/lib/diet/foodCatalog";
+import { classifyFoods, type RawFoodRow } from "@/lib/diet/foodClassify";
 import type { FoodPreference, Lang } from "@/lib/database.types";
 
 const SLOTS: MealSlot[] = ["breakfast", "lunch", "dinner", "snack"];
+
+// --- merged food pool: curated catalog ∪ classified USDA foods --------------
+// The curated 71 (foodCatalog.ts) are the authoritative, desi-accurate base; the
+// classified USDA rows add ~3k more for breadth/variety. We classify only USDA
+// rows (per-100g, safe to portion); curated DB rows are represented by the
+// catalog. Cached per server instance; degrades to the catalog if the DB is down.
+let CLASSIFIED_DB: CatalogFood[] | null = null;
+
+const normName = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+async function loadClassifiedDb(supabase: Awaited<ReturnType<typeof createClient>>): Promise<CatalogFood[]> {
+  const rows: RawFoodRow[] = [];
+  const PAGE = 1000;
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from("foods")
+      .select("id,name,aliases,region,portion,portion_grams,calories,protein_g,carbs_g,fat_g,source")
+      .eq("source", "usda_sr")
+      .range(from, from + PAGE - 1);
+    if (error || !data || data.length === 0) break;
+    rows.push(...(data as unknown as RawFoodRow[]));
+    if (data.length < PAGE) break;
+  }
+  return classifyFoods(rows);
+}
+
+/** Curated catalog (authoritative) ∪ classified USDA foods, deduped by name. */
+async function getMealPool(supabase: Awaited<ReturnType<typeof createClient>>): Promise<CatalogFood[]> {
+  if (!CLASSIFIED_DB) {
+    try {
+      CLASSIFIED_DB = await loadClassifiedDb(supabase);
+    } catch {
+      CLASSIFIED_DB = []; // degrade to the curated catalog if the DB is unavailable
+    }
+  }
+  const have = new Set(FOOD_CATALOG.map((f) => normName(f.name)));
+  const extra = CLASSIFIED_DB.filter((f) => !have.has(normName(f.name)));
+  return [...FOOD_CATALOG, ...extra];
+}
 
 type PlanResult = { ok: true; plan: DietPlan } | { ok: false; error: string };
 
@@ -180,7 +220,8 @@ export async function generateDietPlan(input?: {
     keep: pick(ue?.keep, profile?.keep_foods),
   };
 
-  const plan = buildPlan({ calorieTarget, proteinTargetG, filter, usual, seed: randomSeed() });
+  const pool = await getMealPool(supabase);
+  const plan = buildPlan({ calorieTarget, proteinTargetG, filter, usual, seed: randomSeed(), pool });
 
   const { error } = await supabase
     .from("meal_plans")
@@ -208,7 +249,8 @@ export async function swapDietMeal(slot: MealSlot): Promise<PlanResult> {
     .maybeSingle();
   if (!row?.plan) return { ok: false, error: "Generate a plan first." };
 
-  const swapped = swapMeal(row.plan as DietPlan, slot, randomSeed());
+  const pool = await getMealPool(supabase);
+  const swapped = swapMeal(row.plan as DietPlan, slot, randomSeed(), pool);
 
   const { error } = await supabase
     .from("meal_plans")
@@ -266,7 +308,8 @@ export async function swapDietItem(slot: MealSlot, index: number): Promise<PlanR
   if (!SLOTS.includes(slot)) return { ok: false, error: "Unknown meal." };
   const ctx = await planContext();
   if (!ctx.ok) return ctx;
-  const next = swapPlanItem(ctx.plan, slot, index, randomSeed());
+  const pool = await getMealPool(ctx.supabase);
+  const next = swapPlanItem(ctx.plan, slot, index, randomSeed(), pool);
   if (next === ctx.plan) return { ok: false, error: "No other option fits this slot." };
   const saved = await persistPlan(ctx.supabase, ctx.userId, next);
   return saved.ok ? { ok: true, plan: next } : { ok: false, error: saved.error! };
@@ -298,7 +341,8 @@ export async function addDietItem(slot: MealSlot, foodId: string): Promise<PlanR
   if (!SLOTS.includes(slot)) return { ok: false, error: "Unknown meal." };
   const ctx = await planContext();
   if (!ctx.ok) return ctx;
-  const next = addPlanItem(ctx.plan, slot, foodId);
+  const pool = await getMealPool(ctx.supabase);
+  const next = addPlanItem(ctx.plan, slot, foodId, pool);
   if (next === ctx.plan) return { ok: false, error: "Couldn't add that food." };
   const saved = await persistPlan(ctx.supabase, ctx.userId, next);
   return saved.ok ? { ok: true, plan: next } : { ok: false, error: saved.error! };
@@ -340,7 +384,8 @@ export async function searchDietFoods(slot: MealSlot, query: string): Promise<Se
   if (!SLOTS.includes(slot)) return { ok: false, error: "Unknown meal." };
   const ctx = await planContext();
   if (!ctx.ok) return ctx;
-  const foods: FoodOption[] = searchCatalog(query, ctx.plan.filter, slot).map((f) => ({
+  const pool = await getMealPool(ctx.supabase);
+  const foods: FoodOption[] = searchCatalog(query, ctx.plan.filter, slot, pool).map((f) => ({
     id: f.id,
     name: f.name,
     portion: f.portion,
@@ -362,11 +407,12 @@ export async function addCustomDietItem(slot: MealSlot, text: string): Promise<A
   const ctx = await planContext();
   if (!ctx.ok) return ctx;
 
-  const match = bestCatalogMatch(q, ctx.plan.filter, slot);
+  const pool = await getMealPool(ctx.supabase);
+  const match = bestCatalogMatch(q, ctx.plan.filter, slot, pool);
   let next: DietPlan;
   let approx = false;
   if (match) {
-    next = addPlanItem(ctx.plan, slot, match.id);
+    next = addPlanItem(ctx.plan, slot, match.id, pool);
   } else {
     const est = await estimateMeal(q);
     if (!est.ok) {
