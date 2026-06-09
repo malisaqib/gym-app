@@ -63,8 +63,11 @@ export function ActivityRing({
       className={cn("relative inline-grid place-items-center", className)}
       style={{ width: size, height: size }}
     >
-      {/* -rotate-90 so the arc starts at 12 o'clock and fills clockwise. */}
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90" aria-hidden>
+      {/* -rotate-90 so the arc starts at 12 o'clock and fills clockwise.
+          overflow-visible lets the coloured glow fade softly past the ring
+          instead of being clipped to the SVG box (a hard edge that wouldn't
+          blend into the surface behind it). */}
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90 overflow-visible" aria-hidden>
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={stroke} stroke={trackColor} strokeLinecap={cap} />
         <motion.circle
           cx={size / 2}
