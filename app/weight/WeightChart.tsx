@@ -37,6 +37,18 @@ export default function WeightChart({ series }: { series: WeightPoint[] }) {
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Weight over time">
+      <defs>
+        <linearGradient id="wt-fill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" style={{ stopColor: "rgb(var(--primary))", stopOpacity: 0.3 }} />
+          <stop offset="100%" style={{ stopColor: "rgb(var(--primary))", stopOpacity: 0 }} />
+        </linearGradient>
+      </defs>
+
+      {/* soft area fill under the trend */}
+      {series.length > 1 && (
+        <polygon points={`${points} ${x(series.length - 1)},${H - pad} ${x(0)},${H - pad}`} fill="url(#wt-fill)" />
+      )}
+
       {/* y-axis range labels */}
       <text x={2} y={y(max) + 4} className="fill-muted-foreground" fontSize="9">
         {max}
@@ -51,7 +63,7 @@ export default function WeightChart({ series }: { series: WeightPoint[] }) {
           points={points}
           fill="none"
           className="stroke-primary"
-          strokeWidth="2"
+          strokeWidth="2.5"
           strokeLinejoin="round"
           strokeLinecap="round"
         />

@@ -12,6 +12,7 @@ import { localDateString } from "@/lib/localDate";
 import { Button } from "@/components/ui/Button";
 import { toast } from "@/lib/toast";
 import { Sheet } from "@/components/ui/Sheet";
+import { ActivityRing } from "@/components/ui/ActivityRing";
 import type { PlanDay, PlanExercise, SwapDirection, WorkoutGoal, WorkoutPlan } from "@/lib/workouts/coachPlan";
 import type { TrainingSetup as TrainingSetupData } from "@/lib/workouts/trainingSetup";
 import { logSet, deleteSet } from "./actions";
@@ -75,10 +76,10 @@ export default function ProgramView({
 
   return (
     <section className="space-y-4">
-      <div className="rounded-card border border-border bg-card p-4 shadow-soft">
-        <p className="text-xs font-medium uppercase tracking-wide text-primary">Your plan</p>
-        <h2 className="mt-1 font-display text-lg font-semibold text-foreground">{plan.split}</h2>
-        <p className="mt-0.5 text-sm text-muted-foreground">{plan.summary}</p>
+      <div className="rounded-card-xl border border-border bg-card p-5">
+        <p className="stat-label">Your plan</p>
+        <h2 className="mt-1 font-display text-xl font-bold tracking-tight text-foreground">{plan.split}</h2>
+        <p className="mt-1 text-sm text-muted-foreground">{plan.summary}</p>
 
         {/* Truth rule: belly fat reduces through overall fat loss + diet deficit. */}
         {plan.bellyFatNote && (
@@ -104,6 +105,7 @@ export default function ProgramView({
         </p>
       </div>
 
+      {/* Week strip — one pill per day; selected day glows emerald. */}
       <div className="flex gap-1.5">
         {plan.days.map((d, i) => {
           const isSelected = i === selected;
@@ -113,18 +115,14 @@ export default function ProgramView({
               type="button"
               onClick={() => setSelected(i)}
               aria-pressed={isSelected}
-              className={`pressable flex-1 rounded-field border px-1 py-2 text-center ${
-                isSelected
-                  ? "border-primary bg-primary/10 shadow-soft"
-                  : d.isRest
-                    ? "border-border bg-background"
-                    : "border-border bg-card hover:border-primary/60"
+              className={`pressable flex flex-1 flex-col items-center gap-1 rounded-card-lg border px-1 py-2.5 text-center transition-colors ${
+                isSelected ? "border-primary/40 bg-primary/15" : "border-border bg-card"
               }`}
             >
-              <span className="block text-[10px] font-medium text-muted-foreground">{i + 1}</span>
+              <span className="stat-label text-[9px]">D{i + 1}</span>
               <span
-                className={`mt-0.5 block text-[10px] font-semibold ${
-                  d.isRest ? "text-muted-foreground" : "text-foreground"
+                className={`text-[11px] font-semibold ${
+                  isSelected ? "text-primary" : d.isRest ? "text-muted-foreground" : "text-foreground"
                 }`}
               >
                 {d.isRest ? "Rest" : "Train"}
@@ -184,7 +182,7 @@ function DayPanel({
 }) {
   if (day.isRest) {
     return (
-      <div className="rounded-card border border-dashed border-border bg-background p-6 text-center">
+      <div className="rounded-card-xl border border-dashed border-border bg-card p-6 text-center">
         <p className="font-semibold text-foreground">Rest day</p>
         <p className="mt-1 text-sm text-muted-foreground">
           Recovery is when you actually get stronger. Walk, stretch, sleep well.
@@ -194,16 +192,30 @@ function DayPanel({
   }
 
   const dayExerciseIds = day.exercises.map((e) => e.id);
+  // Today's session progress — sets logged vs planned (from existing data only).
+  const plannedSets = day.exercises.reduce((s, e) => s + e.sets, 0);
+  const doneSets = day.exercises.reduce((s, e) => s + Math.min(history[e.name]?.today.length ?? 0, e.sets), 0);
 
   return (
     <div className="space-y-3">
-      <div className="flex items-baseline justify-between">
-        <h3 className="font-display text-base font-semibold text-foreground">{day.focus}</h3>
-        <span className="text-xs text-muted-foreground">{day.exercises.length} exercises</span>
+      {/* Today's-workout hero: a ring of sets done vs planned. */}
+      <div className="flex items-center gap-4 rounded-card-xl border border-border bg-card p-5">
+        <ActivityRing value={doneSets} max={plannedSets} color="rgb(var(--ring-1))" size={88} stroke={11}>
+          <span className="stat-value text-base text-foreground">
+            {doneSets}/{plannedSets}
+          </span>
+        </ActivityRing>
+        <div className="min-w-0">
+          <p className="stat-label">Today&apos;s session</p>
+          <h3 className="mt-1 font-display text-xl font-bold tracking-tight text-foreground">{day.focus}</h3>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            {day.exercises.length} exercises · {plannedSets} sets
+          </p>
+        </div>
       </div>
 
       {day.warmup && (
-        <p className="rounded-field bg-muted px-3 py-2 text-xs text-muted-foreground">
+        <p className="rounded-card-lg bg-muted px-3 py-2.5 text-xs text-muted-foreground">
           <span className="font-medium text-foreground">Warm-up: </span>
           {day.warmup}
         </p>
@@ -334,7 +346,7 @@ function ExerciseCard({
   }
 
   return (
-    <div className="rounded-card border border-border bg-card p-4 shadow-soft">
+    <div className="rounded-card-lg border border-border bg-card p-4">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="font-semibold text-foreground">{exercise.name}</p>

@@ -7,15 +7,18 @@ import { listContainer, listItem } from "@/lib/motion";
 import { toSeries, weightChange, latestWeight } from "@/lib/weight/series";
 import { localDateString } from "@/lib/localDate";
 import { Button } from "@/components/ui/Button";
+import { ActivityRing } from "@/components/ui/ActivityRing";
 import { toast } from "@/lib/toast";
 import { logWeight, deleteWeight } from "./actions";
 import WeightChart from "./WeightChart";
 
 export default function WeightTracker({
   startWeight,
+  goalWeight,
   initialLogs,
 }: {
   startWeight: number | null;
+  goalWeight?: number | null;
   initialLogs: BodyweightLog[];
 }) {
   // Seeded from the server — no mount fetch.
@@ -27,6 +30,13 @@ export default function WeightTracker({
   const series = toSeries(logs);
   const latest = latestWeight(series) ?? startWeight;
   const change = weightChange(series);
+
+  // Progress toward goal: how far from start → goal we are (works either
+  // direction). Null when we can't compute it (no goal / no movement window).
+  const goalFrac =
+    latest != null && goalWeight != null && startWeight != null && startWeight !== goalWeight
+      ? Math.max(0, Math.min(1, (startWeight - latest) / (startWeight - goalWeight)))
+      : null;
 
   // OPTIMISTIC: chart + current weight update on tap, then reconcile / roll back.
   async function add(e: React.FormEvent) {
@@ -89,28 +99,32 @@ export default function WeightTracker({
 
   return (
     <section className="flex flex-col gap-5">
-      <h2 className="font-display text-xl font-semibold text-foreground">Weight</h2>
-
-        {/* Summary */}
-        <div className="flex items-end gap-4">
-          <div>
-            <p className="text-xs text-muted-foreground">Current</p>
-            <p className="text-3xl font-bold tabular-nums text-foreground">
-              {latest ?? "—"}
-              <span className="ml-1 text-sm font-normal text-muted-foreground">kg</span>
-            </p>
+      {/* Hero: goal-progress ring + big current-weight metric. */}
+      <div className="flex items-center gap-5 rounded-card-xl border border-border bg-card p-5">
+        {goalFrac != null && (
+          <ActivityRing value={goalFrac * 100} max={100} color="rgb(var(--ring-1))" size={104} stroke={12}>
+            <span className="stat-value text-lg text-foreground">{Math.round(goalFrac * 100)}%</span>
+          </ActivityRing>
+        )}
+        <div className="min-w-0">
+          <p className="stat-label">Current weight</p>
+          <div className="mt-1 flex items-baseline gap-1.5">
+            <span className="stat-value text-5xl tabular-nums text-foreground">{latest ?? "—"}</span>
+            <span className="text-base font-semibold text-muted-foreground">kg</span>
           </div>
           {change !== null && (
-            <p className={`pb-1 text-sm font-medium ${change <= 0 ? "text-success" : "text-warning"}`}>
+            <p className={`mt-1 text-sm font-semibold ${change <= 0 ? "text-primary" : "text-accent"}`}>
               {change <= 0 ? "▼" : "▲"} {Math.abs(change)} kg since start
             </p>
           )}
+          {goalWeight != null && <p className="mt-0.5 text-xs text-muted-foreground">Goal {goalWeight} kg</p>}
         </div>
+      </div>
 
-        {/* Chart */}
-        <div className="rounded-card border border-border bg-card p-3 shadow-soft">
-          <WeightChart series={series} />
-        </div>
+      {/* Chart */}
+      <div className="rounded-card-lg border border-border bg-card p-4">
+        <WeightChart series={series} />
+      </div>
 
         {/* Log today's weight */}
         <form onSubmit={add} className="flex gap-2">
@@ -146,7 +160,7 @@ export default function WeightTracker({
                     variants={listItem}
                     exit="exit"
                     layout
-                    className="flex items-center justify-between rounded-card border border-border bg-card px-3 py-2 text-sm"
+                    className="flex items-center justify-between rounded-card-lg border border-border bg-card px-3 py-2.5 text-sm"
                   >
                     <span className="text-muted-foreground">{l.logged_on}</span>
                     <span className="font-medium tabular-nums text-foreground">{l.weight_kg} kg</span>

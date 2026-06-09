@@ -67,11 +67,12 @@ export default async function ProgressPage() {
   }
 
   return (
-    <>
+    // Phase 2: Progress adopts the Apple-Fitness deep-black theme (scoped).
+    <div className="fitness min-h-screen bg-background">
       <main className="mx-auto flex min-h-screen max-w-md flex-col gap-6 px-4 pb-28 pt-8">
         <div>
-          <h1 className="font-display text-2xl font-semibold text-foreground">Progress</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
+          <h1 className="font-display text-[2rem] font-bold leading-tight tracking-tight text-foreground">Progress</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             Log your weight and watch the trend toward your goal.
           </p>
         </div>
@@ -85,13 +86,17 @@ export default async function ProgressPage() {
           />
         )}
 
-        <WeightTracker startWeight={profile?.weight_kg ?? null} initialLogs={logs ?? []} />
+        <WeightTracker
+          startWeight={profile?.weight_kg ?? null}
+          goalWeight={profile?.goal_weight_kg ?? null}
+          initialLogs={logs ?? []}
+        />
 
         {/* Weekly check-in + progress record (self-contained, localStorage). */}
         <WeeklyCheckIn lang={lang} />
         <ProgressTracker lang={lang} />
       </main>
       <BottomNav />
-    </>
+    </div>
   );
 }

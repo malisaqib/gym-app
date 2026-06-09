@@ -70,11 +70,13 @@ export default function WorkoutLogger({
   }, []);
 
   return (
-    <>
-      <main className="mx-auto flex min-h-screen max-w-md flex-col gap-5 px-4 pb-24 pt-8">
+    // Phase 2: Workout adopts the Apple-Fitness deep-black theme (scoped).
+    <div className="fitness min-h-screen bg-background">
+      <main className="mx-auto flex min-h-screen max-w-md flex-col gap-6 px-4 pb-28 pt-8">
         <div>
-          <h1 className="font-display text-2xl font-semibold text-foreground">Workout</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
+          <p className="stat-label">Train</p>
+          <h1 className="mt-1 font-display text-[2rem] font-bold leading-tight tracking-tight text-foreground">Workout</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             Your plan, built from your goal &amp; equipment — log sets as you go.
           </p>
         </div>
@@ -83,7 +85,7 @@ export default function WorkoutLogger({
         <TrainingSetup profileDefaults={profileDefaults} resolvedGoal={resolvedGoal} onSetupChange={handleSetupChange} />
 
         {programLoading && (
-          <div className="flex items-center gap-3 rounded-card border border-border bg-card p-4 shadow-soft">
+          <div className="flex items-center gap-3 rounded-card-lg border border-border bg-card p-4">
             <Spinner size="sm" className="text-primary" label="Building your plan" />
             <p className="text-sm text-muted-foreground">Building your plan…</p>
           </div>
@@ -101,6 +103,6 @@ export default function WorkoutLogger({
         )}
       </main>
       <BottomNav />
-    </>
+    </div>
   );
 }
