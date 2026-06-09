@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Utensils } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { estimateMeal } from "./actions";
 import { estimateDesiMeal } from "@/lib/coach/desiFoodEstimator";
@@ -237,7 +238,7 @@ export default function DesiFoodEstimator({ lang = "en" }: { lang?: Lang }) {
 
       {!result && !error && !loading && (
         <div className="flex flex-col items-center gap-1 rounded-field border border-dashed border-border px-6 py-8 text-center">
-          <span className="text-2xl">🍽️</span>
+          <Utensils className="mb-1 h-7 w-7 text-muted-foreground" aria-hidden />
           <p className="text-sm font-medium text-foreground">{t("emptyTitle")}</p>
           <p className="text-xs text-muted-foreground">{t("emptyHint")}</p>
         </div>

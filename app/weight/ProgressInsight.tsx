@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Sprout } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { phraseProgressNudge } from "./actions";
 import type { Lang } from "@/lib/database.types";
@@ -62,7 +63,7 @@ export default function ProgressInsight({
   return (
     <Card className="space-y-1.5 bg-primary-soft p-4">
       <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-primary">
-        <span aria-hidden>🌱</span>
+        <Sprout size={14} aria-hidden />
         {T.title[lang]}
       </p>
       <p className="text-sm leading-relaxed text-foreground">{message}</p>

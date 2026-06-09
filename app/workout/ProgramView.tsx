@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/Button";
 import { toast } from "@/lib/toast";
 import { Sheet } from "@/components/ui/Sheet";
 import { ActivityRing } from "@/components/ui/ActivityRing";
+import { Play, RefreshCw, Check } from "lucide-react";
 import type { PlanDay, PlanExercise, SwapDirection, WorkoutGoal, WorkoutPlan } from "@/lib/workouts/coachPlan";
 import type { TrainingSetup as TrainingSetupData } from "@/lib/workouts/trainingSetup";
 import { logSet, deleteSet } from "./actions";
@@ -90,9 +91,7 @@ export default function ProgramView({
           <ul className="mt-3 space-y-1">
             {plan.adjustments.map((note) => (
               <li key={note} className="flex gap-2 text-xs text-muted-foreground">
-                <span aria-hidden className="text-primary">
-                  ✓
-                </span>
+                <Check size={14} aria-hidden className="mt-px shrink-0 text-primary" />
                 {note}
               </li>
             ))}
@@ -358,9 +357,9 @@ function ExerciseCard({
           href={formVideoUrl(exercise.name)}
           target="_blank"
           rel="noopener noreferrer"
-          className="shrink-0 text-xs font-medium text-primary underline"
+          className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-primary underline"
         >
-          ▶ Form
+          <Play size={13} aria-hidden className="fill-current" /> Form
         </a>
       </div>
 
@@ -397,7 +396,13 @@ function ExerciseCard({
           {swapping === "easier" ? "…" : "Easier"}
         </SmallButton>
         <SmallButton onClick={() => doSwap("different")} disabled={!!swapping || !setup}>
-          {swapping === "different" ? "…" : "↺ Different"}
+          {swapping === "different" ? (
+            "…"
+          ) : (
+            <span className="inline-flex items-center gap-1">
+              <RefreshCw size={13} aria-hidden /> Different
+            </span>
+          )}
         </SmallButton>
         <SmallButton onClick={() => doSwap("harder")} disabled={!!swapping || !setup}>
           {swapping === "harder" ? "…" : "Harder"}
@@ -422,7 +427,7 @@ function ExerciseCard({
               </ol>
             ) : (
               <p className="mt-3 text-xs text-muted-foreground">
-                No step-by-step text for this one — tap ▶ Form for a video, or ask the coach.
+                No step-by-step text for this one — tap Form for a video, or ask the coach.
               </p>
             )}
 

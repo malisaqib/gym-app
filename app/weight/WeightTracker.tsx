@@ -8,6 +8,7 @@ import { toSeries, weightChange, latestWeight } from "@/lib/weight/series";
 import { localDateString } from "@/lib/localDate";
 import { Button } from "@/components/ui/Button";
 import { ActivityRing } from "@/components/ui/ActivityRing";
+import { TrendingDown, TrendingUp } from "lucide-react";
 import { toast } from "@/lib/toast";
 import { logWeight, deleteWeight } from "./actions";
 import WeightChart from "./WeightChart";
@@ -113,8 +114,9 @@ export default function WeightTracker({
             <span className="text-base font-semibold text-muted-foreground">kg</span>
           </div>
           {change !== null && (
-            <p className={`mt-1 text-sm font-semibold ${change <= 0 ? "text-primary" : "text-accent"}`}>
-              {change <= 0 ? "▼" : "▲"} {Math.abs(change)} kg since start
+            <p className={`mt-1 inline-flex items-center gap-1 text-sm font-semibold ${change <= 0 ? "text-primary" : "text-accent"}`}>
+              {change <= 0 ? <TrendingDown size={14} aria-hidden /> : <TrendingUp size={14} aria-hidden />}
+              {Math.abs(change)} kg since start
             </p>
           )}
           {goalWeight != null && <p className="mt-0.5 text-xs text-muted-foreground">Goal {goalWeight} kg</p>}

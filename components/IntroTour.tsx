@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
+import { Home, Utensils, ClipboardList, Dumbbell, TrendingUp, type LucideIcon } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { haptic } from "@/lib/haptics";
@@ -16,14 +17,14 @@ import type { Lang } from "@/lib/database.types";
 const SEEN_KEY = "gymCoach.hasSeenIntro";
 
 interface TourStep {
-  emoji: string;
+  icon: LucideIcon;
   title: Record<Lang, string>;
   body: Record<Lang, string>;
 }
 
 const STEPS: TourStep[] = [
   {
-    emoji: "🏠",
+    icon: Home,
     title: { en: "Home", roman_urdu: "Home" },
     body: {
       en: "Log what you eat and see your calories & protein left for today.",
@@ -31,7 +32,7 @@ const STEPS: TourStep[] = [
     },
   },
   {
-    emoji: "🍽️",
+    icon: Utensils,
     title: { en: "Eat", roman_urdu: "Eat" },
     body: {
       en: "Ask the coach what to eat next, or estimate any meal's calories.",
@@ -39,7 +40,7 @@ const STEPS: TourStep[] = [
     },
   },
   {
-    emoji: "🥗",
+    icon: ClipboardList,
     title: { en: "Plan", roman_urdu: "Plan" },
     body: {
       en: "Get a full day of meals built to hit your daily calories & protein.",
@@ -47,7 +48,7 @@ const STEPS: TourStep[] = [
     },
   },
   {
-    emoji: "🏋️",
+    icon: Dumbbell,
     title: { en: "Train", roman_urdu: "Train" },
     body: {
       en: "Your workout plan, built from your goal — log sets as you go.",
@@ -55,7 +56,7 @@ const STEPS: TourStep[] = [
     },
   },
   {
-    emoji: "📈",
+    icon: TrendingUp,
     title: { en: "Progress", roman_urdu: "Progress" },
     body: {
       en: "Log your weight and watch the trend toward your goal.",
@@ -122,21 +123,19 @@ export default function IntroTour({ lang }: { lang: Lang }) {
             <div className="flex items-stretch justify-around rounded-field bg-muted p-1.5">
               {STEPS.map((st, i) => (
                 <span
-                  key={st.emoji}
-                  className={`flex flex-1 items-center justify-center rounded-pill py-1.5 text-lg transition ${
-                    i === step ? "scale-110 bg-primary-soft" : "opacity-40"
+                  key={st.title.en}
+                  className={`flex flex-1 items-center justify-center rounded-pill py-1.5 transition ${
+                    i === step ? "scale-110 bg-primary-soft" : ""
                   }`}
                   aria-hidden
                 >
-                  {st.emoji}
+                  <st.icon size={18} className={i === step ? "text-primary" : "text-muted-foreground"} />
                 </span>
               ))}
             </div>
 
             <div className="flex items-center gap-3">
-              <span className="text-3xl" aria-hidden>
-                {s.emoji}
-              </span>
+              <s.icon size={28} className="shrink-0 text-primary" aria-hidden />
               <div>
                 <p className="text-xs font-medium uppercase tracking-wide text-primary">
                   {step + 1} / {STEPS.length}

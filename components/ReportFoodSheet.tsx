@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Check } from "lucide-react";
 import { Sheet } from "@/components/ui/Sheet";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -152,8 +153,8 @@ export default function ReportFoodSheet({
     <Sheet open={open} onClose={onClose} title={title}>
       {done ? (
         <div className="flex flex-col items-center gap-2 py-4 text-center">
-          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-success/15 text-2xl text-success">
-            ✓
+          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-success/15 text-success">
+            <Check className="h-6 w-6" aria-hidden />
           </span>
           <p className="text-base font-semibold text-foreground">{t("successTitle")}</p>
           <p className="text-sm text-muted-foreground">{t("successBody")}</p>

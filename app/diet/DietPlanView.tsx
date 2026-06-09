@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
+import { Leaf, AlertTriangle, UtensilsCrossed, RefreshCw, Scale, Flag, X } from "lucide-react";
 import { listContainer, listItem } from "@/lib/motion";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -358,7 +359,9 @@ export default function DietPlanView({
         {/* Quick-tap preferences (seeded from onboarding/your profile). */}
         <div className="flex flex-wrap items-center gap-2">
           <Chip active={vegetarian} onClick={() => setVegetarian((v) => !v)}>
-            🥦 {t("vegLabel")}
+            <span className="inline-flex items-center gap-1">
+              <Leaf size={14} aria-hidden /> {t("vegLabel")}
+            </span>
           </Chip>
           <span className="text-xs text-muted-foreground">· {t("avoidLabel")}:</span>
           {AVOID.map((a) => (
@@ -378,9 +381,9 @@ export default function DietPlanView({
                 type="button"
                 onPointerDown={() => haptic("tap")}
                 onClick={() => setAvoidFoods((cur) => cur.filter((x) => x !== f))}
-                className="min-h-[32px] rounded-pill border border-primary bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground active:scale-[0.97]"
+                className="inline-flex min-h-[32px] items-center gap-1 rounded-pill border border-primary bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground active:scale-[0.97]"
               >
-                {f} ✕
+                {f} <X size={13} aria-hidden />
               </button>
             ))}
           </div>
@@ -423,7 +426,9 @@ export default function DietPlanView({
           )}
         </div>
         {planStale && !busy && (
-          <p className="rounded-field bg-muted px-3 py-2 text-xs text-warning">⚠️ {t("dirtyNote")}</p>
+          <p className="flex items-center gap-1.5 rounded-field bg-muted px-3 py-2 text-xs text-warning">
+            <AlertTriangle size={13} aria-hidden /> {t("dirtyNote")}
+          </p>
         )}
         {error && <p className="text-sm text-destructive">{error}</p>}
       </Card>
@@ -443,7 +448,7 @@ export default function DietPlanView({
 
       {!plan && !busy && (
         <Card className="flex flex-col items-center gap-1 p-8 text-center">
-          <span className="text-2xl">🍽️</span>
+          <UtensilsCrossed className="mb-1 h-7 w-7 text-muted-foreground" aria-hidden />
           <p className="text-sm font-medium text-foreground">{t("emptyTitle")}</p>
           <p className="text-xs text-muted-foreground">{t("emptyHint")}</p>
         </Card>
@@ -512,7 +517,13 @@ export default function DietPlanView({
                         disabled={mutating}
                         className="min-h-[36px] shrink-0 rounded-pill border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition hover:border-primary/50 active:scale-[0.97] disabled:opacity-40"
                       >
-                        {swapping === meal.slot ? "…" : `↻ ${t("swap")}`}
+                        {swapping === meal.slot ? (
+                          "…"
+                        ) : (
+                          <span className="inline-flex items-center gap-1">
+                            <RefreshCw size={13} aria-hidden /> {t("swap")}
+                          </span>
+                        )}
                       </button>
                     </div>
                     <ul className="flex flex-col gap-1.5">
@@ -565,7 +576,7 @@ export default function DietPlanView({
                                     : "border-border bg-card text-foreground hover:border-primary/50"
                                 }`}
                               >
-                                ⚖
+                                <Scale size={16} aria-hidden />
                               </button>
                               {canSwap && (
                                 <button
@@ -576,7 +587,7 @@ export default function DietPlanView({
                                   onClick={() => swapItem(meal.slot, i)}
                                   className="flex h-9 w-9 shrink-0 items-center justify-center rounded-pill border border-border bg-card text-sm text-foreground transition hover:border-primary/50 active:scale-[0.95] disabled:opacity-40"
                                 >
-                                  {rowBusy ? "…" : "↻"}
+                                  {rowBusy ? "…" : <RefreshCw size={15} aria-hidden />}
                                 </button>
                               )}
                               {/* Report issue — independent of plan edits, so it
@@ -598,7 +609,7 @@ export default function DietPlanView({
                                 }
                                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-pill border border-border bg-card text-sm text-muted-foreground transition hover:border-primary/50 hover:text-foreground active:scale-[0.95]"
                               >
-                                ⚐
+                                <Flag size={15} aria-hidden />
                               </button>
                               <button
                                 type="button"
@@ -608,7 +619,7 @@ export default function DietPlanView({
                                 onClick={() => removeItem(meal.slot, i)}
                                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-pill border border-border bg-card text-sm text-muted-foreground transition hover:border-destructive/50 hover:text-destructive active:scale-[0.95] disabled:opacity-40"
                               >
-                                {rowBusy ? "…" : "✕"}
+                                {rowBusy ? "…" : <X size={15} aria-hidden />}
                               </button>
                             </div>
                             {qtyExpanded && (

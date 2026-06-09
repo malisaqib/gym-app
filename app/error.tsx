@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import Link from "next/link";
+import { Frown } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 
 /**
@@ -16,9 +17,7 @@ export default function Error({ error, reset }: { error: Error & { digest?: stri
 
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-4 px-6 text-center">
-      <span className="text-4xl" aria-hidden>
-        😣
-      </span>
+      <Frown className="h-12 w-12 text-muted-foreground" aria-hidden />
       <h1 className="font-display text-2xl font-semibold text-foreground">Something went wrong</h1>
       <p className="text-sm text-muted-foreground">
         A hiccup on our end — your data is safe. Please try again.

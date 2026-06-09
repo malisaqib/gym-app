@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ChevronDown, Lightbulb, X } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { haptic } from "@/lib/haptics";
 import { suggestUpgrades } from "@/lib/diet/upgrades";
@@ -97,7 +98,11 @@ export default function UsualEatingCard({
             {open ? t("intro") : hasContent ? t("collapsedSet") : t("collapsedEmpty")}
           </p>
         </div>
-        <span className={`shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}>▾</span>
+        <ChevronDown
+          size={18}
+          aria-hidden
+          className={`shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}
+        />
       </button>
 
       {open && (
@@ -115,15 +120,17 @@ export default function UsualEatingCard({
           <ul className="space-y-1.5">
             {ideas.map((idea) => (
               <li key={idea.id} className="flex items-start justify-between gap-2 rounded-field bg-card px-3 py-2">
-                <span className="text-sm text-foreground">💡 {idea.text}</span>
+                <span className="flex items-start gap-1.5 text-sm text-foreground">
+                  <Lightbulb size={14} aria-hidden className="mt-0.5 shrink-0 text-primary" /> {idea.text}
+                </span>
                 <button
                   type="button"
                   onPointerDown={() => haptic("tap")}
                   onClick={() => setDismissed((d) => [...d, idea.id])}
                   aria-label="Dismiss"
-                  className="shrink-0 rounded-pill px-2 text-xs font-medium text-muted-foreground hover:text-foreground"
+                  className="shrink-0 rounded-pill px-2 text-muted-foreground hover:text-foreground"
                 >
-                  ✕
+                  <X size={14} aria-hidden />
                 </button>
               </li>
             ))}

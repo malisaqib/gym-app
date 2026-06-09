@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Bell } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { getCheckIns as getLocalCheckIns, lastCheckIn, daysSince } from "@/lib/coach/checkins";
@@ -172,7 +173,9 @@ export default function WeeklyCheckIn({ lang = "en" }: { lang?: Lang }) {
       </div>
 
       {showReminder && (
-        <p className="rounded-field bg-primary-soft px-3 py-2 text-sm text-primary">⏰ {t("reminder")}</p>
+        <p className="flex items-center gap-1.5 rounded-field bg-primary-soft px-3 py-2 text-sm text-primary">
+          <Bell size={14} aria-hidden /> {t("reminder")}
+        </p>
       )}
 
       {latest && !justSaved && (

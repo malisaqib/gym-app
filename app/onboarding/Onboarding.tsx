@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "motion/react";
+import { Utensils, Dumbbell } from "lucide-react";
 import { fadeUp } from "@/lib/motion";
 import {
   STEPS,
@@ -309,8 +310,12 @@ export default function Onboarding({ initialLang }: { initialLang: Lang }) {
           <BotBubble>
             <p className="font-medium text-foreground">{guidance.headline}</p>
             <p className="mt-2 text-foreground">{guidance.explanation}</p>
-            <p className="mt-2 text-foreground">🍽️ {guidance.diet}</p>
-            <p className="mt-1 text-foreground">🏋️ {guidance.workout}</p>
+            <p className="mt-2 flex items-start gap-2 text-foreground">
+              <Utensils size={15} aria-hidden className="mt-0.5 shrink-0 text-primary" /> {guidance.diet}
+            </p>
+            <p className="mt-1 flex items-start gap-2 text-foreground">
+              <Dumbbell size={15} aria-hidden className="mt-0.5 shrink-0 text-primary" /> {guidance.workout}
+            </p>
           </BotBubble>
         )}
 

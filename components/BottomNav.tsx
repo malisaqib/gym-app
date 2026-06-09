@@ -2,17 +2,18 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Home, Utensils, ClipboardList, Dumbbell, TrendingUp, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { haptic } from "@/lib/haptics";
 
 // Fixed bottom tab bar for the signed-in app. Active tab gets a soft pill behind
 // its icon + the primary colour. Respects the iOS home-indicator safe area.
-const TABS = [
-  { href: "/dashboard", label: "Home", emoji: "🏠" },
-  { href: "/coach", label: "Eat", emoji: "🍽️" },
-  { href: "/diet", label: "Plan", emoji: "🥗" },
-  { href: "/workout", label: "Train", emoji: "🏋️" },
-  { href: "/weight", label: "Progress", emoji: "📈" },
+const TABS: { href: string; label: string; icon: LucideIcon }[] = [
+  { href: "/dashboard", label: "Home", icon: Home },
+  { href: "/coach", label: "Eat", icon: Utensils },
+  { href: "/diet", label: "Plan", icon: ClipboardList },
+  { href: "/workout", label: "Train", icon: Dumbbell },
+  { href: "/weight", label: "Progress", icon: TrendingUp },
 ];
 
 export default function BottomNav() {
@@ -34,11 +35,11 @@ export default function BottomNav() {
             >
               <span
                 className={cn(
-                  "flex h-7 w-12 items-center justify-center rounded-pill text-lg transition-all duration-200 ease-out",
+                  "flex h-7 w-12 items-center justify-center rounded-pill transition-all duration-200 ease-out",
                   active ? "scale-105 bg-primary/15 shadow-glow-primary" : "scale-100"
                 )}
               >
-                {tab.emoji}
+                <tab.icon size={22} className={active ? "text-primary" : "text-muted-foreground"} aria-hidden />
               </span>
               <span
                 className={cn(

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { TrendingUp, Flame } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -95,7 +96,7 @@ export default function ProgressTracker({ lang = "en" }: { lang?: Lang }) {
     return (
       <Card className="space-y-3 p-5">
         <p className="text-xs font-medium uppercase tracking-wide text-primary">{t("eyebrow")}</p>
-        <EmptyState icon="📈" title={t("empty")} />
+        <EmptyState icon={TrendingUp} title={t("empty")} />
       </Card>
     );
   }
@@ -117,8 +118,8 @@ export default function ProgressTracker({ lang = "en" }: { lang?: Lang }) {
 
       {/* Streak first — consistency is the headline (Phase 8). */}
       <div className="rounded-field bg-primary-soft p-3">
-        <p className="font-display text-xl font-semibold text-primary">
-          {streak.currentStreak}-{t("streak")} 🔥
+        <p className="flex items-center gap-1.5 font-display text-xl font-semibold text-primary">
+          {streak.currentStreak}-{t("streak")} <Flame size={18} aria-hidden />
         </p>
         <p className="mt-1 text-sm text-primary">
           {t("best")}: {streak.bestStreak} · {t("last")}: {streak.lastCheckInDate ?? "—"}

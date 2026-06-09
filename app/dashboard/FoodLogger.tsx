@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
+import { Flag, UtensilsCrossed } from "lucide-react";
 import type { FoodLog, Lang, ReportContext, ReportType } from "@/lib/database.types";
 import { listContainer, listItem, fadeUp } from "@/lib/motion";
 import { sumMacros } from "@/lib/food/totals";
@@ -254,7 +255,7 @@ export default function FoodLogger({
         </h2>
 
         {count === 0 ? (
-          <EmptyState icon="🍽️" title="Nothing logged yet" hint="Type a meal above to get started." />
+          <EmptyState icon={UtensilsCrossed} title="Nothing logged yet" hint="Type a meal above to get started." />
         ) : (
           <motion.div variants={listContainer} initial="hidden" animate="show" className="flex flex-col gap-2.5">
             <AnimatePresence initial={false} mode="popLayout">
@@ -419,7 +420,7 @@ function FoodItemRow({
             onClick={() => onReport(item)}
             className="px-2 text-muted-foreground hover:text-foreground"
           >
-            ⚐
+            <Flag size={15} aria-hidden />
           </Button>
           <Button
             variant="ghost"

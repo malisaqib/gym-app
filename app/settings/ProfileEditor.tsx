@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Target as TargetIcon } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { haptic } from "@/lib/haptics";
 import { toast } from "@/lib/toast";
@@ -219,8 +220,8 @@ export default function ProfileEditor({ initial }: { initial: ProfileDetails }) 
           </div>
         )}
         {details.targetDate && details.goalWeightKg !== details.weightKg && (
-          <p className="text-sm text-muted-foreground">
-            🎯 On track for {details.goalWeightKg} kg by {formatDate(details.targetDate)}.
+          <p className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+            <TargetIcon size={14} aria-hidden /> On track for {details.goalWeightKg} kg by {formatDate(details.targetDate)}.
           </p>
         )}
         <p className="text-xs text-muted-foreground">

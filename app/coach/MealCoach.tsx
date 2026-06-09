@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
+import { Sparkles } from "lucide-react";
 import { listContainer, listItem, springSoft } from "@/lib/motion";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -266,9 +267,9 @@ function ResultCard({
       {suggestion.coach_note && (
         <motion.p
           variants={listItem}
-          className="border-t border-border bg-primary-soft px-5 py-3 text-sm text-primary"
+          className="flex items-start gap-2 border-t border-border bg-primary-soft px-5 py-3 text-sm text-primary"
         >
-          💪 {suggestion.coach_note}
+          <Sparkles size={15} aria-hidden className="mt-0.5 shrink-0" /> {suggestion.coach_note}
         </motion.p>
       )}
     </motion.div>

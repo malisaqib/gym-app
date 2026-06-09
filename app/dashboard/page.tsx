@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { Target } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getLocalToday } from "@/lib/date";
 import type { FoodLog, Lang, Profile } from "@/lib/database.types";
@@ -58,7 +59,13 @@ export default async function DashboardPage() {
       <Screen>
         <LargeTitle
           title="Today"
-          subtitle={goalLabel ? `🎯 ${goalLabel}` : undefined}
+          subtitle={
+            goalLabel ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Target size={14} aria-hidden /> {goalLabel}
+              </span>
+            ) : undefined
+          }
           action={
             <div className="flex items-center gap-1">
               <Link

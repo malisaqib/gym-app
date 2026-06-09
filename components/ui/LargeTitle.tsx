@@ -16,7 +16,7 @@ export function LargeTitle({
   action,
 }: {
   title: string;
-  subtitle?: string;
+  subtitle?: React.ReactNode;
   action?: React.ReactNode;
 }) {
   const [compact, setCompact] = useState(false);

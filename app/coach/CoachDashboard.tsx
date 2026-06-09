@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "motion/react";
+import { Utensils, Calculator, type LucideIcon } from "lucide-react";
 import { listContainer, listItem } from "@/lib/motion";
 import { Card } from "@/components/ui/Card";
 import BottomNav from "@/components/BottomNav";
@@ -40,9 +41,9 @@ export default function CoachDashboard({ lang, name }: { lang: Lang; name: strin
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  const actions = [
-    { id: "coach", emoji: "🍽️", label: t("qEat") },
-    { id: "estimate", emoji: "🔢", label: t("qEstimate") },
+  const actions: { id: string; icon: LucideIcon; label: string }[] = [
+    { id: "coach", icon: Utensils, label: t("qEat") },
+    { id: "estimate", icon: Calculator, label: t("qEstimate") },
   ];
 
   return (
@@ -74,7 +75,7 @@ export default function CoachDashboard({ lang, name }: { lang: Lang; name: strin
                 onClick={() => goTo(a.id)}
                 className="flex items-center gap-2 rounded-card border border-border bg-card px-3 py-3 text-left text-sm font-medium text-foreground shadow-soft transition hover:border-primary/40 hover:bg-muted active:scale-[0.98]"
               >
-                <span className="text-lg leading-none">{a.emoji}</span>
+                <a.icon size={18} aria-hidden className="shrink-0 text-primary" />
                 <span className="leading-tight">{a.label}</span>
               </button>
             ))}

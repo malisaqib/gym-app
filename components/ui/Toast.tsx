@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
+import { Check, AlertTriangle, Info, type LucideIcon } from "lucide-react";
 import { spring } from "@/lib/motion";
 import { cn } from "@/lib/cn";
 import { subscribeToToasts, type ToastItem } from "@/lib/toast";
@@ -20,10 +21,10 @@ const toneStyles: Record<ToastItem["tone"], string> = {
   info: "bg-foreground text-background",
 };
 
-const toneIcon: Record<ToastItem["tone"], string> = {
-  success: "✓",
-  error: "!",
-  info: "i",
+const toneIcon: Record<ToastItem["tone"], LucideIcon> = {
+  success: Check,
+  error: AlertTriangle,
+  info: Info,
 };
 
 export function ToastViewport() {
@@ -49,27 +50,30 @@ export function ToastViewport() {
       aria-atomic="false"
     >
       <AnimatePresence initial={false}>
-        {toasts.map((t) => (
-          <motion.button
-            key={t.id}
-            type="button"
-            layout
-            initial={{ opacity: 0, y: 24, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 12, scale: 0.96, transition: { duration: 0.15 } }}
-            transition={spring}
-            onClick={() => dismiss(t.id)}
-            className={cn(
-              "pointer-events-auto flex w-full max-w-sm items-center gap-2.5 rounded-field px-4 py-3 text-left text-sm font-medium shadow-pop",
-              toneStyles[t.tone]
-            )}
-          >
-            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/20 text-xs font-bold">
-              {toneIcon[t.tone]}
-            </span>
-            <span className="min-w-0 flex-1">{t.message}</span>
-          </motion.button>
-        ))}
+        {toasts.map((t) => {
+          const Icon = toneIcon[t.tone];
+          return (
+            <motion.button
+              key={t.id}
+              type="button"
+              layout
+              initial={{ opacity: 0, y: 24, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.96, transition: { duration: 0.15 } }}
+              transition={spring}
+              onClick={() => dismiss(t.id)}
+              className={cn(
+                "pointer-events-auto flex w-full max-w-sm items-center gap-2.5 rounded-field px-4 py-3 text-left text-sm font-medium shadow-pop",
+                toneStyles[t.tone]
+              )}
+            >
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/20">
+                <Icon className="h-3.5 w-3.5" strokeWidth={2.5} aria-hidden />
+              </span>
+              <span className="min-w-0 flex-1">{t.message}</span>
+            </motion.button>
+          );
+        })}
       </AnimatePresence>
     </div>
   );
