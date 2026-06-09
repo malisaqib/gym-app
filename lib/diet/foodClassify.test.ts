@@ -82,6 +82,25 @@ test("almonds → snack, nuts tag, kept despite high fat", () => {
   assert.equal(f.vegetarian, true);
 });
 
+test("canned tuna in water → protein kept (the 'water' false-exclude is fixed)", () => {
+  const f = classifyFood(usda("Fish, tuna, light, canned in water, drained solids", { kcal: 116, p: 26, c: 0, f: 0.8 }))!;
+  assert.ok(f, "tuna in water should be kept");
+  assert.equal(f.role, "protein");
+  assert.ok(f.tags.includes("fish"));
+});
+
+test("processed meats (meatballs) → protein", () => {
+  const f = classifyFood(usda("Meatballs, meatless", { kcal: 197, p: 18, c: 8, f: 11 }));
+  // "meatless" still contains "meat" → protein (vegetarian flag handles the rest).
+  assert.equal(f?.role, "protein");
+});
+
+test("avocado → fruit", () => {
+  const f = classifyFood(usda("Avocados, raw, all commercial varieties", { kcal: 160, p: 2, c: 9, f: 15 }))!;
+  assert.equal(f.role, "fruit");
+  assert.equal(f.vegetarian, true);
+});
+
 test("unclassifiable rows are excluded", () => {
   assert.equal(classifyFood(usda("Restaurant, latino, arroz con grandules", { kcal: 150, p: 4, c: 25, f: 4 })), null);
 });

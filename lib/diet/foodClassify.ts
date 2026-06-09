@@ -35,22 +35,24 @@ const NONVEG =
 
 // Hard excludes — ingredients / pure fats / sugars / condiments / beverages /
 // dry mixes. Gated by NUT_OK so nut butters & nuts survive.
+// NOTE: "water" is intentionally NOT here — names like "tuna, canned in water"
+// must survive; actual water/diet drinks are dropped by the calorie floor below.
 const EXCLUDE =
-  /\b(oils?|fats?|lard|shortening|tallow|margarine|ghee|butter|sugars?|syrups?|molasses|salts?|spices?|seasonings?|cinnamon|cumin|coriander seed|paprika|nutmeg|cloves?|turmeric|chil(?:i|li) powder|cayenne|extracts?|flavou?ring|leavening|baking powder|baking soda|yeast|cornstarch|starch|flours?|gelatin|vinegars?|sauces?|gravy|gravies|frosting|icing|dressings?|mayonnaise|ketchup|mustard|relish|pickles?|jams?|jell(?:y|ies)|preserves|marmalade|candies|candy|gums?|alcoholic|wine|beer|liquor|vodka|whiskey|rum|water|infant formula|baby ?food|formula|dry mix|dehydrated|concentrate|bouillon|stock|leavening|malt\b|tapioca)\b/i;
+  /\b(oils?|fats?|lard|shortening|tallow|margarine|ghee|butter|sugars?|syrups?|molasses|salts?|spices?|seasonings?|cinnamon|cumin|coriander seed|paprika|nutmeg|cloves?|turmeric|chil(?:i|li) powder|cayenne|extracts?|flavou?ring|leavening|baking powder|baking soda|yeast|cornstarch|starch|flours?|gelatin|vinegars?|sauces?|gravy|gravies|frosting|icing|dressings?|mayonnaise|ketchup|mustard|relish|pickles?|jams?|jell(?:y|ies)|preserves|marmalade|candies|candy|gums?|alcoholic|wine|beer|liquor|vodka|whiskey|rum|infant formula|baby ?food|formula|dry mix|dehydrated|concentrate|bouillon|stock|leavening|malt\b|tapioca)\b/i;
 
 // High-fat but legitimate whole foods (so the fat-fraction rule doesn't drop them).
-const NUT_OK = /\b(almonds?|peanuts?|cashews?|walnuts?|pistachios?|pecans?|hazelnuts?|nuts?|seeds?|avocado)\b/i;
+const NUT_OK = /\b(almonds?|peanuts?|cashews?|walnuts?|pistachios?|pecans?|hazelnuts?|nuts?|seeds?|avocados?)\b/i;
 
 // Role detection, in priority order (first match wins).
 const ROLE_RULES: { role: FoodRole; re: RegExp }[] = [
   {
     role: "protein",
-    re: /\b(beef|veal|steak|pork|bacon|ham|sausages?|lamb|mutton|goat|chicken|turkey|duck|fish|salmon|tuna|cod|tilapia|trout|sardines?|mackerel|shrimps?|prawns?|crab|lobster|eggs?|omelette?|tofu|tempeh|seitan|lentils?|daa?l|dahl|beans?|chick ?peas?|garbanzo|chana|rajma|edamame|soy(?:bean)?|paneer|cottage cheese|whey|protein)\b/i,
+    re: /\b(beef|veal|steak|pork|bacon|ham|sausages?|salami|pepperoni|lamb|mutton|goat|chicken|turkey|duck|fish|salmon|tuna|cod|tilapia|trout|sardines?|mackerel|shrimps?|prawns?|crab|lobster|eggs?|omelette?|tofu|tempeh|seitan|lentils?|daa?l|dahl|beans?|chick ?peas?|garbanzo|chana|rajma|edamame|soy(?:bean)?|paneer|cottage cheese|whey|protein|meat|meatballs?|kebabs?|kabobs?|kababs?|kofta|cutlets?|nuggets?|patt(?:y|ies)|frankfurters?|hot ?dogs?|bratwurst|chorizo|jerky)\b/i,
   },
   { role: "dairy", re: /\b(milk|yog(?:h)?urt|curd|dahi|cheese|paneer|lassi|kefir|buttermilk)\b/i },
   {
     role: "fruit",
-    re: /\b(apples?|bananas?|mangoe?s?|oranges?|grapes?|berr(?:y|ies)|strawberr\w*|blueberr\w*|melon|watermelon|papaya|guava|pears?|peach\w*|plums?|apricots?|pineapple|pomegranate|kiwi|fruits?|dates?|raisins?|figs?)\b/i,
+    re: /\b(apples?|bananas?|mangoe?s?|oranges?|grapes?|berr(?:y|ies)|strawberr\w*|blueberr\w*|melon|watermelon|papaya|guava|pears?|peach\w*|plums?|apricots?|pineapple|pomegranate|kiwi|avocados?|fruits?|dates?|raisins?|figs?)\b/i,
   },
   {
     role: "veg",
