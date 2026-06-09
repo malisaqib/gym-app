@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
+import { MotionConfig } from "motion/react";
 import "./globals.css";
 import ServiceWorkerRegister from "./ServiceWorkerRegister";
 import TimezoneCookie from "@/components/TimezoneCookie";
@@ -20,7 +21,8 @@ export const metadata: Metadata = {
     "A simple fitness coach for beginners — calorie & protein targets and easy food logging.",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "default",
+    // Deep-black app: let content draw under a translucent status bar.
+    statusBarStyle: "black-translucent",
     title: "FitCoach",
   },
   icons: {
@@ -34,7 +36,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#10b981",
+  themeColor: "#000000", // deep-black browser chrome to match the app
 };
 
 export default function RootLayout({
@@ -43,17 +45,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={inter.variable}>
-      <body className="min-h-screen font-sans antialiased">
-        {/* Follow the OS light/dark setting (and react to live changes). Runs
-            during parse so the theme is set before content paints. */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `(function(){try{var m=window.matchMedia('(prefers-color-scheme: dark)');function a(){document.documentElement.classList.toggle('dark',m.matches);}a();m.addEventListener?m.addEventListener('change',a):m.addListener(a);}catch(e){}})();`,
-          }}
-        />
-        {children}
-        <ToastViewport />
+    // `fitness` makes the Apple-Fitness deep-black theme the single app-wide theme
+    // (no OS light/dark toggle — the app is dark by design, like Apple Fitness).
+    <html lang="en" className={`${inter.variable} fitness`}>
+      <body className="min-h-screen bg-background font-sans antialiased">
+        {/* One global motion policy: every Framer animation respects the user's
+            "reduce motion" OS setting. */}
+        <MotionConfig reducedMotion="user">
+          {children}
+          <ToastViewport />
+        </MotionConfig>
         <ServiceWorkerRegister />
         <TimezoneCookie />
       </body>

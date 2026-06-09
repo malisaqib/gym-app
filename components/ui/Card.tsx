@@ -11,7 +11,7 @@ export function Card({
   return (
     <div
       className={cn(
-        "rounded-card border border-border bg-card text-card-foreground shadow-soft",
+        "rounded-card-lg border border-border bg-card text-card-foreground shadow-soft",
         interactive &&
           "cursor-pointer touch-manipulation select-none transition duration-200 ease-ios hover:-translate-y-0.5 hover:shadow-pop active:translate-y-0 active:scale-[0.99] active:shadow-soft",
         className
