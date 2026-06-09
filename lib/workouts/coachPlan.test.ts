@@ -185,3 +185,132 @@ test("QA(4): home + no equipment → never an exercise needing a machine/cable/b
     );
   }
 });
+
+// --- Selection-quality suite (tier / muscle / novelty / descriptions) --------
+
+const NOVELTY = /\b(alternat|bound|diagonal|around the world|anti-gravity|atlas|tire|clock|car driver|renegade|jump|skater|burpee|sledge|zercher)\b/i;
+const LEG_MUSCLES = new Set(["quadriceps", "hamstrings", "glutes", "calves", "abductors", "adductors"]);
+
+test("Gym/Intermediate/5-day/Gain muscle → real split led by Tier-1 compounds, ZERO Tier-3/novelty", () => {
+  const p = plan({ goal: "gain_muscle", location: "gym", hasEquipment: true, level: "intermediate", daysPerWeek: 5 });
+  const training = p.days.filter((d) => !d.isRest);
+  assert.equal(training.length, 5);
+
+  // Every training day is LED by a Tier-1 compound matching that day's muscles.
+  for (const d of training) {
+    const lead = d.exercises[0];
+    assert.ok(lead, `${d.focus} is empty`);
+    assert.equal(byId.get(lead.id)!.tier, 1, `${d.focus} not led by a Tier-1: ${lead.name}`);
+    assert.equal(lead.isCompound, true, `${d.focus} lead is not a compound: ${lead.name}`);
+  }
+
+  // No novelty / Tier-3 anywhere.
+  for (const e of flat(p)) {
+    assert.notEqual(byId.get(e.id)!.tier, 3, `Tier-3 leaked: ${e.name}`);
+    assert.ok(!NOVELTY.test(e.name), `novelty leaked: ${e.name}`);
+  }
+
+  // The fundamentals are actually present (a real bench/squat/deadlift/row/pulldown/press split).
+  const names = flat(p).map((e) => e.name.toLowerCase());
+  const has = (re: RegExp) => names.some((n) => re.test(n));
+  assert.ok(has(/bench press/), "missing a bench press");
+  assert.ok(has(/squat/), "missing a squat");
+  assert.ok(has(/deadlift|romanian/), "missing a deadlift/RDL");
+  assert.ok(has(/\brow\b|rows/), "missing a row");
+  assert.ok(has(/pulldown|pull-?up|chin-?up/), "missing a vertical pull");
+  assert.ok(has(/shoulder press|overhead|military/), "missing an overhead press");
+});
+
+test("Gym/Beginner/fat loss → beginner-safe, no novelty, no Tier-3", () => {
+  const p = plan({ goal: "lose_weight", location: "gym", hasEquipment: true, level: "beginner", daysPerWeek: 4 });
+  const exs = flat(p);
+  assert.ok(exs.length > 0);
+  for (const e of exs) {
+    assert.equal(e.difficulty, "beginner", `non-beginner on beginner plan: ${e.name}`);
+    assert.notEqual(byId.get(e.id)!.tier, 3, `Tier-3 leaked: ${e.name}`);
+    assert.ok(!NOVELTY.test(e.name), `novelty leaked: ${e.name}`);
+  }
+});
+
+test("No description contradicts the exercise's real muscle group", () => {
+  for (const cfg of [
+    { goal: "gain_muscle", location: "gym", hasEquipment: true, level: "intermediate", daysPerWeek: 5 } as const,
+    { goal: "stay_fit", location: "home", hasEquipment: false, level: "beginner", daysPerWeek: 3 } as const,
+  ]) {
+    for (const e of flat(plan(cfg))) {
+      const why = e.whyThisExercise.toLowerCase();
+      if (LEG_MUSCLES.has(e.primaryMuscle ?? "")) {
+        assert.ok(!/chest|pressing/.test(why), `leg move claims chest/pressing: ${e.name} → ${e.whyThisExercise}`);
+      }
+      if (e.primaryMuscle === "shoulders") {
+        assert.ok(!/your chest/.test(why), `shoulder move claims chest: ${e.name} → ${e.whyThisExercise}`);
+      }
+      if (e.primaryMuscle === "lats" || e.primaryMuscle === "middle back") {
+        assert.ok(!/pressing|your chest/.test(why), `back move claims pressing/chest: ${e.name} → ${e.whyThisExercise}`);
+      }
+    }
+  }
+});
+
+test("Level tags never exceed the plan level", () => {
+  const RANK: Record<string, number> = { beginner: 0, intermediate: 1, advanced: 2 };
+  for (const lvl of ["beginner", "intermediate", "advanced"] as const) {
+    const p = plan({ goal: "gain_muscle", location: "gym", hasEquipment: true, level: lvl, daysPerWeek: 4 });
+    for (const e of flat(p)) {
+      assert.ok(RANK[e.difficulty] <= RANK[lvl], `${e.name} (${e.difficulty}) exceeds a ${lvl} plan`);
+    }
+  }
+});
+
+// --- pull-up bar HARD-filter cases (the bug we already fought) ---------------
+
+test("PULLUP(1): Home/bodyweight/beginner → ZERO pull-ups/chin-ups anywhere", () => {
+  const p = plan({ goal: "stay_fit", location: "home", hasEquipment: false, level: "beginner", daysPerWeek: 4 });
+  for (const e of flat(p)) {
+    assert.ok(!PULLUP.test(e.name), `pull-up leaked: ${e.name}`);
+    assert.equal(byId.get(e.id)!.requiresPullupBar, false, e.name);
+  }
+});
+
+test("PULLUP(2): Gym/intermediate/gain muscle → vertical pulls ARE allowed and days are Tier-1-led", () => {
+  const p = plan({ goal: "gain_muscle", location: "gym", hasEquipment: true, level: "intermediate", daysPerWeek: 5 });
+  const names = flat(p).map((e) => e.name.toLowerCase());
+  assert.ok(names.some((n) => /pulldown|pull-?up|chin-?up/.test(n)), "gym plan should include a vertical pull");
+  for (const d of p.days.filter((x) => !x.isRest)) {
+    assert.equal(byId.get(d.exercises[0].id)!.tier, 1, `${d.focus} not Tier-1 led`);
+  }
+});
+
+test("PULLUP(3): Equipment without a pull-up bar (dumbbells+bench) → no pull-up-bar move at all", () => {
+  const p = plan({ goal: "gain_muscle", location: "home", hasEquipment: true, equipment: ["dumbbells", "bench"], level: "intermediate", daysPerWeek: 4 });
+  for (const e of flat(p)) {
+    assert.equal(byId.get(e.id)!.requiresPullupBar, false, `pull-up-bar move without a bar: ${e.name}`);
+    assert.ok(!PULLUP.test(e.name), e.name);
+  }
+});
+
+test("BACK-SLOT: home/bodyweight back work is genuine equipment-free posterior — never a core/leg move or band/bar", () => {
+  // Misclassification fixed: a force:'pull' ab move is core, never 'pull'.
+  const flutter = ALL.find((e) => e.name === "Flutter Kicks")!;
+  assert.notEqual(flutter.movementPattern, "pull", "Flutter Kicks must NOT be a pull");
+  assert.equal(flutter.movementPattern, "core", "Flutter Kicks should be core");
+
+  const p = plan({ goal: "stay_fit", location: "home", hasEquipment: false, level: "beginner", daysPerWeek: 3 });
+  const exs = flat(p);
+
+  // Every move is truly equipment-free (so no band/bar substitute slipped in).
+  for (const e of exs) {
+    assert.equal(e.equipment, "bodyweight", `non-bodyweight move in a no-equipment plan: ${e.name}`);
+    assert.ok(!PULLUP.test(e.name), `pull-up leaked: ${e.name}`);
+  }
+
+  // The posterior fallback put a GENUINE back move in (e.g. Superman = lower back),
+  // and only real posterior muscles count as back work — never a core/leg-raise.
+  const POSTERIOR = new Set(["lower back", "lats", "middle back", "traps"]);
+  const back = exs.filter((e) => POSTERIOR.has(e.primaryMuscle ?? ""));
+  assert.ok(back.length > 0, "home bodyweight plan should include a genuine posterior move");
+  for (const e of back) assert.equal(e.equipment, "bodyweight", e.name);
+
+  // The non-pushy gear nudge is shown.
+  assert.ok(p.adjustments.some((a) => /resistance band|pull-up bar/i.test(a)), "gear nudge expected on no-equipment back days");
+});
