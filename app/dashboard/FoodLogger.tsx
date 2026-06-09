@@ -78,8 +78,6 @@ export default function FoodLogger({
 
   // Totals are computed on the fly (base × amount) — never a frozen number.
   const eaten = sumMacros(items.map(itemMacros));
-  const calLeft = Math.round(calorieTarget - eaten.calories);
-  const calOver = calorieTarget > 0 && eaten.calories > calorieTarget;
 
   // Re-read the day's items when the tab regains focus, and re-align if the
   // CLIENT's local day differs from the server-rendered day (first-visit UTC
@@ -217,40 +215,11 @@ export default function FoodLogger({
         <WeekStrip />
       </motion.div>
 
-      {/* Hero: concentric activity rings (calories + protein) with the big metric. */}
-      <motion.section variants={fadeUp} className="flex flex-col items-center gap-6">
-        <div className="relative" style={{ width: 248, height: 248 }}>
-          {/* Each ring is centered in its own inset-0 overlay so they're truly
-              concentric (a plain className="absolute" loses to the component's
-              own `relative`, which previously dropped the inner ring out of place). */}
-          <div className="absolute inset-0 grid place-items-center">
-            <ActivityRing
-              value={eaten.calories}
-              max={calorieTarget}
-              color={calOver ? "rgb(var(--destructive))" : "rgb(var(--ring-1))"}
-              size={248}
-              stroke={24}
-            />
-          </div>
-          <div className="absolute inset-0 grid place-items-center">
-            <ActivityRing value={eaten.protein_g} max={proteinTarget} color="rgb(var(--ring-2))" size={186} stroke={24} delay={0.08} />
-          </div>
-          <div className="absolute inset-0 grid place-items-center">
-            <div className="flex flex-col items-center">
-              <Counter value={eaten.calories} className="stat-value text-[3.25rem] leading-none text-foreground" />
-              <span className="stat-label mt-1.5">of {calorieTarget} kcal</span>
-              <span className={`mt-2 text-xs font-semibold ${calOver ? "text-destructive" : "text-primary"}`}>
-                {calOver ? `${Math.abs(calLeft)} over` : `${calLeft} left`}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Macro tiles — big number / small label rhythm. */}
-        <div className="grid w-full grid-cols-3 gap-3">
-          <MacroTile label="Protein" value={eaten.protein_g} target={proteinTarget} unit="g" tone="accent" />
-          <MacroTile label="Carbs" value={eaten.carbs_g} unit="g" />
-          <MacroTile label="Fat" value={eaten.fat_g} unit="g" />
+      {/* Hero: two separate rings — calories and protein, side by side. */}
+      <motion.section variants={fadeUp}>
+        <div className="grid grid-cols-2 gap-2 rounded-card-xl border border-border bg-card p-5">
+          <RingStat label="Calories" value={eaten.calories} max={calorieTarget} unit="kcal" tone="primary" />
+          <RingStat label="Protein" value={eaten.protein_g} max={proteinTarget} unit="g" tone="accent" />
         </div>
       </motion.section>
 
@@ -327,28 +296,40 @@ export default function FoodLogger({
   );
 }
 
-// A daily macro readout: big tabular number + tiny muted label (Apple rhythm).
-function MacroTile({
+// One daily metric as its own ring: a big count-up number inside the ring, with
+// a muted label above and "X left" below. Calories = emerald, protein = amber.
+function RingStat({
   label,
   value,
-  target,
+  max,
   unit,
   tone,
 }: {
   label: string;
   value: number;
-  target?: number;
+  max: number;
   unit: string;
-  tone?: "accent";
+  tone: "primary" | "accent";
 }) {
+  const left = Math.round(max - value);
+  const over = max > 0 && value > max;
+  const ringColor = over ? "rgb(var(--destructive))" : tone === "accent" ? "rgb(var(--ring-2))" : "rgb(var(--ring-1))";
+  const leftColor = over ? "text-destructive" : tone === "accent" ? "text-accent" : "text-primary";
+
   return (
-    <div className="rounded-card-lg border border-border bg-card px-3 py-3.5 text-center">
-      <div className="flex items-baseline justify-center gap-0.5">
-        <Counter value={value} className={`stat-value text-2xl ${tone === "accent" ? "text-accent" : "text-foreground"}`} />
-        <span className="text-xs font-medium text-muted-foreground">{unit}</span>
-      </div>
-      <p className="stat-label mt-1.5">{label}</p>
-      {target ? <p className="mt-0.5 text-[10px] text-muted-foreground">of {Math.round(target)}{unit}</p> : null}
+    <div className="flex flex-col items-center gap-2.5">
+      <p className="stat-label">{label}</p>
+      <ActivityRing value={value} max={max} color={ringColor} size={132} stroke={13}>
+        <div className="flex flex-col items-center">
+          <Counter value={value} className="stat-value text-2xl text-foreground" />
+          <span className="text-[10px] text-muted-foreground">
+            of {Math.round(max)} {unit}
+          </span>
+        </div>
+      </ActivityRing>
+      <p className={`text-xs font-semibold ${leftColor}`}>
+        {over ? `${Math.abs(left)} ${unit} over` : `${left} ${unit} left`}
+      </p>
     </div>
   );
 }
