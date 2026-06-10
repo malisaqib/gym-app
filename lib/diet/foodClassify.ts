@@ -129,28 +129,50 @@ function regionOf(raw: RawFoodRow): CatalogFood["region"] {
   return raw.region === "desi" || raw.region === "western" || raw.region === "global" ? raw.region : "global";
 }
 
-/** Classify one row → a planner meal food, or null to EXCLUDE it. Pure. */
-export function classifyFood(raw: RawFoodRow): CatalogFood | null {
+/**
+ * Detailed classification — returns the planner food AND a machine reason, so a
+ * persistence/audit script can store classification_status + reason. The reason
+ * for excludes uses the JUNK_REASONS vocabulary below (true non-foods) vs softer
+ * keyword/macro reasons. `classifyFood` is the thin boolean-style wrapper used by
+ * the runtime planner + tests, so its behaviour is unchanged.
+ */
+export type ClassifyResult =
+  | { status: "eligible"; reason: string; food: CatalogFood }
+  | { status: "excluded"; reason: string };
+
+// "Junk" reasons mean the row is not real, plate-able food (vs merely an
+// unrecognised name). Used so curated dishes aren't excluded for a keyword gap.
+export const JUNK_REASONS = new Set([
+  "branded_caps",
+  "branded_possessive",
+  "branded_list",
+  "restaurant",
+  "absolute_exclude",
+  "ingredient",
+  "offal",
+]);
+
+export function classifyFoodDetailed(raw: RawFoodRow): ClassifyResult {
   const lower = raw.name.toLowerCase();
   const excludeText = lower.replace(/\b(?:without|with|no)\s+salt(?:\s+added)?\b/g, " ");
-  if (!lower.trim() || !Number.isFinite(raw.calories)) return null;
+  if (!lower.trim() || !Number.isFinite(raw.calories)) return { status: "excluded", reason: "invalid" };
 
   // 0) Branded entries (ALL-CAPS brand prefix, e.g. "WENDY'S, ..." / "KELLOGG'S")
   // aren't generic meal foods — generic USDA items start with a normal-case word.
   const firstSeg = raw.name.split(",")[0]?.trim() ?? "";
-  if (firstSeg.length > 2 && /[A-Z]/.test(firstSeg) && !/[a-z]/.test(firstSeg)) return null;
-  if (/\b\w+'s\b/i.test(firstSeg)) return null;
-  if (BRANDED_OR_RESTAURANT.test(lower)) return null;
-  if (/^\s*(restaurant|fast foods?|school lunch)\s*,/i.test(raw.name)) return null;
+  if (firstSeg.length > 2 && /[A-Z]/.test(firstSeg) && !/[a-z]/.test(firstSeg)) return { status: "excluded", reason: "branded_caps" };
+  if (/\b\w+'s\b/i.test(firstSeg)) return { status: "excluded", reason: "branded_possessive" };
+  if (BRANDED_OR_RESTAURANT.test(lower)) return { status: "excluded", reason: "branded_list" };
+  if (/^\s*(restaurant|fast foods?|school lunch)\s*,/i.test(raw.name)) return { status: "excluded", reason: "restaurant" };
 
   // 1) Hard ingredient/condiment/supplement excludes. The nut exception is
   // narrow so "Nuts, almonds, oil roasted" survives, but candy/snack bars do not.
-  if (ABSOLUTE_EXCLUDE.test(excludeText) || OFFAL.test(lower)) return null;
-  if (EXCLUDE.test(excludeText) && !NUT_STANDALONE_OK.test(lower) && !MUSTARD_GREEN_OK.test(lower)) return null;
+  if (ABSOLUTE_EXCLUDE.test(excludeText) || OFFAL.test(lower)) return { status: "excluded", reason: OFFAL.test(lower) ? "offal" : "absolute_exclude" };
+  if (EXCLUDE.test(excludeText) && !NUT_STANDALONE_OK.test(lower) && !MUSTARD_GREEN_OK.test(lower)) return { status: "excluded", reason: "ingredient" };
 
   // 2) Role first: low-calorie vegetables can be legitimate plan accessories.
   const role = ROLE_RULES.find((r) => r.re.test(lower))?.role;
-  if (!role) return null;
+  if (!role) return { status: "excluded", reason: "no_role" };
 
   const baseG = raw.portion_grams && raw.portion_grams > 0 ? raw.portion_grams : 100;
   const per100 = (n: number) => (n / baseG) * 100;
@@ -160,13 +182,13 @@ export function classifyFood(raw: RawFoodRow): CatalogFood | null {
 
   // 3) Macro-based excludes: near-empty (water/diet/condiment) or pure fat.
   const calorieFloor = role === "veg" ? 10 : 20;
-  if (kcal100 < calorieFloor) return null;
-  if (kcal100 > 0 && (fat100 * 9) / kcal100 > 0.75 && protein100 < 8 && !NUT_OK.test(lower)) return null;
+  if (kcal100 < calorieFloor) return { status: "excluded", reason: "low_calorie" };
+  if (kcal100 > 0 && (fat100 * 9) / kcal100 > 0.75 && protein100 < 8 && !NUT_OK.test(lower)) return { status: "excluded", reason: "pure_fat" };
 
   // 4) Raw proteins, dairy and starches are poor/unsafe automatic meal choices.
-  if ((role === "protein" || role === "dairy" || role === "carb") && /\braw\b/.test(lower)) return null;
-  if ((role === "protein" || role === "dairy" || role === "carb") && /\bdry\b/.test(lower)) return null;
-  if ((role === "protein" || role === "dairy" || role === "carb") && /\buncooked\b/.test(lower)) return null;
+  if ((role === "protein" || role === "dairy" || role === "carb") && /\braw\b/.test(lower)) return { status: "excluded", reason: "raw" };
+  if ((role === "protein" || role === "dairy" || role === "carb") && /\bdry\b/.test(lower)) return { status: "excluded", reason: "dry" };
+  if ((role === "protein" || role === "dairy" || role === "carb") && /\buncooked\b/.test(lower)) return { status: "excluded", reason: "uncooked" };
 
   // 5) Realistic serving + macros scaled from per-100g.
   const servingG = SERVING_G[role];
@@ -176,20 +198,30 @@ export function classifyFood(raw: RawFoodRow): CatalogFood | null {
   const tags = TAG_RULES.filter((t) => t.re.test(lower)).map((t) => t.tag);
 
   return {
-    id: `db:${raw.id}`,
-    name: cleanName(raw.name),
-    region: regionOf(raw),
-    portion: `~${servingG}g`,
-    calories: scale(raw.calories),
-    protein: scale(raw.protein_g),
-    carbs: scale(raw.carbs_g),
-    fat: scale(raw.fat_g),
-    vegetarian: !NONVEG.test(lower),
-    role,
-    slots: slotsFor(role, lower),
-    tags,
-    aliases: (raw.aliases ?? []).filter(Boolean),
+    status: "eligible",
+    reason: `role:${role}`,
+    food: {
+      id: `db:${raw.id}`,
+      name: cleanName(raw.name),
+      region: regionOf(raw),
+      portion: `~${servingG}g`,
+      calories: scale(raw.calories),
+      protein: scale(raw.protein_g),
+      carbs: scale(raw.carbs_g),
+      fat: scale(raw.fat_g),
+      vegetarian: !NONVEG.test(lower),
+      role,
+      slots: slotsFor(role, lower),
+      tags,
+      aliases: (raw.aliases ?? []).filter(Boolean),
+    },
   };
+}
+
+/** Classify one row → a planner meal food, or null to EXCLUDE it. Pure. */
+export function classifyFood(raw: RawFoodRow): CatalogFood | null {
+  const result = classifyFoodDetailed(raw);
+  return result.status === "eligible" ? result.food : null;
 }
 
 /** Classify a batch, dropping excluded rows. */

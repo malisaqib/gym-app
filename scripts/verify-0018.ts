@@ -30,7 +30,7 @@ if (probe.error) {
 
 console.log("✅ Migration 0018 columns exist. Checking backfills + flags...\n");
 
-async function n(build: () => Promise<{ count: number | null }>): Promise<number> {
+async function n(build: () => PromiseLike<{ count: number | null }>): Promise<number> {
   const { count } = await build();
   return count ?? 0;
 }
