@@ -1,6 +1,7 @@
 import { retrieveFoods, type RetrievedFood } from "@/lib/food/retrieve";
 import { groundParsedFoodItems } from "@/lib/food/grounding";
 import { aiConfigError, aiHttpError } from "@/lib/ai/errors";
+import type { NutritionSource } from "@/lib/database.types";
 
 /**
  * Phase 4 + RAG R3 — Food text parser (Groq / Llama, grounded by retrieval).
@@ -23,6 +24,9 @@ export interface ParsedFoodItem {
   protein_g: number;
   carbs_g: number;
   fat_g: number;
+  matched_food_id?: string | null;
+  match_confidence?: number | null;
+  nutrition_source?: NutritionSource | null;
 }
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";

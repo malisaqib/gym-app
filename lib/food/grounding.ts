@@ -3,6 +3,7 @@ import type { ParsedFoodItem } from "./parse.ts";
 import type { RetrievedFood } from "./retrieve.ts";
 import { foodSearchScore, normalizeFoodText } from "./searchRank.ts";
 import { gramsForServingUnit, isGramUnit } from "./quantity.ts";
+import type { NutritionSource } from "../database.types.ts";
 
 interface GroundingFood {
   id: string;
@@ -126,7 +127,18 @@ function roundScaled(value: number, scale: number, max: number): number {
   return Math.min(n, max);
 }
 
-function applyFood(item: ParsedFoodItem, food: GroundingFood): ParsedFoodItem {
+function confidenceForScore(score: number): number {
+  return Math.round(Math.max(0, Math.min(1, score / 120)) * 100) / 100;
+}
+
+function nutritionSourceForFood(food: GroundingFood): NutritionSource {
+  if (food.source === "curated") return "verified";
+  if (food.source === "user_estimate") return "estimated";
+  return "imported";
+}
+
+function applyFood(item: ParsedFoodItem, match: Match): ParsedFoodItem {
+  const food = match.food;
   const scale = Math.max(0.01, Math.min(scaleForItem(item, food), 100));
   return {
     ...item,
@@ -134,6 +146,9 @@ function applyFood(item: ParsedFoodItem, food: GroundingFood): ParsedFoodItem {
     protein_g: roundScaled(food.protein_g, scale, 1000),
     carbs_g: roundScaled(food.carbs_g, scale, 1000),
     fat_g: roundScaled(food.fat_g, scale, 1000),
+    matched_food_id: food.id,
+    match_confidence: confidenceForScore(match.score),
+    nutrition_source: nutritionSourceForFood(food),
   };
 }
 
@@ -157,9 +172,8 @@ export function groundParsedFoodItems(
     // Strong catalog matches should be the macro source. This also repairs the
     // model's occasional "0 kcal / 0g protein" output for known foods.
     if (hasMissingNutrition(item) || match.score >= 90) {
-      return applyFood(item, match.food);
+      return applyFood(item, match);
     }
     return item;
   });
 }
-

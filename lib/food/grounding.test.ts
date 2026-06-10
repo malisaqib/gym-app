@@ -23,6 +23,9 @@ test("grounds cold coffee grams to the trusted catalog serving", () => {
   assert.equal(item.protein_g, 7);
   assert.equal(item.carbs_g, 32);
   assert.equal(item.fat_g, 7);
+  assert.equal(item.matched_food_id, "catalog:cold_coffee");
+  assert.equal(item.nutrition_source, "verified");
+  assert.ok((item.match_confidence ?? 0) >= 0.9);
 });
 
 test("uses the raw single-item text as a fallback match", () => {
@@ -33,6 +36,8 @@ test("uses the raw single-item text as a fallback match", () => {
 
   assert.equal(item.calories, 220);
   assert.equal(item.protein_g, 7);
+  assert.equal(item.matched_food_id, "catalog:cold_coffee");
+  assert.equal(item.nutrition_source, "verified");
 });
 
 test("scales trusted foods by logged grams", () => {
@@ -40,6 +45,8 @@ test("scales trusted foods by logged grams", () => {
 
   assert.equal(item.calories, 133);
   assert.equal(item.protein_g, 3);
+  assert.equal(item.matched_food_id, "catalog:rice");
+  assert.equal(item.nutrition_source, "verified");
 });
 
 test("leaves unknown foods unchanged", () => {
@@ -49,5 +56,6 @@ test("leaves unknown foods unchanged", () => {
 
   assert.equal(item.calories, 42);
   assert.equal(item.protein_g, 0);
+  assert.equal(item.matched_food_id, undefined);
+  assert.equal(item.nutrition_source, undefined);
 });
-

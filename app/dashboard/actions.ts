@@ -15,7 +15,7 @@ import {
   type FoodSearchQuality,
 } from "@/lib/food/searchRank";
 import { logEvent } from "@/lib/analytics";
-import type { FoodLog } from "@/lib/database.types";
+import type { FoodLog, NutritionSource } from "@/lib/database.types";
 
 // Basic YYYY-MM-DD shape check for the client-supplied local date.
 const isDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s);
@@ -63,6 +63,12 @@ type FoodRow = Omit<RetrievedFood, "score">;
 const FOOD_SELECT = "id,name,aliases,region,portion,portion_grams,calories,protein_g,carbs_g,fat_g,source";
 
 const n = (value: unknown) => Math.round(Number(value) || 0);
+
+function nutritionSourceForFoodSource(source: string | null | undefined): NutritionSource {
+  if (source === "curated") return "verified";
+  if (source === "user_estimate") return "estimated";
+  return "imported";
+}
 
 function foodOption(food: RetrievedFood): LogFoodSearchOption {
   const quality = qualityForFoodSource(food.source);
@@ -234,6 +240,9 @@ export async function logFood(input: { text: string; date: string }): Promise<Lo
       carbs_g: totals.carbs_g,
       fat_g: totals.fat_g,
       source: "llm" as const,
+      matched_food_id: p.matched_food_id ?? null,
+      match_confidence: p.match_confidence ?? null,
+      nutrition_source: p.nutrition_source ?? "estimated",
     };
   });
 
@@ -299,6 +308,9 @@ export async function copyFoodLogs(input: { fromDate: string; toDate: string }):
     carbs_g: row.carbs_g,
     fat_g: row.fat_g,
     source: row.source,
+    matched_food_id: row.matched_food_id,
+    match_confidence: row.match_confidence,
+    nutrition_source: row.nutrition_source,
   }));
 
   const { data, error } = await supabase.from("food_logs").insert(rows).select().returns<FoodLog[]>();
@@ -403,6 +415,9 @@ export async function logSearchedFood(input: { optionId: string; date: string })
       carbs_g: totals.carbs_g,
       fat_g: totals.fat_g,
       source: "manual" as const,
+      matched_food_id: `db:${food.id}`,
+      match_confidence: 1,
+      nutrition_source: nutritionSourceForFoodSource(food.source),
     };
   } else if (optionId.startsWith("recent:")) {
     const logId = optionId.slice("recent:".length);
@@ -435,6 +450,9 @@ export async function logSearchedFood(input: { optionId: string; date: string })
       carbs_g: macros.carbs_g,
       fat_g: macros.fat_g,
       source: previous.source,
+      matched_food_id: previous.matched_food_id,
+      match_confidence: previous.match_confidence,
+      nutrition_source: previous.nutrition_source,
     };
   } else {
     return { ok: false, error: "Unknown food result." };
@@ -496,6 +514,7 @@ export async function correctFoodItem(
       calories,
       protein_g,
       source: "corrected",
+      nutrition_source: "corrected",
     })
     .eq("id", id)
     .eq("user_id", user.id)

@@ -13,6 +13,7 @@ export type Experience = "beginner" | "intermediate" | "advanced";
 // (Stored on profiles as an additive column from Phase 2 onward.)
 export type ActivityLevel = "sedentary" | "light" | "moderate" | "very" | "extra";
 export type FoodLogSource = "llm" | "manual" | "corrected";
+export type NutritionSource = "verified" | "imported" | "estimated" | "corrected";
 export type Lang = "en" | "roman_urdu";
 
 // RAG food knowledge base (see supabase/migrations/0005_foods_rag.sql).
@@ -156,6 +157,11 @@ export interface FoodLog {
   fat_g: number;
   source: FoodLogSource;
   created_at: string;
+  // Match/provenance metadata (migration 0019). `source` above says how the row
+  // was created; these fields say where the nutrition numbers came from.
+  matched_food_id: string | null;
+  match_confidence: number | null;
+  nutrition_source: NutritionSource;
   // Live quantity model (migration 0015) — all additive / nullable. Total is
   // computed as base × amount; the columns above are a synced cache of that.
   unit_mode: "count" | "portion" | null;
