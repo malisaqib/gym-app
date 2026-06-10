@@ -14,8 +14,6 @@ import {
   type FoodSearchQuality,
 } from "@/lib/food/searchRank";
 import { logEvent } from "@/lib/analytics";
-import { fetchOffProduct } from "@/lib/food/openFoodFacts";
-import { createAdminClient } from "@/lib/supabase/admin";
 import type { FoodLog } from "@/lib/database.types";
 
 // Basic YYYY-MM-DD shape check for the client-supplied local date.
@@ -255,79 +253,6 @@ export async function searchLogFoods(query: string): Promise<SearchLogFoodsResul
   const recent = await recentFoodSearch(supabase, user.id, q, 8);
 
   return { ok: true, foods: dedupeOptions([...verified, ...recent, ...imported]).slice(0, 20) };
-}
-
-type BarcodeLookupResult =
-  | { ok: true; food: LogFoodSearchOption }
-  | { ok: false; error: string; reason?: "not_found" };
-
-/**
- * Look up a packaged food by barcode (Phase 4). Cache-on-read: serve a previously
- * cached row, else fetch Open Food Facts, cache it, and return it as a loggable
- * option. OFF rows are stored source='openfoodfacts', verified=false,
- * plan_eligible=false - loggable, but NEVER eligible for generated diet plans.
- * On miss/low-quality returns reason:"not_found" so the UI can fall back to the
- * estimate/report flow.
- */
-export async function lookupBarcode(rawCode: string): Promise<BarcodeLookupResult> {
-  const code = (rawCode ?? "").replace(/\D+/g, "");
-  if (code.length < 6 || code.length > 14) return { ok: false, error: "Enter a valid barcode." };
-
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: "Not signed in." };
-
-  // 1) Cache hit (foods is readable by any signed-in user).
-  const { data: cached } = await supabase.from("foods").select(FOOD_SELECT).eq("barcode", code).limit(1).returns<FoodRow[]>();
-  if (cached && cached.length) return { ok: true, food: foodOption({ ...cached[0], score: 0 }) };
-
-  // 2) Fetch from Open Food Facts.
-  const off = await fetchOffProduct(code);
-  if (!off) return { ok: false, error: "No product found for that barcode.", reason: "not_found" };
-
-  // 3) Cache into the shared catalog via the service role (foods is read-only
-  //    for users). plan_eligible=false guarantees it can never enter diet plans.
-  const admin = createAdminClient();
-  const insertRow = {
-    name: off.name,
-    aliases: [off.brand, off.barcode].filter(Boolean),
-    search_text: [off.name, off.brand, off.barcode].filter(Boolean).join(" "),
-    region: "global",
-    brand: off.brand,
-    barcode: off.barcode,
-    source: "openfoodfacts",
-    source_id: off.barcode,
-    verified: false,
-    plan_eligible: false,
-    classification_status: "classifier_excluded",
-    classification_reason: "packaged",
-    portion: off.portion,
-    portion_grams: off.portionGrams,
-    calories: off.calories,
-    protein_g: off.protein,
-    carbs_g: off.carbs,
-    fat_g: off.fat,
-    serving_name: off.servingName ?? off.portion,
-    serving_grams: off.servingGrams ?? off.portionGrams,
-    calories_per_100g: off.per100.calories,
-    protein_g_per_100g: off.per100.protein,
-    carbs_g_per_100g: off.per100.carbs,
-    fat_g_per_100g: off.per100.fat,
-    calories_per_serving: off.calories,
-    protein_g_per_serving: off.protein,
-    carbs_g_per_serving: off.carbs,
-    fat_g_per_serving: off.fat,
-  };
-  const { data: inserted, error } = await admin.from("foods").insert(insertRow).select(FOOD_SELECT).single<FoodRow>();
-  if (error || !inserted) {
-    // Lost a race (or a constraint hiccup) - read it back by barcode.
-    const { data: again } = await supabase.from("foods").select(FOOD_SELECT).eq("barcode", code).limit(1).returns<FoodRow[]>();
-    if (again && again.length) return { ok: true, food: foodOption({ ...again[0], score: 0 }) };
-    return { ok: false, error: "Couldn't save that product. Please try again." };
-  }
-  return { ok: true, food: foodOption({ ...inserted, score: 0 }) };
 }
 
 function foodQuantity(food: FoodRow) {

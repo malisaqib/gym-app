@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Camera, Flag, ScanBarcode, UtensilsCrossed } from "lucide-react";
+import { Flag, UtensilsCrossed } from "lucide-react";
 import type { FoodLog, Lang, ReportContext, ReportType } from "@/lib/database.types";
 import { listContainer, listItem, fadeUp } from "@/lib/motion";
 import { sumMacros } from "@/lib/food/totals";
@@ -16,7 +16,6 @@ import {
   deleteFoodItem,
   searchLogFoods,
   logSearchedFood,
-  lookupBarcode,
   type LogFoodSearchOption,
 } from "./actions";
 import QuantityControl, { type QtySpec } from "@/components/QuantityControl";
@@ -46,7 +45,6 @@ const REPORT_T = {
   noExact: { en: "No exact match. Log will estimate it.", roman_urdu: "Exact match nahi mila. Log estimate kar de ga." },
   showMore: { en: "Show more", roman_urdu: "Aur dikhayein" },
   showLess: { en: "Show less", roman_urdu: "Kam dikhayein" },
-  barcodeReport: { en: "Report missing packaged food", roman_urdu: "Packaged food missing report karein" },
 } satisfies Record<string, Record<Lang, string>>;
 
 // A meal being parsed by the LLM — shown immediately so logging feels instant.
@@ -54,17 +52,6 @@ interface PendingLog {
   tempId: string;
   text: string;
 }
-
-interface DetectedBarcode {
-  rawValue: string;
-}
-
-interface BarcodeDetectorInstance {
-  detect(source: HTMLVideoElement): Promise<DetectedBarcode[]>;
-}
-
-type BarcodeDetectorConstructor = new (options?: { formats?: string[] }) => BarcodeDetectorInstance;
-type BarcodeWindow = Window & { BarcodeDetector?: BarcodeDetectorConstructor };
 
 export default function FoodLogger({
   calorieTarget,
@@ -90,15 +77,6 @@ export default function FoodLogger({
   const [searchResults, setSearchResults] = useState<LogFoodSearchOption[]>([]);
   const [searchExpanded, setSearchExpanded] = useState(false);
   const [pickPending, setPickPending] = useState(false);
-  const [barcodeOpen, setBarcodeOpen] = useState(false);
-  const [barcode, setBarcode] = useState("");
-  const [barcodePending, setBarcodePending] = useState(false);
-  const [barcodeResult, setBarcodeResult] = useState<LogFoodSearchOption | null>(null);
-  const [barcodeError, setBarcodeError] = useState<string | null>(null);
-  const [barcodeMissingCode, setBarcodeMissingCode] = useState<string | null>(null);
-  const [cameraSupported, setCameraSupported] = useState(false);
-  const [cameraActive, setCameraActive] = useState(false);
-  const [cameraError, setCameraError] = useState<string | null>(null);
   // The last meal the parser couldn't recognise — offers a "report missing" CTA.
   const [unrecognized, setUnrecognized] = useState<string | null>(null);
   // The shared report sheet: target data + open flag (data persists across close
@@ -115,38 +93,9 @@ export default function FoodLogger({
   // Per-item debounce timers for quantity edits (coalesce rapid +/- taps).
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const barcodeVideo = useRef<HTMLVideoElement | null>(null);
-  const barcodeStream = useRef<MediaStream | null>(null);
-  const barcodeFrame = useRef<number | null>(null);
-  const barcodeScanning = useRef(false);
-
-  const stopBarcodeCamera = useCallback(() => {
-    barcodeScanning.current = false;
-    if (barcodeFrame.current != null) {
-      window.cancelAnimationFrame(barcodeFrame.current);
-      barcodeFrame.current = null;
-    }
-    if (barcodeStream.current) {
-      barcodeStream.current.getTracks().forEach((track) => track.stop());
-      barcodeStream.current = null;
-    }
-    if (barcodeVideo.current) barcodeVideo.current.srcObject = null;
-    setCameraActive(false);
-  }, []);
 
   // Totals are computed on the fly (base × amount) — never a frozen number.
   const eaten = sumMacros(items.map(itemMacros));
-
-  useEffect(() => {
-    const w = window as BarcodeWindow;
-    setCameraSupported(Boolean(w.BarcodeDetector && navigator.mediaDevices?.getUserMedia));
-  }, []);
-
-  useEffect(() => () => stopBarcodeCamera(), [stopBarcodeCamera]);
-
-  useEffect(() => {
-    if (!barcodeOpen) stopBarcodeCamera();
-  }, [barcodeOpen, stopBarcodeCamera]);
 
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
@@ -233,7 +182,7 @@ export default function FoodLogger({
     }
   }
 
-  async function handlePickSearchResult(optionId: string): Promise<boolean> {
+  async function handlePickSearchResult(optionId: string) {
     setPickPending(true);
     setError(null);
     setUnrecognized(null);
@@ -244,116 +193,14 @@ export default function FoodLogger({
         setItems((prev) => [...prev, ...res.items]);
         setText("");
         setSearchResults([]);
-        return true;
       } else {
         setError(res.error);
-        return false;
       }
     } catch {
       setError("Couldn't log that food. Please try again.");
-      return false;
     } finally {
       inFlight.current -= 1;
       setPickPending(false);
-    }
-  }
-
-  async function handleBarcodeLookup(value = barcode) {
-    const code = value.replace(/\D+/g, "");
-    if (!code) {
-      setBarcodeError("Enter a barcode number.");
-      return;
-    }
-
-    setBarcode(code);
-    stopBarcodeCamera();
-    setBarcodePending(true);
-    setBarcodeError(null);
-    setBarcodeMissingCode(null);
-    setBarcodeResult(null);
-    setUnrecognized(null);
-    try {
-      const res = await lookupBarcode(code);
-      if (res.ok) {
-        setBarcodeResult(res.food);
-      } else {
-        setBarcodeError(res.error);
-        if (res.reason === "not_found") setBarcodeMissingCode(code);
-      }
-    } catch {
-      setBarcodeError("Couldn't look up that barcode. Please try again.");
-    } finally {
-      setBarcodePending(false);
-    }
-  }
-
-  async function handlePickBarcodeResult() {
-    if (!barcodeResult) return;
-    const ok = await handlePickSearchResult(barcodeResult.id);
-    if (!ok) return;
-    setBarcode("");
-    setBarcodeResult(null);
-    setBarcodeError(null);
-    setBarcodeMissingCode(null);
-    setBarcodeOpen(false);
-    stopBarcodeCamera();
-  }
-
-  async function startBarcodeCamera() {
-    const Detector = (window as BarcodeWindow).BarcodeDetector;
-    if (!Detector || !navigator.mediaDevices?.getUserMedia) {
-      setCameraError("Camera scanning isn't available in this browser.");
-      return;
-    }
-
-    setCameraError(null);
-    setBarcodeError(null);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } },
-        audio: false,
-      });
-      barcodeStream.current = stream;
-
-      const video = barcodeVideo.current;
-      if (!video) {
-        stream.getTracks().forEach((track) => track.stop());
-        barcodeStream.current = null;
-        return;
-      }
-
-      video.srcObject = stream;
-      await video.play();
-      setCameraActive(true);
-
-      const detector = new Detector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"] });
-      barcodeScanning.current = true;
-
-      const scanFrame = async () => {
-        if (!barcodeScanning.current) return;
-        const currentVideo = barcodeVideo.current;
-        if (currentVideo && currentVideo.readyState >= 2) {
-          try {
-            const codes = await detector.detect(currentVideo);
-            const raw = codes.find((code) => code.rawValue)?.rawValue.replace(/\D+/g, "");
-            if (raw) {
-              stopBarcodeCamera();
-              void handleBarcodeLookup(raw);
-              return;
-            }
-          } catch {
-            stopBarcodeCamera();
-            setCameraError("Couldn't scan that barcode. Enter it manually.");
-            return;
-          }
-        }
-        barcodeFrame.current = window.requestAnimationFrame(scanFrame);
-      };
-
-      barcodeFrame.current = window.requestAnimationFrame(scanFrame);
-    } catch {
-      stopBarcodeCamera();
-      setCameraError("Couldn't start the camera. Enter the barcode instead.");
     }
   }
 
@@ -448,134 +295,10 @@ export default function FoodLogger({
         <label className="stat-label">What did you eat?</label>
         <div className="flex gap-2">
           <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="do roti, ek pyali daal" />
-          <Button
-            type="button"
-            variant="secondary"
-            aria-label="Barcode lookup"
-            title="Barcode lookup"
-            onClick={() => {
-              setBarcodeOpen((v) => !v);
-              setBarcodeError(null);
-              setCameraError(null);
-            }}
-            className="shrink-0 px-3"
-          >
-            <ScanBarcode size={18} aria-hidden />
-          </Button>
           <Button type="submit" disabled={!text.trim()}>
             Log
           </Button>
         </div>
-        {barcodeOpen && (
-          <div className="rounded-card-lg border border-border bg-card p-3">
-            <div className="flex gap-2">
-              <Input
-                value={barcode}
-                onChange={(e) => {
-                  setBarcode(e.target.value.replace(/\D+/g, ""));
-                  setBarcodeError(null);
-                  setBarcodeMissingCode(null);
-                  setBarcodeResult(null);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    void handleBarcodeLookup();
-                  }
-                }}
-                inputMode="numeric"
-                pattern="[0-9]*"
-                placeholder="Barcode number"
-              />
-              <Button
-                type="button"
-                variant="secondary"
-                loading={barcodePending}
-                disabled={!barcode.trim()}
-                onClick={() => handleBarcodeLookup()}
-              >
-                Find
-              </Button>
-            </div>
-
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              {cameraSupported && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={cameraActive ? stopBarcodeCamera : startBarcodeCamera}
-                  className="px-2"
-                >
-                  <Camera size={15} aria-hidden />
-                  {cameraActive ? "Stop camera" : "Use camera"}
-                </Button>
-              )}
-              <span className="text-[11px] text-muted-foreground">
-                Data:{" "}
-                <a
-                  href="https://world.openfoodfacts.org"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="font-medium text-primary underline-offset-2 hover:underline"
-                >
-                  Open Food Facts
-                </a>{" "}
-                (ODbL)
-              </span>
-            </div>
-
-            {cameraSupported && (
-              <video
-                ref={barcodeVideo}
-                muted
-                playsInline
-                className={cameraActive ? "mt-3 aspect-[4/3] w-full rounded-card-lg bg-black object-cover" : "hidden"}
-              />
-            )}
-            {cameraError && <p className="mt-2 px-1 text-xs text-muted-foreground">{cameraError}</p>}
-            {barcodeError && (
-              <div className="mt-2 space-y-1">
-                <Alert tone="error">{barcodeError}</Alert>
-                {barcodeMissingCode && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      openReport({
-                        reportType: "missing",
-                        context: "home_log",
-                        text: `Barcode ${barcodeMissingCode}`,
-                        matchedFoodId: null,
-                      })
-                    }
-                    className="px-1 text-xs font-medium text-primary underline-offset-2 hover:underline active:scale-[0.99]"
-                  >
-                    {rt("barcodeReport")}
-                  </button>
-                )}
-              </div>
-            )}
-            {barcodeResult && (
-              <button
-                type="button"
-                disabled={pickPending}
-                onClick={handlePickBarcodeResult}
-                className="mt-2 flex w-full items-center justify-between gap-3 rounded-field border border-border px-2.5 py-2 text-left transition hover:bg-muted active:scale-[0.99] disabled:opacity-50"
-              >
-                <span className="min-w-0">
-                  <span className="flex min-w-0 items-center gap-1.5">
-                    <span className="truncate text-sm font-medium text-foreground">{barcodeResult.name}</span>
-                    <FoodQualityBadge quality={barcodeResult.quality} label={barcodeResult.label} />
-                  </span>
-                  <span className="mt-0.5 block truncate text-xs text-muted-foreground">{barcodeResult.portion}</span>
-                </span>
-                <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                  {barcodeResult.calories} kcal | {barcodeResult.protein}g
-                </span>
-              </button>
-            )}
-          </div>
-        )}
         {foodSearching && <p className="px-1 text-xs text-muted-foreground">Searching...</p>}
         {visibleSearchResults.length > 0 && (
           <div className="rounded-card-lg border border-border bg-card p-2">
