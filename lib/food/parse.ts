@@ -52,6 +52,8 @@ RULES:
 - Interpret Roman Urdu quantities: ek/aik=1, do=2, teen=3, char=4, adha=half,
   pyali/katori=small bowl, plate=plate, glass=glass.
 - Every item's macros must be the TOTAL for the amount eaten, not per unit.
+- food_name is for display: use a short natural name from the user's words
+  (e.g. "coffee shake"), not a long database/candidate label with commas.
 - Round all numbers to integers. If no food is found, return an empty list.
 
 Respond with ONLY valid JSON in this exact shape:

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { parseFoodText } from "@/lib/food/parse";
+import { displayNameForLoggedFood } from "@/lib/food/logDisplayName";
 import { retrieveFoods, type RetrievedFood } from "@/lib/food/retrieve";
 import { deriveQuantity, itemMacros, totalsFor } from "@/lib/food/quantity";
 import {
@@ -218,7 +219,7 @@ export async function logFood(input: { text: string; date: string }): Promise<Lo
       user_id: user.id,
       logged_on: input.date,
       raw_text: text,
-      food_name: p.food_name,
+      food_name: displayNameForLoggedFood(text, p, parsed.length),
       quantity: p.quantity,
       unit: p.unit,
       unit_mode: q.unit_mode,
