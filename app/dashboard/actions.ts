@@ -164,6 +164,26 @@ async function recentFoodSearch(
   return options;
 }
 
+/** Recent foods with no query, for quick repeat logging. */
+export async function getRecentLogFoods(limit = 10): Promise<SearchLogFoodsResult> {
+  const capped = Math.min(20, Math.max(1, Math.round(Number(limit) || 10)));
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const { data } = await supabase
+    .from("food_logs")
+    .select("*")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false })
+    .limit(120)
+    .returns<FoodLog[]>();
+
+  return { ok: true, foods: dedupeOptions((data ?? []).map(recentOption)).slice(0, capped) };
+}
+
 /** Parse free text with the LLM, then save each detected item for the day. */
 export async function logFood(input: { text: string; date: string }): Promise<LogResult> {
   const text = input.text.trim();
@@ -226,6 +246,65 @@ export async function logFood(input: { text: string; date: string }): Promise<Lo
 
   await logEvent(supabase, user.id, "food_logged", { items: (data ?? []).length });
   revalidatePath("/dashboard"); // keep the server-rendered list fresh on next nav
+  return { ok: true, items: data ?? [] };
+}
+
+/** Copy the previous day into an empty target day. Prevents accidental duplicates. */
+export async function copyFoodLogs(input: { fromDate: string; toDate: string }): Promise<LogResult> {
+  if (!isDate(input.fromDate) || !isDate(input.toDate)) return { ok: false, error: "Invalid date." };
+  if (input.fromDate === input.toDate) return { ok: false, error: "Pick a different day to copy from." };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const { count: existing } = await supabase
+    .from("food_logs")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", user.id)
+    .eq("logged_on", input.toDate);
+  if ((existing ?? 0) > 0) {
+    return { ok: false, error: "Today already has food logged. Use Quick add to repeat individual foods." };
+  }
+
+  const { data: previous, error: readError } = await supabase
+    .from("food_logs")
+    .select("*")
+    .eq("user_id", user.id)
+    .eq("logged_on", input.fromDate)
+    .order("created_at", { ascending: true })
+    .returns<FoodLog[]>();
+  if (readError) return { ok: false, error: readError.message };
+  if (!previous?.length) return { ok: false, error: "No food logs found from yesterday." };
+
+  const rows = previous.map((row) => ({
+    user_id: user.id,
+    logged_on: input.toDate,
+    raw_text: row.raw_text,
+    food_name: row.food_name,
+    quantity: row.quantity,
+    unit: row.unit,
+    unit_mode: row.unit_mode,
+    base_calories: row.base_calories,
+    base_protein_g: row.base_protein_g,
+    base_carbs_g: row.base_carbs_g,
+    base_fat_g: row.base_fat_g,
+    amount: row.amount,
+    serving_grams: row.serving_grams,
+    calories: row.calories,
+    protein_g: row.protein_g,
+    carbs_g: row.carbs_g,
+    fat_g: row.fat_g,
+    source: row.source,
+  }));
+
+  const { data, error } = await supabase.from("food_logs").insert(rows).select().returns<FoodLog[]>();
+  if (error) return { ok: false, error: error.message };
+
+  await logEvent(supabase, user.id, "food_logged", { items: (data ?? []).length, method: "copy_day" });
+  revalidatePath("/dashboard");
   return { ok: true, items: data ?? [] };
 }
 
@@ -335,7 +414,7 @@ export async function logSearchedFood(input: { optionId: string; date: string })
     if (error || !previous) return { ok: false, error: "Recent food not found." };
 
     const macros = itemMacros(previous);
-    const amount = previous.amount ?? 1;
+    const amount = previous.amount && previous.amount > 0 ? previous.amount : 1;
     row = {
       user_id: user.id,
       logged_on: input.date,

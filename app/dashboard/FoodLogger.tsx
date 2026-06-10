@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Flag, UtensilsCrossed } from "lucide-react";
+import { CopyPlus, Flag, History, UtensilsCrossed } from "lucide-react";
 import type { FoodLog, Lang, ReportContext, ReportType } from "@/lib/database.types";
 import { listContainer, listItem, fadeUp } from "@/lib/motion";
 import { sumMacros } from "@/lib/food/totals";
@@ -14,6 +14,8 @@ import {
   setFoodItemAmount,
   correctFoodItem,
   deleteFoodItem,
+  copyFoodLogs,
+  getRecentLogFoods,
   searchLogFoods,
   logSearchedFood,
   type LogFoodSearchOption,
@@ -53,6 +55,12 @@ interface PendingLog {
   text: string;
 }
 
+function localDateOffset(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return localDateString(d);
+}
+
 export default function FoodLogger({
   calorieTarget,
   proteinTarget,
@@ -76,7 +84,9 @@ export default function FoodLogger({
   const [foodSearching, setFoodSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<LogFoodSearchOption[]>([]);
   const [searchExpanded, setSearchExpanded] = useState(false);
+  const [recentQuick, setRecentQuick] = useState<LogFoodSearchOption[]>([]);
   const [pickPending, setPickPending] = useState(false);
+  const [copyPending, setCopyPending] = useState(false);
   // The last meal the parser couldn't recognise — offers a "report missing" CTA.
   const [unrecognized, setUnrecognized] = useState<string | null>(null);
   // The shared report sheet: target data + open flag (data persists across close
@@ -96,6 +106,15 @@ export default function FoodLogger({
 
   // Totals are computed on the fly (base × amount) — never a frozen number.
   const eaten = sumMacros(items.map(itemMacros));
+
+  const refreshRecentQuick = useCallback(async () => {
+    const res = await getRecentLogFoods(10);
+    if (res.ok) setRecentQuick(res.foods);
+  }, []);
+
+  useEffect(() => {
+    void refreshRecentQuick();
+  }, [refreshRecentQuick]);
 
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
@@ -166,6 +185,7 @@ export default function FoodLogger({
       const res = await logFood({ text: meal, date: localDateString() });
       if (res.ok) {
         setItems((prev) => [...prev, ...res.items]);
+        void refreshRecentQuick();
       } else {
         setError(res.error);
         setText(meal); // never silently drop the user's input — let them retry
@@ -193,6 +213,7 @@ export default function FoodLogger({
         setItems((prev) => [...prev, ...res.items]);
         setText("");
         setSearchResults([]);
+        void refreshRecentQuick();
       } else {
         setError(res.error);
       }
@@ -201,6 +222,28 @@ export default function FoodLogger({
     } finally {
       inFlight.current -= 1;
       setPickPending(false);
+    }
+  }
+
+  async function copyYesterday() {
+    if (copyPending || count > 0) return;
+    setCopyPending(true);
+    setError(null);
+    setUnrecognized(null);
+    inFlight.current += 1;
+    try {
+      const res = await copyFoodLogs({ fromDate: localDateOffset(-1), toDate: localDateString() });
+      if (res.ok) {
+        setItems(res.items);
+        void refreshRecentQuick();
+      } else {
+        setError(res.error);
+      }
+    } catch {
+      setError("Couldn't copy yesterday. Please try again.");
+    } finally {
+      inFlight.current -= 1;
+      setCopyPending(false);
     }
   }
 
@@ -274,6 +317,7 @@ export default function FoodLogger({
   const count = items.length + pending.length;
   const query = text.trim();
   const visibleSearchResults = searchExpanded ? searchResults : searchResults.slice(0, 8);
+  const showQuickAdd = query.length === 0 && (recentQuick.length > 0 || count === 0);
 
   return (
     <motion.div variants={listContainer} initial="hidden" animate="show" className="flex flex-col gap-7">
@@ -299,6 +343,42 @@ export default function FoodLogger({
             Log
           </Button>
         </div>
+        {showQuickAdd && (
+          <div className="rounded-card-lg border border-border bg-card p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <History size={14} aria-hidden /> Quick add
+              </p>
+              {count === 0 && (
+                <Button type="button" variant="secondary" size="sm" loading={copyPending} onClick={copyYesterday}>
+                  <CopyPlus size={15} aria-hidden />
+                  Yesterday
+                </Button>
+              )}
+            </div>
+            {recentQuick.length > 0 ? (
+              <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+                {recentQuick.map((food) => (
+                  <button
+                    key={food.id}
+                    type="button"
+                    disabled={pickPending || copyPending}
+                    onClick={() => handlePickSearchResult(food.id)}
+                    className="min-h-[74px] w-40 shrink-0 rounded-field border border-border bg-background px-3 py-2 text-left transition hover:border-primary/50 hover:bg-muted active:scale-[0.98] disabled:opacity-50"
+                  >
+                    <span className="block truncate text-sm font-semibold text-foreground">{food.name}</span>
+                    <span className="mt-1 block truncate text-xs text-muted-foreground">{food.portion}</span>
+                    <span className="mt-1 block text-xs text-muted-foreground tabular-nums">
+                      {food.calories} kcal · {food.protein}g
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">Your repeated foods will show up here after a few logs.</p>
+            )}
+          </div>
+        )}
         {foodSearching && <p className="px-1 text-xs text-muted-foreground">Searching...</p>}
         {visibleSearchResults.length > 0 && (
           <div className="rounded-card-lg border border-border bg-card p-2">
