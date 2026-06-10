@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { embedText } from "@/lib/embeddings";
+import { expandFoodQueries, rankFoodsForSearch } from "@/lib/food/searchRank";
 
 /**
  * SERVER ONLY. RAG retrieval: embed the query and ask Postgres (match_foods) for
@@ -21,6 +22,55 @@ export interface RetrievedFood {
   score: number;
 }
 
+const FOOD_SELECT = "id,name,aliases,region,portion,portion_grams,calories,protein_g,carbs_g,fat_g,source";
+
+function safeLexicalQuery(query: string): string {
+  return query.replace(/[^a-zA-Z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+async function lexicalFoods(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  query: string,
+  limit: number
+): Promise<RetrievedFood[]> {
+  const out: RetrievedFood[] = [];
+  const seen = new Set<string>();
+  for (const term of expandFoodQueries(query)) {
+    const safe = safeLexicalQuery(term);
+    if (safe.length < 2) continue;
+    const like = `%${safe}%`;
+    const { data, error } = await supabase
+      .from("foods")
+      .select(FOOD_SELECT)
+      .or(`name.ilike.${like},search_text.ilike.${like}`)
+      .limit(Math.max(limit, 1));
+    if (error || !data) continue;
+    for (const food of data as Omit<RetrievedFood, "score">[]) {
+      if (seen.has(food.id)) continue;
+      seen.add(food.id);
+      out.push({
+        ...food,
+        aliases: term === query ? food.aliases : [...(food.aliases ?? []), query],
+        score: 0,
+      });
+    }
+  }
+  return out;
+}
+
+function mergeFoods(...groups: RetrievedFood[][]): RetrievedFood[] {
+  const seen = new Set<string>();
+  const out: RetrievedFood[] = [];
+  for (const group of groups) {
+    for (const food of group) {
+      if (seen.has(food.id)) continue;
+      seen.add(food.id);
+      out.push(food);
+    }
+  }
+  return out;
+}
+
 export async function retrieveFoods(query: string, k = 8): Promise<RetrievedFood[]> {
   const q = query.trim();
   if (!q) return [];
@@ -32,9 +82,12 @@ export async function retrieveFoods(query: string, k = 8): Promise<RetrievedFood
     query_text: q,
     // pgvector accepts its text format "[a,b,c]" through PostgREST.
     query_embedding: JSON.stringify(embedding),
-    match_count: k,
+    match_count: Math.max(k * 3, 20),
   });
 
   if (error) throw new Error(`Food retrieval failed: ${error.message}`);
-  return (data ?? []) as RetrievedFood[];
+
+  const lexical = await lexicalFoods(supabase, q, Math.max(k * 3, 20));
+  const candidates = mergeFoods((data ?? []) as RetrievedFood[], lexical);
+  return rankFoodsForSearch(q, candidates).slice(0, k);
 }

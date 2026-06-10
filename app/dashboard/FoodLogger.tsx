@@ -8,7 +8,16 @@ import { listContainer, listItem, fadeUp } from "@/lib/motion";
 import { sumMacros } from "@/lib/food/totals";
 import { itemMacros } from "@/lib/food/quantity";
 import { localDateString } from "@/lib/localDate";
-import { logFood, getFoodLogs, setFoodItemAmount, correctFoodItem, deleteFoodItem } from "./actions";
+import {
+  logFood,
+  getFoodLogs,
+  setFoodItemAmount,
+  correctFoodItem,
+  deleteFoodItem,
+  searchLogFoods,
+  logSearchedFood,
+  type LogFoodSearchOption,
+} from "./actions";
 import QuantityControl, { type QtySpec } from "@/components/QuantityControl";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
@@ -33,6 +42,9 @@ interface ReportTarget {
 const REPORT_T = {
   cantFind: { en: "Can't find that? Tell us and we'll add it.", roman_urdu: "Nahi mila? Bataayein, hum add kar dein ge." },
   report: { en: "Report", roman_urdu: "Report" },
+  noExact: { en: "No exact match. Log will estimate it.", roman_urdu: "Exact match nahi mila. Log estimate kar de ga." },
+  showMore: { en: "Show more", roman_urdu: "Aur dikhayein" },
+  showLess: { en: "Show less", roman_urdu: "Kam dikhayein" },
 } satisfies Record<string, Record<Lang, string>>;
 
 // A meal being parsed by the LLM — shown immediately so logging feels instant.
@@ -61,6 +73,10 @@ export default function FoodLogger({
   const [pending, setPending] = useState<PendingLog[]>([]);
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [foodSearching, setFoodSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<LogFoodSearchOption[]>([]);
+  const [searchExpanded, setSearchExpanded] = useState(false);
+  const [pickPending, setPickPending] = useState(false);
   // The last meal the parser couldn't recognise — offers a "report missing" CTA.
   const [unrecognized, setUnrecognized] = useState<string | null>(null);
   // The shared report sheet: target data + open flag (data persists across close
@@ -76,9 +92,35 @@ export default function FoodLogger({
   const inFlight = useRef(0);
   // Per-item debounce timers for quantity edits (coalesce rapid +/- taps).
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Totals are computed on the fly (base × amount) — never a frozen number.
   const eaten = sumMacros(items.map(itemMacros));
+
+  useEffect(() => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    const query = text.trim();
+    setSearchExpanded(false);
+    if (query.length < 2) {
+      setSearchResults([]);
+      setFoodSearching(false);
+      return;
+    }
+
+    let cancelled = false;
+    setFoodSearching(true);
+    searchTimer.current = setTimeout(async () => {
+      const res = await searchLogFoods(query);
+      if (cancelled) return;
+      setSearchResults(res.ok ? res.foods : []);
+      setFoodSearching(false);
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
+  }, [text]);
 
   // Re-read the day's items when the tab regains focus, and re-align if the
   // CLIENT's local day differs from the server-rendered day (first-visit UTC
@@ -137,6 +179,28 @@ export default function FoodLogger({
     } finally {
       setPending((p) => p.filter((x) => x.tempId !== tempId));
       inFlight.current -= 1;
+    }
+  }
+
+  async function handlePickSearchResult(optionId: string) {
+    setPickPending(true);
+    setError(null);
+    setUnrecognized(null);
+    inFlight.current += 1;
+    try {
+      const res = await logSearchedFood({ optionId, date: localDateString() });
+      if (res.ok) {
+        setItems((prev) => [...prev, ...res.items]);
+        setText("");
+        setSearchResults([]);
+      } else {
+        setError(res.error);
+      }
+    } catch {
+      setError("Couldn't log that food. Please try again.");
+    } finally {
+      inFlight.current -= 1;
+      setPickPending(false);
     }
   }
 
@@ -208,6 +272,8 @@ export default function FoodLogger({
   }
 
   const count = items.length + pending.length;
+  const query = text.trim();
+  const visibleSearchResults = searchExpanded ? searchResults : searchResults.slice(0, 8);
 
   return (
     <motion.div variants={listContainer} initial="hidden" animate="show" className="flex flex-col gap-7">
@@ -233,6 +299,55 @@ export default function FoodLogger({
             Log
           </Button>
         </div>
+        {foodSearching && <p className="px-1 text-xs text-muted-foreground">Searching...</p>}
+        {visibleSearchResults.length > 0 && (
+          <div className="rounded-card-lg border border-border bg-card p-2">
+            <ul className="flex flex-col gap-1">
+              {visibleSearchResults.map((food) => (
+                <li key={food.id}>
+                  <button
+                    type="button"
+                    disabled={pickPending}
+                    onClick={() => handlePickSearchResult(food.id)}
+                    className="flex w-full items-center justify-between gap-3 rounded-field px-2.5 py-2 text-left transition hover:bg-muted active:scale-[0.99] disabled:opacity-50"
+                  >
+                    <span className="min-w-0">
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <span className="truncate text-sm font-medium text-foreground">{food.name}</span>
+                        <FoodQualityBadge quality={food.quality} label={food.label} />
+                      </span>
+                      <span className="mt-0.5 block truncate text-xs text-muted-foreground">{food.portion}</span>
+                    </span>
+                    <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                      {food.calories} kcal · {food.protein}g
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            {searchResults.length > 8 && (
+              <button
+                type="button"
+                onClick={() => setSearchExpanded((v) => !v)}
+                className="mt-1 px-2 text-xs font-medium text-primary underline-offset-2 hover:underline"
+              >
+                {searchExpanded ? rt("showLess") : rt("showMore")}
+              </button>
+            )}
+          </div>
+        )}
+        {!foodSearching && query.length >= 2 && searchResults.length === 0 && (
+          <div className="space-y-1 px-1">
+            <p className="text-xs text-muted-foreground">{rt("noExact")}</p>
+            <button
+              type="button"
+              onClick={() => openReport({ reportType: "missing", context: "home_log", text: query, matchedFoodId: null })}
+              className="text-xs font-medium text-primary underline-offset-2 hover:underline active:scale-[0.99]"
+            >
+              {rt("cantFind")}
+            </button>
+          </div>
+        )}
         {error && <Alert tone="error">{error}</Alert>}
         {/* Primary trigger: parser found nothing → offer to report it as missing. */}
         {unrecognized && (
@@ -336,6 +451,12 @@ function RingStat({
 }
 
 // A meal still being parsed — instant feedback while the LLM works.
+function FoodQualityBadge({ quality, label }: { quality: LogFoodSearchOption["quality"]; label: string }) {
+  const tone =
+    quality === "verified" ? "success" : quality === "recent" ? "primary" : quality === "estimated" ? "warning" : "muted";
+  return <Badge tone={tone}>{label}</Badge>;
+}
+
 function PendingRow({ text }: { text: string }) {
   return (
     <div className="flex items-center gap-3 rounded-card-lg border border-border bg-card p-4 opacity-70">
@@ -405,6 +526,7 @@ function FoodItemRow({
           <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
             <span className="font-semibold text-foreground tabular-nums">{m.calories}</span> kcal ·{" "}
             <span className="font-semibold text-accent tabular-nums">{m.protein_g}g</span> protein
+            {item.source === "llm" && <Badge tone="warning">estimated</Badge>}
             {item.source === "corrected" && <Badge tone="primary">edited</Badge>}
           </p>
         </div>

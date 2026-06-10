@@ -3,7 +3,16 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { parseFoodText } from "@/lib/food/parse";
-import { deriveQuantity, totalsFor } from "@/lib/food/quantity";
+import { retrieveFoods, type RetrievedFood } from "@/lib/food/retrieve";
+import { deriveQuantity, itemMacros, totalsFor } from "@/lib/food/quantity";
+import {
+  labelForFoodQuality,
+  expandFoodQueries,
+  normalizeFoodText,
+  qualityForFoodSource,
+  rankFoodsForSearch,
+  type FoodSearchQuality,
+} from "@/lib/food/searchRank";
 import { logEvent } from "@/lib/analytics";
 import type { FoodLog } from "@/lib/database.types";
 
@@ -35,6 +44,125 @@ type LogResult =
   // `reason: "no_match"` flags the "we couldn't recognise any food" case so the
   // UI can offer a "report missing food" prompt (vs a generic/network error).
   | { ok: false; error: string; reason?: "no_match" };
+
+export interface LogFoodSearchOption {
+  id: string;
+  name: string;
+  portion: string;
+  calories: number;
+  protein: number;
+  quality: FoodSearchQuality;
+  label: string;
+}
+
+type SearchLogFoodsResult = { ok: true; foods: LogFoodSearchOption[] } | { ok: false; error: string };
+
+type FoodRow = Omit<RetrievedFood, "score">;
+
+const FOOD_SELECT = "id,name,aliases,region,portion,portion_grams,calories,protein_g,carbs_g,fat_g,source";
+
+const n = (value: unknown) => Math.round(Number(value) || 0);
+
+function foodOption(food: RetrievedFood): LogFoodSearchOption {
+  const quality = qualityForFoodSource(food.source);
+  return {
+    id: `food:${food.id}`,
+    name: food.name,
+    portion: food.portion,
+    calories: n(food.calories),
+    protein: n(food.protein_g),
+    quality,
+    label: labelForFoodQuality(quality),
+  };
+}
+
+function recentOption(row: FoodLog): LogFoodSearchOption {
+  const macros = itemMacros(row);
+  const amount = row.amount ?? row.quantity ?? 1;
+  const unit = row.unit_mode === "portion" ? "g" : row.unit || "serving";
+  return {
+    id: `recent:${row.id}`,
+    name: row.food_name,
+    portion: `${amount} ${unit}`.trim(),
+    calories: macros.calories,
+    protein: macros.protein_g,
+    quality: "recent",
+    label: labelForFoodQuality("recent"),
+  };
+}
+
+function dedupeOptions(options: LogFoodSearchOption[]): LogFoodSearchOption[] {
+  const seen = new Set<string>();
+  const out: LogFoodSearchOption[] = [];
+  for (const option of options) {
+    const key = normalizeFoodText(option.name);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(option);
+  }
+  return out;
+}
+
+async function lexicalFoodSearch(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  query: string,
+  limit: number
+): Promise<RetrievedFood[]> {
+  const out: RetrievedFood[] = [];
+  const seen = new Set<string>();
+  for (const term of expandFoodQueries(query)) {
+    const safe = term.replace(/[^a-zA-Z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+    if (safe.length < 2) continue;
+    const like = `%${safe}%`;
+    const { data, error } = await supabase
+      .from("foods")
+      .select(FOOD_SELECT)
+      .or(`name.ilike.${like},search_text.ilike.${like}`)
+      .limit(Math.max(limit, 1));
+    if (error || !data) continue;
+    for (const food of data as FoodRow[]) {
+      if (seen.has(food.id)) continue;
+      seen.add(food.id);
+      out.push({
+        ...food,
+        aliases: term === query ? food.aliases : [...(food.aliases ?? []), query],
+        score: 0,
+      });
+    }
+  }
+  return rankFoodsForSearch(query, out).slice(0, limit);
+}
+
+async function recentFoodSearch(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  query: string,
+  limit: number
+): Promise<LogFoodSearchOption[]> {
+  const normalized = normalizeFoodText(query);
+  const tokens = normalized.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return [];
+  const { data } = await supabase
+    .from("food_logs")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(80)
+    .returns<FoodLog[]>();
+
+  const seen = new Set<string>();
+  const options: LogFoodSearchOption[] = [];
+  for (const row of data ?? []) {
+    const hay = normalizeFoodText(`${row.food_name} ${row.raw_text ?? ""}`);
+    if (!tokens.every((token) => hay.includes(token))) continue;
+    const key = normalizeFoodText(row.food_name);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    options.push(recentOption(row));
+    if (options.length >= limit) break;
+  }
+  return options;
+}
 
 /** Parse free text with the LLM, then save each detected item for the day. */
 export async function logFood(input: { text: string; date: string }): Promise<LogResult> {
@@ -98,6 +226,149 @@ export async function logFood(input: { text: string; date: string }): Promise<Lo
 
   await logEvent(supabase, user.id, "food_logged", { items: (data ?? []).length });
   revalidatePath("/dashboard"); // keep the server-rendered list fresh on next nav
+  return { ok: true, items: data ?? [] };
+}
+
+/** Search the full logging database, with verified curated results first. */
+export async function searchLogFoods(query: string): Promise<SearchLogFoodsResult> {
+  const q = query.trim();
+  if (q.length < 2) return { ok: true, foods: [] };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  let dbFoods: RetrievedFood[] = [];
+  try {
+    dbFoods = await retrieveFoods(q, 24);
+  } catch {
+    dbFoods = await lexicalFoodSearch(supabase, q, 24);
+  }
+
+  const dbOptions = dbFoods.map(foodOption);
+  const verified = dbOptions.filter((food) => food.quality === "verified");
+  const imported = dbOptions.filter((food) => food.quality !== "verified");
+  const recent = await recentFoodSearch(supabase, user.id, q, 8);
+
+  return { ok: true, foods: dedupeOptions([...verified, ...recent, ...imported]).slice(0, 20) };
+}
+
+function foodQuantity(food: FoodRow) {
+  const grams = Number(food.portion_grams);
+  if (Number.isFinite(grams) && grams > 0) {
+    return {
+      unit_mode: "portion" as const,
+      unit: "g",
+      amount: grams,
+      serving_grams: grams,
+      base_calories: Number(food.calories) / grams,
+      base_protein_g: Number(food.protein_g) / grams,
+      base_carbs_g: Number(food.carbs_g) / grams,
+      base_fat_g: Number(food.fat_g) / grams,
+    };
+  }
+  return {
+    unit_mode: "count" as const,
+    unit: "serving",
+    amount: 1,
+    serving_grams: null,
+    base_calories: Number(food.calories),
+    base_protein_g: Number(food.protein_g),
+    base_carbs_g: Number(food.carbs_g),
+    base_fat_g: Number(food.fat_g),
+  };
+}
+
+/** Log an exact search result from the full food database or the user's recents. */
+export async function logSearchedFood(input: { optionId: string; date: string }): Promise<LogResult> {
+  if (!isDate(input.date)) return { ok: false, error: "Invalid date." };
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const optionId = input.optionId.trim();
+  let row;
+
+  if (optionId.startsWith("food:")) {
+    const foodId = optionId.slice("food:".length);
+    const { data: food, error } = await supabase
+      .from("foods")
+      .select(FOOD_SELECT)
+      .eq("id", foodId)
+      .single<FoodRow>();
+    if (error || !food) return { ok: false, error: "Food not found." };
+
+    const q = foodQuantity(food);
+    const totals = totalsFor(q);
+    row = {
+      user_id: user.id,
+      logged_on: input.date,
+      raw_text: food.name,
+      food_name: food.name,
+      quantity: 1,
+      unit: food.portion,
+      unit_mode: q.unit_mode,
+      base_calories: q.base_calories,
+      base_protein_g: q.base_protein_g,
+      base_carbs_g: q.base_carbs_g,
+      base_fat_g: q.base_fat_g,
+      amount: q.amount,
+      serving_grams: q.serving_grams,
+      calories: totals.calories,
+      protein_g: totals.protein_g,
+      carbs_g: totals.carbs_g,
+      fat_g: totals.fat_g,
+      source: "manual" as const,
+    };
+  } else if (optionId.startsWith("recent:")) {
+    const logId = optionId.slice("recent:".length);
+    const { data: previous, error } = await supabase
+      .from("food_logs")
+      .select("*")
+      .eq("id", logId)
+      .eq("user_id", user.id)
+      .single<FoodLog>();
+    if (error || !previous) return { ok: false, error: "Recent food not found." };
+
+    const macros = itemMacros(previous);
+    const amount = previous.amount ?? 1;
+    row = {
+      user_id: user.id,
+      logged_on: input.date,
+      raw_text: previous.raw_text ?? previous.food_name,
+      food_name: previous.food_name,
+      quantity: previous.quantity,
+      unit: previous.unit,
+      unit_mode: previous.unit_mode ?? "count",
+      base_calories: previous.base_calories ?? previous.calories / amount,
+      base_protein_g: previous.base_protein_g ?? previous.protein_g / amount,
+      base_carbs_g: previous.base_carbs_g ?? previous.carbs_g / amount,
+      base_fat_g: previous.base_fat_g ?? previous.fat_g / amount,
+      amount,
+      serving_grams: previous.serving_grams,
+      calories: macros.calories,
+      protein_g: macros.protein_g,
+      carbs_g: macros.carbs_g,
+      fat_g: macros.fat_g,
+      source: previous.source,
+    };
+  } else {
+    return { ok: false, error: "Unknown food result." };
+  }
+
+  const { data, error } = await supabase
+    .from("food_logs")
+    .insert(row)
+    .select()
+    .returns<FoodLog[]>();
+
+  if (error) return { ok: false, error: error.message };
+  await logEvent(supabase, user.id, "food_logged", { items: (data ?? []).length, method: "search" });
+  revalidatePath("/dashboard");
   return { ok: true, items: data ?? [] };
 }
 
