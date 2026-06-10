@@ -33,7 +33,7 @@ export interface RawFoodRow {
 // vegetarian never gets an accidental meat (covers game meats + processed forms
 // like patty/cutlet/kebab whose veg status is ambiguous).
 const NONVEG =
-  /\b(beef|veal|steak|brisket|pork|bacon|ham|sausages?|salami|pepperoni|lamb|mutton|goat|chicken|turkey|duck|goose|quail|pheasant|partridge|poultry|game meat|venison|elk|bison|buffalo|boar|rabbit|hare|ostrich|emu|antelope|moose|caribou|deer|fish|salmon|tuna|cod|tilapia|trout|sardines?|anchov(?:y|ies)|mackerel|herring|haddock|catfish|shrimps?|prawns?|crab|lobster|clams?|oysters?|mussels?|scallops?|squid|octopus|frog|snails?|escargot|meat|meatballs?|kebabs?|kababs?|kabobs?|kofta|cutlets?|nuggets?|patt(?:y|ies)|frankfurters?|hot ?dogs?|bratwurst|chorizo|jerky|liver|kidney|tripe|gelatin|broth)\b/i;
+  /\b(beef|veal|steak|brisket|pork|bacon|ham|sausages?|salami|pepperoni|lamb|mutton|goat|chicken|turkey|duck|goose|quail|pheasant|partridge|poultry|game meat|venison|elk|bison|buffalo|boar|rabbit|hare|ostrich|emu|antelope|moose|caribou|deer|fish|salmon|tuna|cod|tilapia|trout|sardines?|anchov(?:y|ies)|mackerel|herring|haddock|catfish|shrimps?|prawns?|crab|lobster|crustaceans?|crawfish|crayfish|mollusks?|shellfish|clams?|oysters?|mussels?|scallops?|cuttlefish|whelk|conch|abalone|squid|octopus|frog|snails?|escargot|meat|meatballs?|kebabs?|kababs?|kabobs?|kofta|cutlets?|nuggets?|patt(?:y|ies)|frankfurters?|hot ?dogs?|bratwurst|chorizo|jerky|liver|kidney|tripe|gelatin|broth)\b/i;
 
 // Hard excludes — ingredients / pure fats / sugars / condiments / beverages /
 // dry mixes. Gated by NUT_OK so nut butters & nuts survive.
@@ -42,39 +42,56 @@ const NONVEG =
 // Also excludes SUPPLEMENT/DRIED/POWDER forms (protein isolate, dried meat/egg,
 // milk powder…): they have extreme macro density and otherwise dominate plans.
 const EXCLUDE =
-  /\b(oils?|fats?|lard|shortening|tallow|margarine|ghee|butter|sugars?|syrups?|molasses|salts?|spices?|seasonings?|cinnamon|cumin|coriander seed|paprika|nutmeg|cloves?|turmeric|chil(?:i|li) powder|cayenne|extracts?|flavou?ring|leavening|baking powder|baking soda|yeast|cornstarch|starch|flours?|gelatin|vinegars?|sauces?|gravy|gravies|frosting|icing|dressings?|mayonnaise|ketchup|mustard|relish|pickles?|jams?|jell(?:y|ies)|preserves|marmalade|candies|candy|gums?|alcoholic|wine|beer|liquor|vodka|whiskey|rum|infant formula|baby ?food|formula|dry mix|dehydrated|dried|powders?|powdered|isolate|concentrate|whey|casein|wheat gluten|defatted|supplements?|meal replacement|bars?|chips?|crisps?|bouillon|stock|leavening|malt\b|tapioca)\b/i;
+  /\b(oils?|fats?|lard|shortening|tallow|margarine|ghee|butter|sugars?|syrups?|molasses|salts?|spices?|seasonings?|cinnamon|cumin|coriander seed|paprika|nutmeg|cloves?|turmeric|chil(?:i|li) powder|cayenne|extracts?|flavou?ring|leavening|baking powder|baking soda|yeast|cornstarch|starch|flours?|gelatin|vinegars?|sauces?|gravy|gravies|frosting|icing|dressings?|mayonnaise|ketchup|mustard|relish|pickles?|jams?|jell(?:y|ies)|preserves|marmalade|candies|candy|gums?|alcoholic|wine|beer|liquor|vodka|whiskey|rum|infant formula|baby ?food|formula|dry mix|dehydrated|dried|powders?|powdered|isolate|concentrate|whey|casein|wheat gluten|protein-?fortified|defatted|supplements?|meal replacement|bars?|chips?|crisps?|bouillon|stock|broth|consomme|leavening|malt\b|tapioca)\b/i;
+
+// Extra excludes for packaged/junk USDA rows and restaurant/brand products that
+// are loggable but should not become automatic diet-plan meals.
+const ABSOLUTE_EXCLUDE =
+  /\b(beverages?|juices?|soft drinks?|cola|soda|smoothies?|shakes?|soups?|snacks?|chocolates?|caramel|fudge|nougat|cookies?|crackers?|cakes?|pies?|pastr(?:y|ies)|muffins?|doughnuts?|donuts?|croissants?|sweet rolls?|sweet cheese|sweet yeast|sweet bread|pan dulce|toaster pastries|desserts?|puddings?|ice creams?|sherbet|fruit leather|candied|maraschino|nectars?|puree|sweetened|trail mix|granola bars?|pretzels?|nachos|waffles?|pancakes?|hash browns?|tostada shells?|shells?|rice and vermicelli mix|pilaf flavor|flavo(?:u)?red?|ready-to-eat|ready-to-heat|refrigerated dough|smoked|brined|cured|with added solution|sprouted|immature seeds|leafy tips|wheat germ|seed meal|cottonseed|crude|flours?|imitation|alaska native|navajo|apache|shoshone|squirrel|sea cucumber|fish eggs?|roe|lemon peel|orange peel|wafers?|puffs?|puffed|jerky|bacon|ham|sausages?|salami|pepperoni|frankfurters?|hot ?dogs?|bratwurst|chorizo|bologna|nuggets?|breaded|fried)\b/i;
+
+const BRANDED_OR_RESTAURANT =
+  /\b(corp(?:oration)?|pillsbury|kraft|quaker|george weston|thomas english muffins|goya|gamesa|la moderna|pepperidge farm|keebler|nabisco|kellogg|mars snackfood|nestle|hershey|reese'?s|toblerone|glutino|schar|wonder|vitasoy|nasoya|wendy'?s|mcdonald'?s|burger king|applebee'?s|denny'?s|t\.?g\.?i\.? friday'?s|cracker barrel|subway|domino'?s|papa john'?s|pizza hut|taco bell|kfc)\b/i;
+
+const OFFAL =
+  /\b(variety meats?|by-products?|livers?|kidneys?|tripe|hearts?|brains?|tongues?|ears?|tails?|feet|foot|gizzard|giblets|spleen|pancreas|chitterlings|sweetbreads?|blood sausage|headcheese|oxtail)\b/i;
 
 // High-fat but legitimate whole foods (so the fat-fraction rule doesn't drop them).
 const NUT_OK = /\b(almonds?|peanuts?|cashews?|walnuts?|pistachios?|pecans?|hazelnuts?|nuts?|seeds?|avocados?)\b/i;
+const NUT_STANDALONE_OK =
+  /^(nuts?|seeds?|peanut butter|almond butter|cashew butter|sesame butter|tahini)\b/i;
+const MUSTARD_GREEN_OK = /\bmustard\s+(?:spinach|greens?)\b/i;
 
 // Role detection, in priority order (first match wins).
 const ROLE_RULES: { role: FoodRole; re: RegExp }[] = [
   {
     role: "protein",
-    re: /\b(beef|veal|steak|pork|bacon|ham|sausages?|salami|pepperoni|lamb|mutton|goat|chicken|turkey|duck|fish|salmon|tuna|cod|tilapia|trout|sardines?|mackerel|shrimps?|prawns?|crab|lobster|eggs?|omelette?|tofu|tempeh|seitan|lentils?|daa?l|dahl|beans?|chick ?peas?|garbanzo|chana|rajma|edamame|soy(?:bean)?|paneer|cottage cheese|whey|protein|meat|meatballs?|kebabs?|kabobs?|kababs?|kofta|cutlets?|nuggets?|patt(?:y|ies)|frankfurters?|hot ?dogs?|bratwurst|chorizo|jerky)\b/i,
+    re: /\b(beef|veal|steak|pork|bacon|ham|sausages?|salami|pepperoni|lamb|mutton|goat|chicken|turkey|duck|fish|salmon|tuna|cod|tilapia|trout|sardines?|mackerel|shrimps?|prawns?|crab|lobster|scallops?|mollusks?|clams?|mussels?|oysters?|cuttlefish|whelk|conch|abalone|squid|octopus|crawfish|crayfish|halibut|snapper|sea bass|perch|pollock|flounder|sole\b|mahi|whitefish|swordfish|herring|anchov|venison|elk|bison|buffalo|moose|deer|rabbit|eggs?|omelette?|tofu|tempeh|seitan|lentils?|daa?l|dahl|beans?|cowpeas?|black-?eyed peas?|split peas?|pigeon peas?|mung|lupins?|chick ?peas?|garbanzo|chana|rajma|edamame|soy(?:bean)?|hummus|falafel|paneer|cottage cheese|whey|protein|meat|meatballs?|kebabs?|kabobs?|kababs?|kofta|cutlets?|nuggets?|patt(?:y|ies)|frankfurters?|hot ?dogs?|bratwurst|chorizo|jerky)\b/i,
   },
   { role: "dairy", re: /\b(milk|yog(?:h)?urt|curd|dahi|cheese|paneer|lassi|kefir|buttermilk)\b/i },
   {
-    role: "fruit",
-    re: /\b(apples?|bananas?|mangoe?s?|oranges?|grapes?|berr(?:y|ies)|strawberr\w*|blueberr\w*|melon|watermelon|papaya|guava|pears?|peach\w*|plums?|apricots?|pineapple|pomegranate|kiwi|avocados?|fruits?|dates?|raisins?|figs?)\b/i,
+    role: "snack",
+    re: /^(nuts?|seeds?|peanut butter|almond butter|cashew butter|sesame butter|tahini)\b|\b(almonds?|peanuts?|cashews?|walnuts?|pistachios?|pecans?|hazelnuts?|popcorn|granola|trail mix|protein bar)\b/i,
   },
   {
     role: "veg",
-    re: /\b(vegetables?|spinach|palak|broccoli|carrots?|cauliflower|gobi|okra|bhindi|cabbage|lettuce|salad|greens|kale|cucumber|tomato\w*|capsicum|bell pepper|eggplant|brinjal|baingan|peas|zucchini|squash|mushrooms?|onions?)\b/i,
+    re: /\b(vegetables?|spinach|mustard spinach|mustard greens?|palak|broccoli|carrots?|cauliflower|gobi|okra|bhindi|cabbage|pak-?choi|bok choy|lettuce|salad|greens|kale|chard|collards?|arugula|watercress|cucumber|tomato\w*|capsicum|bell pepper|peppers?|eggplant|brinjal|baingan|peas|zucchini|squash|pumpkins?|mushrooms?|onions?|scallions?|asparagus|brussels|beets?|turnips?|radish\w*|celery|sweet potato\w*|yams?|artichokes?|leeks?|fennel|sprouts?|hearts of palm|gourd|karela|tinda|turai|lauki|chayote|kohlrabi|endive|escarole)\b/i,
+  },
+  {
+    role: "fruit",
+    re: /\b(apples?|bananas?|mangoe?s?|oranges?|grapes?|berr(?:y|ies)|strawberr\w*|blueberr\w*|raspberr\w*|blackberr\w*|cranberr\w*|cherr\w*|melon|watermelon|cantaloupe|honeydew|papaya|guava|pears?|peach\w*|plums?|apricots?|nectarines?|pineapple|pomegranate|kiwi|avocados?|lemons?|limes?|tamarinds?|rhubarb|lych\w*|persimmons?|currants?|gooseberr\w*|passion ?fruit|pomelos?|pummelo|clementines?|tangerines?|mandarins?|jackfruit|fruits?|dates?|raisins?|figs?)\b/i,
   },
   {
     role: "carb",
-    re: /\b(rice|bread|rotis?|naan|chapatis?|parathas?|pasta|spaghetti|macaroni|noodles?|potato\w*|aloo|oats?|oatmeal|cereal|quinoa|couscous|tortilla|bagel|buns?|crackers?|biscuits?|porridge|daliya|poha|upma|idli|dosa|pancakes?|waffles?|wheat|barley|millet)\b/i,
+    re: /\b(rice|bread|rotis?|naan|chapatis?|parathas?|pasta|spaghetti|macaroni|noodles?|potato\w*|aloo|oats?|oatmeal|cereal|quinoa|couscous|tortilla|bagel|buns?|crackers?|biscuits?|porridge|daliya|poha|upma|idli|dosa|pancakes?|waffles?|wheat|barley|millet|sorghum|buckwheat|amaranth|teff|cassava|yuca|hominy|sushi|ramen|burritos?|tacos?|sandwich\w*|wraps?|pizza|lasagna|casseroles?|quiche|dumplings?|ravioli|gnocchi|risotto|paella|nachos|quesadillas?|enchiladas?|fried rice|english muffins?|muffins?|focaccia|tostadas?|tamales?|cornmeal|rolls?|pita|sourdough|\brye\b|baguette|bulgur|farro|polenta|grits|hash ?browns?|plantains?)\b/i,
   },
   { role: "drink", re: /\b(juice|smoothie|shake|tea|coffee|lassi|milk)\b/i },
-  { role: "snack", re: /\b(nuts?|almonds?|peanuts?|cashews?|walnuts?|pistachios?|seeds?|popcorn|granola|trail mix|protein bar)\b/i },
 ];
 
 const TAG_RULES: { tag: string; re: RegExp }[] = [
   { tag: "beef", re: /\b(beef|veal|steak|brisket)\b/i },
   { tag: "pork", re: /\b(pork|bacon|ham|sausages?|salami|pepperoni)\b/i },
   { tag: "chicken", re: /\b(chicken|turkey|duck|poultry)\b/i },
-  { tag: "fish", re: /\b(fish|salmon|tuna|cod|tilapia|trout|sardines?|mackerel|shrimps?|prawns?|crab|lobster|herring|anchov)\b/i },
+  { tag: "fish", re: /\b(fish|salmon|tuna|cod|tilapia|trout|sardines?|mackerel|shrimps?|prawns?|crab|lobster|crustaceans?|crawfish|crayfish|mollusks?|clams?|oysters?|mussels?|scallops?|cuttlefish|whelk|conch|abalone|squid|octopus|herring|anchov)\b/i },
   { tag: "egg", re: /\beggs?\b|omelette?/i },
   { tag: "dairy", re: /\b(milk|yog(?:h)?urt|cheese|paneer|curd|dahi|lassi|kefir|buttermilk|cream)\b/i },
   { tag: "nuts", re: /\b(almonds?|peanuts?|cashews?|walnuts?|pistachios?|pecans?|hazelnuts?|nuts?)\b/i },
@@ -115,15 +132,25 @@ function regionOf(raw: RawFoodRow): CatalogFood["region"] {
 /** Classify one row → a planner meal food, or null to EXCLUDE it. Pure. */
 export function classifyFood(raw: RawFoodRow): CatalogFood | null {
   const lower = raw.name.toLowerCase();
+  const excludeText = lower.replace(/\b(?:without|with|no)\s+salt(?:\s+added)?\b/g, " ");
   if (!lower.trim() || !Number.isFinite(raw.calories)) return null;
 
   // 0) Branded entries (ALL-CAPS brand prefix, e.g. "WENDY'S, ..." / "KELLOGG'S")
   // aren't generic meal foods — generic USDA items start with a normal-case word.
   const firstSeg = raw.name.split(",")[0]?.trim() ?? "";
   if (firstSeg.length > 2 && /[A-Z]/.test(firstSeg) && !/[a-z]/.test(firstSeg)) return null;
+  if (/\b\w+'s\b/i.test(firstSeg)) return null;
+  if (BRANDED_OR_RESTAURANT.test(lower)) return null;
+  if (/^\s*(restaurant|fast foods?|school lunch)\s*,/i.test(raw.name)) return null;
 
-  // 1) Hard ingredient/condiment/supplement excludes (nuts & nut butters survive).
-  if (EXCLUDE.test(lower) && !NUT_OK.test(lower)) return null;
+  // 1) Hard ingredient/condiment/supplement excludes. The nut exception is
+  // narrow so "Nuts, almonds, oil roasted" survives, but candy/snack bars do not.
+  if (ABSOLUTE_EXCLUDE.test(excludeText) || OFFAL.test(lower)) return null;
+  if (EXCLUDE.test(excludeText) && !NUT_STANDALONE_OK.test(lower) && !MUSTARD_GREEN_OK.test(lower)) return null;
+
+  // 2) Role first: low-calorie vegetables can be legitimate plan accessories.
+  const role = ROLE_RULES.find((r) => r.re.test(lower))?.role;
+  if (!role) return null;
 
   const baseG = raw.portion_grams && raw.portion_grams > 0 ? raw.portion_grams : 100;
   const per100 = (n: number) => (n / baseG) * 100;
@@ -131,16 +158,15 @@ export function classifyFood(raw: RawFoodRow): CatalogFood | null {
   const protein100 = per100(raw.protein_g);
   const fat100 = per100(raw.fat_g);
 
-  // 2) Macro-based excludes: near-empty (water/diet/condiment) or pure fat.
-  if (kcal100 < 20) return null;
+  // 3) Macro-based excludes: near-empty (water/diet/condiment) or pure fat.
+  const calorieFloor = role === "veg" ? 10 : 20;
+  if (kcal100 < calorieFloor) return null;
   if (kcal100 > 0 && (fat100 * 9) / kcal100 > 0.75 && protein100 < 8 && !NUT_OK.test(lower)) return null;
 
-  // 3) Raw animal flesh → prefer the cooked version; never plate "raw beef".
-  if (NONVEG.test(lower) && /\braw\b/.test(lower)) return null;
-
-  // 4) Role — if we can't confidently classify it, exclude it.
-  const role = ROLE_RULES.find((r) => r.re.test(lower))?.role;
-  if (!role) return null;
+  // 4) Raw proteins, dairy and starches are poor/unsafe automatic meal choices.
+  if ((role === "protein" || role === "dairy" || role === "carb") && /\braw\b/.test(lower)) return null;
+  if ((role === "protein" || role === "dairy" || role === "carb") && /\bdry\b/.test(lower)) return null;
+  if ((role === "protein" || role === "dairy" || role === "carb") && /\buncooked\b/.test(lower)) return null;
 
   // 5) Realistic serving + macros scaled from per-100g.
   const servingG = SERVING_G[role];

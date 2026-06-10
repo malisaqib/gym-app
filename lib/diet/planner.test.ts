@@ -15,7 +15,7 @@ import {
   isKnownFood,
   type DietFilter,
 } from "./planner.ts";
-import { CATALOG_BY_ID } from "./foodCatalog.ts";
+import { CATALOG_BY_ID, type CatalogFood } from "./foodCatalog.ts";
 
 const openFilter: DietFilter = { vegetarian: false, excludeTags: [], excludeFoods: [], regionFocus: null };
 
@@ -196,6 +196,31 @@ test("a loose avoid phrase still matches the food name (tolerant)", () => {
     seed: 8,
   });
   assert.ok(!plan.meals.flatMap((m) => m.items.map((i) => i.id)).includes("whey"));
+});
+
+test("automatic generation skips supplements and sweet drinks", () => {
+  const pool: CatalogFood[] = [
+    CATALOG_BY_ID.whey,
+    CATALOG_BY_ID.coffee,
+    CATALOG_BY_ID.cold_coffee,
+    CATALOG_BY_ID.banana_shake,
+    CATALOG_BY_ID.lassi,
+    CATALOG_BY_ID.black_coffee,
+    CATALOG_BY_ID.apple,
+  ];
+  const plan = buildPlan({
+    calorieTarget: 800,
+    proteinTargetG: 120,
+    filter: openFilter,
+    seed: 1,
+    pool,
+  });
+  const ids = plan.meals.flatMap((m) => m.items.map((i) => i.id));
+  for (const banned of ["whey", "coffee", "cold_coffee", "banana_shake", "lassi"]) {
+    assert.ok(!ids.includes(banned), `${banned} should not be auto-selected`);
+  }
+  assert.ok(searchCatalog("coffee", openFilter, "snack").some((f) => f.id === "coffee"));
+  assert.ok(addPlanItem(plan, "snack", "coffee").meals.some((m) => m.items.some((i) => i.id === "coffee")));
 });
 
 test("swapMeal changes only the targeted meal", () => {

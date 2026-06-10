@@ -190,6 +190,13 @@ function allowed(food: CatalogFood, filter: DietFilter): boolean {
   return true;
 }
 
+function allowedForAutoPlan(food: CatalogFood, filter: DietFilter): boolean {
+  if (!allowed(food, filter)) return false;
+  if (food.tags.includes("supplement")) return false;
+  if (food.role === "drink" && (food.tags.includes("sweet") || /\bshake\b/i.test(food.name))) return false;
+  return true;
+}
+
 // Derive a quantity spec from a catalog food's friendly portion: "~250g"/"100g"
 // → portion (per gram); "2 roti"/"1 piece" → count (per unit). Lets the user
 // adjust grams or units on the plan, recomputing macros from this base.
@@ -284,7 +291,13 @@ function buildMealItems(
   const chosen: CatalogFood[] = [];
   const fits = (f: CatalogFood) => sumCal(chosen) + f.calories <= budget; // HARD cap
   const likeBonus = (f: CatalogFood) => (likeIds.has(f.id) ? 6 : 0);
-  const regionBonus = (f: CatalogFood) => 0; // region handled by likes/usual now; kept neutral
+  // Prefer our CURATED, recognizable dishes (the bi-cuisine, desi-rich catalog) as
+  // the backbone of each meal; the ~thousands of USDA foods (id "db:…") add breadth
+  // in fill/accessory slots and power swaps. Without this, generic USDA singles
+  // (lean cuts, cottage cheese, egg white) crowd out karahi/daal/biryani and a
+  // desi user's plan ends up all Western. Curated still competes on protein.
+  const curatedBonus = (f: CatalogFood) =>
+    f.id.startsWith("db:") || f.tags.includes("supplement") ? 0 : 20; // supplements (whey) shouldn't anchor every meal
   const maxItems = MAX_ITEMS[slot];
 
   // 1) Seed with the user's usual foods for this slot (highest priority).
@@ -301,7 +314,7 @@ function buildMealItems(
   // 2) Anchor a protein if none yet (real meals only).
   if (slot !== "snack" && !chosen.some((f) => f.role === "protein")) {
     const proteins = cands.filter((f) => f.role === "protein" && !chosen.includes(f) && fits(f));
-    const anchor = chooseTop(proteins, (f) => proteinDensity(f) * 100 + likeBonus(f) + regionBonus(f), rng);
+    const anchor = chooseTop(proteins, (f) => proteinDensity(f) * 100 + likeBonus(f) + curatedBonus(f), rng);
     if (anchor) chosen.push(anchor);
   }
 
@@ -319,7 +332,7 @@ function buildMealItems(
         -(remaining - f.calories) / 12 + // close the calorie gap (never over)
         proteinDensity(f) * (needProtein ? 60 : 25) + // protein-per-calorie
         likeBonus(f) +
-        regionBonus(f),
+        curatedBonus(f),
       rng
     );
     if (!pick) break;
@@ -414,7 +427,7 @@ export function buildPlan(input: {
 
   const built: BuiltMeal[] = slotBudgets(input.calorieTarget).map((s) => {
     const slotProtein = input.proteinTargetG * (input.calorieTarget > 0 ? s.cal / input.calorieTarget : 0);
-    const cands = pool.filter((f) => f.slots.includes(s.slot) && allowed(f, input.filter));
+    const cands = pool.filter((f) => f.slots.includes(s.slot) && allowedForAutoPlan(f, input.filter));
     // Seed from this slot's usual meal PLUS any "keep" foods (keep applies to
     // every slot the food fits). Both become protected (never swapped for protein).
     const usualText =
@@ -452,7 +465,7 @@ export function swapMeal(plan: DietPlan, slot: MealSlot, newSeed: number, pool: 
   const rng = mulberry32(newSeed);
   const budget = target.budget;
   const slotProtein = plan.proteinTargetG * (plan.calorieTarget > 0 ? budget / plan.calorieTarget : 0);
-  const cands = pool.filter((f) => f.slots.includes(slot) && allowed(f, plan.filter));
+  const cands = pool.filter((f) => f.slots.includes(slot) && allowedForAutoPlan(f, plan.filter));
   const chosen = buildMealItems(budget, slotProtein, slot, cands, rng, undefined, new Set());
 
   const meal = finalizeMeal({ slot, title: meta.title, budget, chosen });
