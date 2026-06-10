@@ -1,4 +1,5 @@
 import { retrieveFoods, type RetrievedFood } from "@/lib/food/retrieve";
+import { groundParsedFoodItems } from "@/lib/food/grounding";
 import { aiConfigError, aiHttpError } from "@/lib/ai/errors";
 
 /**
@@ -157,7 +158,8 @@ export async function parseFoodText(text: string): Promise<ParsedFoodItem[]> {
   const rawItems = (parsed as { items?: unknown })?.items;
   if (!Array.isArray(rawItems)) return [];
 
-  return rawItems
+  const items = rawItems
     .map(coerceItem)
     .filter((item): item is ParsedFoodItem => item !== null);
+  return groundParsedFoodItems(items, { candidates, rawText: text });
 }

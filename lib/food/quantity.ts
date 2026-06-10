@@ -52,6 +52,14 @@ const SERVING_GRAMS: Record<string, number> = {
 
 const safeDiv = (total: number, denom: number) => (denom > 0 ? total / denom : total);
 
+export function isGramUnit(unit: string): boolean {
+  return GRAM_UNITS.has(unit.trim().toLowerCase());
+}
+
+export function gramsForServingUnit(unit: string): number | null {
+  return SERVING_GRAMS[unit.trim().toLowerCase()] ?? null;
+}
+
 interface ParsedLike {
   quantity: number;
   unit: string;
@@ -85,12 +93,13 @@ export function deriveQuantity(p: ParsedLike): QuantitySpec {
   const q = Number.isFinite(p.quantity) && p.quantity > 0 ? p.quantity : 1;
   const unit = (p.unit ?? "").trim().toLowerCase();
 
-  if (GRAM_UNITS.has(unit)) {
+  if (isGramUnit(unit)) {
     // 1× reference = the grams they logged.
     return portionSpec(p, q, q);
   }
-  if (unit in SERVING_GRAMS) {
-    const gps = SERVING_GRAMS[unit];
+  const servingGrams = gramsForServingUnit(unit);
+  if (servingGrams != null) {
+    const gps = servingGrams;
     return portionSpec(p, q * gps, gps);
   }
   // Countable: per-unit = total / quantity (kept as float so base × amount is exact).
