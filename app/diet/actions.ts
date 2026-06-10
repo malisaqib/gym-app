@@ -61,8 +61,18 @@ async function getMealPool(supabase: Awaited<ReturnType<typeof createClient>>): 
       CLASSIFIED_DB = []; // degrade to the curated catalog if the DB is unavailable
     }
   }
-  const have = new Set(FOOD_CATALOG.map((f) => normName(f.name)));
-  const extra = CLASSIFIED_DB.filter((f) => !have.has(normName(f.name)));
+  // Dedupe by display name against the curated catalog AND within the imported
+  // set — many USDA rows collapse to the same friendly name (e.g. several
+  // "Cheese, cottage" variants), and we never want a meal to show the same food
+  // twice. Curated always wins; the first imported variant of a name is kept.
+  const seen = new Set(FOOD_CATALOG.map((f) => normName(f.name)));
+  const extra: CatalogFood[] = [];
+  for (const f of CLASSIFIED_DB) {
+    const key = normName(f.name);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    extra.push(f);
+  }
   return [...FOOD_CATALOG, ...extra];
 }
 
