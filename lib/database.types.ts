@@ -17,6 +17,22 @@ export type Lang = "en" | "roman_urdu";
 
 // RAG food knowledge base (see supabase/migrations/0005_foods_rag.sql).
 export type FoodRegion = "desi" | "western" | "global";
+// Keep this open-ended: existing rows use source values such as `usda_sr`, while
+// newer integrations can use `usda`, `openfoodfacts`, or `user_estimate`.
+export type FoodSource =
+  | "curated"
+  | "usda"
+  | "usda_sr"
+  | "usda_fndds"
+  | "openfoodfacts"
+  | "user_estimate"
+  | (string & {});
+export type FoodClassificationStatus =
+  | "unclassified"
+  | "classifier_eligible"
+  | "classifier_excluded"
+  | "reviewed_eligible"
+  | "reviewed_excluded";
 
 // One row of the shared, read-only food catalog. We omit the raw `embedding`
 // vector here — it's only used inside the DB for similarity search.
@@ -32,8 +48,26 @@ export interface Food {
   protein_g: number;
   carbs_g: number;
   fat_g: number;
-  source: string;
+  source: FoodSource;
   source_id: string | null;
+  // Layered-source metadata (migration 0018). Existing macro fields above remain
+  // backward-compatible: they describe the current `portion`.
+  verified: boolean;
+  brand: string | null;
+  barcode: string | null;
+  serving_name: string | null;
+  serving_grams: number | null;
+  calories_per_100g: number | null;
+  protein_g_per_100g: number | null;
+  carbs_g_per_100g: number | null;
+  fat_g_per_100g: number | null;
+  calories_per_serving: number | null;
+  protein_g_per_serving: number | null;
+  carbs_g_per_serving: number | null;
+  fat_g_per_serving: number | null;
+  plan_eligible: boolean;
+  classification_status: FoodClassificationStatus;
+  classification_reason: string | null;
   created_at: string;
 }
 

@@ -89,6 +89,10 @@ for (const [fdc, m] of macros) {
   if (m.kcal == null) continue;
   const name = desc.get(fdc);
   if (!name) continue;
+  const calories = Math.round(m.kcal);
+  const protein = round1(m.p);
+  const carbs = round1(m.c);
+  const fat = round1(m.f);
   rows.push({
     name,
     aliases: [],
@@ -96,12 +100,28 @@ for (const [fdc, m] of macros) {
     region: "western",
     portion: "100g",
     portion_grams: 100,
-    calories: Math.round(m.kcal),
-    protein_g: round1(m.p),
-    carbs_g: round1(m.c),
-    fat_g: round1(m.f),
+    calories,
+    protein_g: protein,
+    carbs_g: carbs,
+    fat_g: fat,
     source: "usda_sr",
     source_id: fdc,
+    verified: false,
+    brand: null,
+    barcode: null,
+    serving_name: "100g",
+    serving_grams: 100,
+    calories_per_100g: calories,
+    protein_g_per_100g: protein,
+    carbs_g_per_100g: carbs,
+    fat_g_per_100g: fat,
+    calories_per_serving: calories,
+    protein_g_per_serving: protein,
+    carbs_g_per_serving: carbs,
+    fat_g_per_serving: fat,
+    plan_eligible: false,
+    classification_status: "unclassified",
+    classification_reason: null,
     embedding: null, // filled later by embed-foods.mjs
   });
 }

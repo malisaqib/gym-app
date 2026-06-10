@@ -130,6 +130,31 @@ const FOODS = [
 
 const REGION = { d: "desi", w: "western", g: "global" };
 
+const round2 = (n) => Math.round(n * 100) / 100;
+const per100 = (value, grams) => (grams > 0 ? round2((value / grams) * 100) : null);
+
+function layeredFoodFields({ portion, grams, kcal, protein, carbs, fat, verified }) {
+  return {
+    verified,
+    brand: null,
+    barcode: null,
+    serving_name: portion,
+    serving_grams: grams,
+    calories_per_100g: per100(kcal, grams),
+    protein_g_per_100g: per100(protein, grams),
+    carbs_g_per_100g: per100(carbs, grams),
+    fat_g_per_100g: per100(fat, grams),
+    calories_per_serving: kcal,
+    protein_g_per_serving: protein,
+    carbs_g_per_serving: carbs,
+    fat_g_per_serving: fat,
+    // Verified for logging/search quality, but not automatically plan-eligible.
+    plan_eligible: false,
+    classification_status: "unclassified",
+    classification_reason: null,
+  };
+}
+
 async function embed(text, attempt = 0) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${EMBED_MODEL}:embedContent?key=${GEMINI_KEY}`;
   const res = await fetch(url, {
@@ -184,6 +209,15 @@ async function main() {
       carbs_g: c,
       fat_g: f,
       source: "curated",
+      ...layeredFoodFields({
+        portion,
+        grams,
+        kcal,
+        protein: p,
+        carbs: c,
+        fat: f,
+        verified: true,
+      }),
       // pgvector accepts its text format "[a,b,c]" via PostgREST.
       embedding: JSON.stringify(values),
     });
