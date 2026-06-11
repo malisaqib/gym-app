@@ -1,4 +1,4 @@
-import { retrieveFoods, type RetrievedFood } from "@/lib/food/retrieve";
+import { retrieveFoods, lexicalRetrieveFoods, type RetrievedFood } from "@/lib/food/retrieve";
 import { groundParsedFoodItems, regroundUnmatchedItems } from "@/lib/food/grounding";
 import { aiConfigError, aiHttpError } from "@/lib/ai/errors";
 import type { NutritionSource } from "@/lib/database.types";
@@ -170,6 +170,7 @@ export async function parseFoodText(text: string): Promise<ParsedFoodItem[]> {
   const grounded = groundParsedFoodItems(items, { candidates, rawText: text });
   // Pass 2 (step 4): items that still lack a trusted match get their OWN
   // retrieval by item name — multi-item meals stop sharing one skewed candidate
-  // pool. Parallel, and skipped entirely when everything already matched.
-  return regroundUnmatchedItems(grounded, retrieveFoods);
+  // pool. LEXICAL-ONLY (no embedding round-trip) so logging stays fast; item
+  // names are short and literal after the LLM split, so lexical recall is fine.
+  return regroundUnmatchedItems(grounded, lexicalRetrieveFoods);
 }

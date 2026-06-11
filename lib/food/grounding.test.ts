@@ -113,6 +113,41 @@ test("regroundUnmatchedItems retrieves per item and grounds against its own cand
   assert.equal(out[2].matched_food_id, undefined);
 });
 
+test("count units against a weight portion scale by servings, not by the gram number", () => {
+  // The 6-kcal beef-kebab bug: "3 pieces" vs a "100g" portion used to compute
+  // 3 ÷ 100 = 0.03 servings. A weight portion is ONE serving → scale = 3.
+  const [item] = groundParsedFoodItems(
+    [parsed({ food_name: "grilled beef steak", quantity: 3, unit: "pieces" })], // 0 kcal from the model
+    {
+      candidates: [
+        dbFood({ name: "Grilled beef steak", portion: "100g", portion_grams: 100, calories: 196, protein_g: 28 }),
+      ],
+    }
+  );
+  assert.equal(item.calories, 196 * 3);
+  assert.equal(item.protein_g, 28 * 3);
+});
+
+test("a steak candidate does not match 'beef kebab' without the fake query alias", () => {
+  const [item] = groundParsedFoodItems(
+    [parsed({ food_name: "beef kebab", quantity: 3, unit: "pieces", calories: 360, protein_g: 24 })],
+    {
+      candidates: [
+        dbFood({
+          name: "Beef, shoulder top blade steak, boneless, cooked, grilled",
+          portion: "100g",
+          portion_grams: 100,
+          calories: 196,
+          protein_g: 28,
+        }),
+      ],
+    }
+  );
+  // The LLM's own estimate stands; the steak must NOT hijack the kebab.
+  assert.equal(item.calories, 360);
+  assert.equal(item.matched_food_id, undefined);
+});
+
 test("regroundUnmatchedItems survives retrieval failures", async () => {
   const failing = async (): Promise<RetrievedFood[]> => {
     throw new Error("embeddings down");

@@ -4,14 +4,12 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { parseFoodText } from "@/lib/food/parse";
 import { displayNameForLoggedFood } from "@/lib/food/logDisplayName";
-import { retrieveFoods, type RetrievedFood } from "@/lib/food/retrieve";
+import { retrieveFoods, lexicalRetrieveFoods, type RetrievedFood } from "@/lib/food/retrieve";
 import { deriveQuantity, itemMacros, totalsFor } from "@/lib/food/quantity";
 import {
   labelForFoodQuality,
-  expandFoodQueries,
   normalizeFoodText,
   qualityForFoodSource,
-  rankFoodsForSearch,
   type FoodSearchQuality,
 } from "@/lib/food/searchRank";
 import { logEvent } from "@/lib/analytics";
@@ -108,36 +106,6 @@ function dedupeOptions(options: LogFoodSearchOption[]): LogFoodSearchOption[] {
     out.push(option);
   }
   return out;
-}
-
-async function lexicalFoodSearch(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  query: string,
-  limit: number
-): Promise<RetrievedFood[]> {
-  const out: RetrievedFood[] = [];
-  const seen = new Set<string>();
-  for (const term of expandFoodQueries(query)) {
-    const safe = term.replace(/[^a-zA-Z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
-    if (safe.length < 2) continue;
-    const like = `%${safe}%`;
-    const { data, error } = await supabase
-      .from("foods")
-      .select(FOOD_SELECT)
-      .or(`name.ilike.${like},search_text.ilike.${like}`)
-      .limit(Math.max(limit, 1));
-    if (error || !data) continue;
-    for (const food of data as FoodRow[]) {
-      if (seen.has(food.id)) continue;
-      seen.add(food.id);
-      out.push({
-        ...food,
-        aliases: term === query ? food.aliases : [...(food.aliases ?? []), query],
-        score: 0,
-      });
-    }
-  }
-  return rankFoodsForSearch(query, out).slice(0, limit);
 }
 
 async function recentFoodSearch(
@@ -332,11 +300,15 @@ export async function searchLogFoods(query: string): Promise<SearchLogFoodsResul
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Not signed in." };
 
+  // As-you-type must be snappy: lexical-only (indexed trigram + parallel term
+  // queries, Roman-Urdu synonyms included). The embedding-backed semantic path
+  // only runs as a rescue when lexical finds nothing (rare, e.g. fuzzy phrasing).
   let dbFoods: RetrievedFood[] = [];
   try {
-    dbFoods = await retrieveFoods(q, 24);
+    dbFoods = await lexicalRetrieveFoods(q, 24);
+    if (dbFoods.length === 0) dbFoods = await retrieveFoods(q, 24);
   } catch {
-    dbFoods = await lexicalFoodSearch(supabase, q, 24);
+    dbFoods = [];
   }
 
   const dbOptions = dbFoods.map(foodOption);

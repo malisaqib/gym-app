@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { rankFoodsForSearch, qualityForFoodSource, labelForFoodQuality, expandFoodQueries } from "./searchRank.ts";
+import { rankFoodsForSearch, qualityForFoodSource, labelForFoodQuality, expandFoodQueries, expandFoodQueryTerms } from "./searchRank.ts";
 
 test("verified curated matches rank ahead of imported matches", () => {
   const ranked = rankFoodsForSearch("roti", [
@@ -44,4 +44,16 @@ test("common Roman Urdu queries expand to English food terms", () => {
   assert.ok(expandFoodQueries("aam").includes("mango"));
   assert.ok(expandFoodQueries("anda").includes("egg"));
   assert.ok(expandFoodQueries("chawal").includes("rice"));
+});
+
+test("expansion terms carry the right sourceWord (synonyms only, never the full query)", () => {
+  const aam = expandFoodQueryTerms("aam").find((t) => t.term === "mango");
+  assert.equal(aam?.sourceWord, "aam"); // true synonym: attach "aam" to mango rows
+
+  // Token splits must reference THEMSELVES — attaching the full query "beef
+  // kebab" to rows found via "beef" made a plain steak match as a kebab.
+  const terms = expandFoodQueryTerms("beef kebab");
+  const beef = terms.find((t) => t.term === "beef");
+  assert.equal(beef?.sourceWord, "beef");
+  assert.ok(terms.every((t) => t.term === "beef kebab" || t.sourceWord !== "beef kebab"));
 });

@@ -29,20 +29,41 @@ const QUERY_EXPANSIONS: Record<string, string[]> = {
   lobia: ["black eyed peas"],
 };
 
-export function expandFoodQueries(query: string): string[] {
+export interface ExpandedQueryTerm {
+  term: string;
+  /**
+   * The user's word this term stands for. Differs from `term` ONLY for true
+   * dictionary synonyms (aam -> mango), where callers may attach it as an alias
+   * so "aam" exact-matches mango rows. Token-split terms must NOT carry the full
+   * query: appending "beef kebab" onto every row found via the token "beef" made
+   * grounding believe a plain steak WAS a beef kebab.
+   */
+  sourceWord: string;
+}
+
+export function expandFoodQueryTerms(query: string): ExpandedQueryTerm[] {
   const normalized = normalizeFoodText(query);
   if (!normalized) return [];
-  const expanded = new Set<string>([query.trim()]);
-  const direct = QUERY_EXPANSIONS[normalized] ?? [];
-  direct.forEach((term) => expanded.add(term));
+  const out = new Map<string, ExpandedQueryTerm>();
+  const add = (term: string, sourceWord: string) => {
+    const t = term.trim();
+    if (t.length >= 2 && !out.has(t)) out.set(t, { term: t, sourceWord });
+  };
+
+  add(query.trim(), query.trim());
+  for (const term of QUERY_EXPANSIONS[normalized] ?? []) add(term, query.trim());
 
   const tokens = normalized.split(/\s+/).filter(Boolean);
   for (const token of tokens) {
-    if (token.length >= 3) expanded.add(token);
-    for (const term of QUERY_EXPANSIONS[token] ?? []) expanded.add(term);
+    if (token.length >= 3) add(token, token);
+    for (const term of QUERY_EXPANSIONS[token] ?? []) add(term, token);
   }
 
-  return [...expanded].filter((term) => term.trim().length >= 2);
+  return [...out.values()];
+}
+
+export function expandFoodQueries(query: string): string[] {
+  return expandFoodQueryTerms(query).map((t) => t.term);
 }
 
 export function qualityForFoodSource(source: string | null | undefined): FoodSearchQuality {

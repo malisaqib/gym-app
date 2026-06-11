@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { embedText } from "@/lib/embeddings";
-import { expandFoodQueries, rankFoodsForSearch } from "@/lib/food/searchRank";
+import { expandFoodQueryTerms, rankFoodsForSearch } from "@/lib/food/searchRank";
 
 /**
  * SERVER ONLY. RAG retrieval: embed the query and ask Postgres (match_foods) for
@@ -33,29 +33,55 @@ async function lexicalFoods(
   query: string,
   limit: number
 ): Promise<RetrievedFood[]> {
+  const terms = expandFoodQueryTerms(query)
+    .map((t) => ({ ...t, safe: safeLexicalQuery(t.term) }))
+    .filter((t) => t.safe.length >= 2);
+
+  // All term queries in PARALLEL — the sequential version made multi-word
+  // queries (and therefore logging) noticeably slow.
+  const results = await Promise.all(
+    terms.map(async (t) => {
+      const like = `%${t.safe}%`;
+      const { data, error } = await supabase
+        .from("foods")
+        .select(FOOD_SELECT)
+        .or(`name.ilike.${like},search_text.ilike.${like}`)
+        .limit(Math.max(limit, 1));
+      return { t, rows: error || !data ? [] : (data as Omit<RetrievedFood, "score">[]) };
+    })
+  );
+
   const out: RetrievedFood[] = [];
   const seen = new Set<string>();
-  for (const term of expandFoodQueries(query)) {
-    const safe = safeLexicalQuery(term);
-    if (safe.length < 2) continue;
-    const like = `%${safe}%`;
-    const { data, error } = await supabase
-      .from("foods")
-      .select(FOOD_SELECT)
-      .or(`name.ilike.${like},search_text.ilike.${like}`)
-      .limit(Math.max(limit, 1));
-    if (error || !data) continue;
-    for (const food of data as Omit<RetrievedFood, "score">[]) {
+  for (const { t, rows } of results) {
+    for (const food of rows) {
       if (seen.has(food.id)) continue;
       seen.add(food.id);
+      // Attach the user's word ONLY for true synonyms (aam -> mango), so "aam"
+      // ranks/grounds onto mango rows. NEVER the whole query for token hits —
+      // that previously made a plain beef steak "exactly match" "beef kebab".
+      const alias = t.sourceWord !== t.term ? t.sourceWord : null;
       out.push({
         ...food,
-        aliases: term === query ? food.aliases : [...(food.aliases ?? []), query],
+        aliases: alias ? [...(food.aliases ?? []), alias] : food.aliases ?? [],
         score: 0,
       });
     }
   }
   return out;
+}
+
+/**
+ * Fast lexical-only retrieval (no embedding round-trip). Used where latency
+ * matters more than semantic recall: as-you-type search and the per-item
+ * grounding pass (item names are short and literal after the LLM split).
+ */
+export async function lexicalRetrieveFoods(query: string, k = 8): Promise<RetrievedFood[]> {
+  const q = query.trim();
+  if (!q) return [];
+  const supabase = await createClient();
+  const candidates = await lexicalFoods(supabase, q, Math.max(k * 3, 20));
+  return rankFoodsForSearch(q, candidates).slice(0, k);
 }
 
 function mergeFoods(...groups: RetrievedFood[][]): RetrievedFood[] {
