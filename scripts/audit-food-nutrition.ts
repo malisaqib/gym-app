@@ -124,8 +124,10 @@ const SERVING_GRAMS: Record<string, number> = {
   eggs: 50,
 };
 
+// "sweet" alone is NOT flagged — it false-positives on whole foods like sweet
+// potato / sweet peppers / sweet cherries; only sweet bakery/recipe forms count.
 const UNSAFE_PLAN_RE =
-  /\b(fast ?food|restaurant|cola|soft drink|soda|candy|chocolate|cookies?|cakes?|desserts?|ice creams?|fries|fried|burger|pizza|samosa|pakora|shake|smoothie|sweet|whey|supplement|protein bar)\b/i;
+  /\b(fast ?food|restaurant|cola|soft drink|soda|candy|chocolate|cookies?|cakes?|desserts?|ice creams?|fries|fried|burger|pizza|samosa|pakora|shake|smoothie|sweet (?:rolls?|bread|cheese|yeast|recipe)|sweetened|whey|supplement|protein bar)\b/i;
 
 function normalize(value: string): string {
   return value.toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9]+/g, " ").trim();
@@ -314,12 +316,17 @@ function auditOne(food: AuditFood, issues: Issue[]) {
     addIssue(issues, food, "error", "curated_not_verified", "Curated DB row should be verified.");
   }
 
+  // Info, not warn: classifier-approved-but-unverified is the ACCEPTED state for
+  // imported plan foods (DB-flag-gated pool); human review upgrades them later.
   if (food.planEligible && food.verified === false) {
-    addIssue(issues, food, "warn", "plan_eligible_unverified", "Plan-eligible food is not verified.");
+    addIssue(issues, food, "info", "plan_eligible_unverified", "Plan-eligible food is not verified (classifier-approved).");
   }
 
+  // Curated/catalog rows are hand-reviewed — samosa/pakora/shakes are deliberate
+  // plan snacks there. Only flag IMPORTED plan-eligible rows for review.
+  const curatedReviewed = food.kind === "catalog" || food.source === "curated" || food.source === "food_catalog";
   const unsafeText = `${food.name} ${food.portion} ${food.aliases.join(" ")} ${food.brand ?? ""}`;
-  if (food.planEligible && UNSAFE_PLAN_RE.test(unsafeText)) {
+  if (food.planEligible && !curatedReviewed && UNSAFE_PLAN_RE.test(unsafeText)) {
     addIssue(issues, food, "warn", "possibly_unsafe_plan_food", "Plan-eligible food looks like a branded/fast-food/sweet/supplement item that needs review.");
   }
 }

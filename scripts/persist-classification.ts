@@ -21,7 +21,7 @@ if (!URL || !KEY) {
 const WRITE = process.env.WRITE === "1";
 const sb = createClient(URL, KEY, { auth: { persistSession: false } });
 
-const SELECT = "id,name,aliases,region,portion,portion_grams,calories,protein_g,carbs_g,fat_g,source";
+const SELECT = "id,name,aliases,region,portion,portion_grams,calories,protein_g,carbs_g,fat_g,source,source_id";
 
 interface Verdict {
   id: string;
@@ -30,11 +30,17 @@ interface Verdict {
   classification_reason: string;
 }
 
-function verdictFor(row: RawFoodRow): Verdict {
+function verdictFor(row: RawFoodRow & { source_id?: string | null }): Verdict {
+  // Rows synced from FOOD_CATALOG (scripts/sync-catalog-foods.ts) ARE the human
+  // review — the catalog deliberately includes samosa/pakora/shakes as plan
+  // snacks. Never let keyword rules (e.g. 'fried', 'shake') flip them back off.
+  if (row.source === "curated" && row.source_id?.startsWith("catalog:")) {
+    return { id: row.id, plan_eligible: true, classification_status: "reviewed_eligible", classification_reason: "catalog" };
+  }
   const r = classifyFoodDetailed(row);
   if (row.source === "curated") {
-    // Hand-curated app foods are reviewed; only drop genuine junk seed rows
-    // (cola, oils, candy bars), never a real dish with an unknown name.
+    // Other hand-curated rows are reviewed for LOGGING; only drop genuine junk
+    // seed rows (cola, candy) from PLANS, never a real dish with an unknown name.
     if (r.status === "excluded" && JUNK_REASONS.has(r.reason)) {
       return { id: row.id, plan_eligible: false, classification_status: "classifier_excluded", classification_reason: r.reason };
     }

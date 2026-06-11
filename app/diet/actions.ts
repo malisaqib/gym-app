@@ -27,11 +27,13 @@ import type { FoodPreference, Lang } from "@/lib/database.types";
 
 const SLOTS: MealSlot[] = ["breakfast", "lunch", "dinner", "snack"];
 
-// --- merged food pool: curated catalog ∪ classified USDA foods --------------
-// The curated 71 (foodCatalog.ts) are the authoritative, desi-accurate base; the
-// classified USDA rows add ~3k more for breadth/variety. We classify only USDA
-// rows (per-100g, safe to portion); curated DB rows are represented by the
-// catalog. Cached per server instance; degrades to the catalog if the DB is down.
+// --- merged food pool: curated catalog ∪ plan-eligible imported foods --------
+// The curated 71 (foodCatalog.ts) are the authoritative, desi-accurate base.
+// Imported breadth comes ONLY from rows the DB has flagged plan_eligible=true
+// (persisted by scripts/persist-classification.ts and human-overridable per row
+// without a deploy — step 5). classifyFoods still runs on the fetched rows to
+// derive planner metadata (role/slots/vegetarian/tags) and as a second safety
+// gate. Cached per server instance; degrades to the catalog if the DB is down.
 let CLASSIFIED_DB: CatalogFood[] | null = null;
 
 const normName = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
@@ -44,6 +46,7 @@ async function loadClassifiedDb(supabase: Awaited<ReturnType<typeof createClient
       .from("foods")
       .select("id,name,aliases,region,portion,portion_grams,calories,protein_g,carbs_g,fat_g,source")
       .eq("source", "usda_sr")
+      .eq("plan_eligible", true)
       .range(from, from + PAGE - 1);
     if (error || !data || data.length === 0) break;
     rows.push(...(data as unknown as RawFoodRow[]));

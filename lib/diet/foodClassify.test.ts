@@ -30,6 +30,17 @@ test("excludes raw animal flesh (prefers cooked)", () => {
   assert.equal(classifyFood(usda("Fish, salmon, atlantic, raw", { kcal: 142, p: 20, c: 0, f: 6 })), null);
 });
 
+test("excludes branded/frozen pizza + restaurant rows from the plan pool", () => {
+  assert.equal(classifyFood(usda("DIGIORNO Pizza, supreme topping, rising crust, frozen, baked", { kcal: 250, p: 11, c: 28, f: 10 })), null);
+  assert.equal(classifyFood(usda('LITTLE CAESARS 14" Original Round Cheese Pizza, Regular Crust', { kcal: 260, p: 12, c: 31, f: 10 })), null);
+  assert.equal(classifyFood(usda("Pizza, cheese topping, regular crust, frozen, cooked", { kcal: 268, p: 11, c: 33, f: 10 })), null);
+  assert.equal(classifyFood(usda("Pizza rolls, frozen, unprepared", { kcal: 248, p: 9, c: 33, f: 9 })), null);
+  assert.equal(classifyFood(usda("Rice, white, steamed, Chinese restaurant", { kcal: 151, p: 3, c: 33, f: 0.3 })), null);
+  assert.equal(classifyFood(usda("Fish, gefiltefish, commercial, sweet recipe", { kcal: 84, p: 9, c: 7, f: 2 })), null);
+  // ...while plain whole foods with "sweet" in the name are kept.
+  assert.ok(classifyFood(usda("Sweet potato, cooked, baked in skin, flesh, without salt", { kcal: 90, p: 2, c: 21, f: 0.2 })));
+});
+
 test("cooked chicken → protein, non-veg, chicken tag, lunch/dinner, scaled to a serving", () => {
   const f = classifyFood(usda("Chicken, broilers or fryers, breast, meat only, cooked, roasted", { kcal: 165, p: 31, c: 0, f: 3.6 }))!;
   assert.ok(f, "should be kept");
