@@ -14,7 +14,7 @@ export default async function Home() {
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-8 px-6 py-12">
       <div className="space-y-3 text-center">
         <h1 className="font-display text-3xl font-semibold tracking-tight text-foreground">
-          FitCoach
+          Zorfit
         </h1>
         <p className="text-muted-foreground">
           Fitness made simple for beginners. Get your daily calorie and protein

@@ -16,14 +16,14 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "FitCoach",
+  title: "Zorfit",
   description:
     "A simple fitness coach for beginners — calorie & protein targets and easy food logging.",
   appleWebApp: {
     capable: true,
     // Deep-black app: let content draw under a translucent status bar.
     statusBarStyle: "black-translucent",
-    title: "FitCoach",
+    title: "Zorfit",
   },
   icons: {
     icon: "/icon-192.png",

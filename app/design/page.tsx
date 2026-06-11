@@ -26,7 +26,7 @@ export default function DesignPreview() {
     <div className="fitness min-h-screen bg-background px-5 py-10 text-foreground">
       <div className="mx-auto flex max-w-md flex-col gap-10">
         <header>
-          <p className="stat-label">FitCoach</p>
+          <p className="stat-label">Zorfit</p>
           <h1 className="mt-1 font-display text-3xl font-extrabold tracking-tight">Design preview</h1>
           <p className="mt-1 text-sm text-muted-foreground">Deep-black tokens, Inter, and the ActivityRing — in isolation.</p>
         </header>

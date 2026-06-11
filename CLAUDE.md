@@ -1,4 +1,4 @@
-# Project: FitCoach (working name)
+# Project: Zorfit
 
 ## What this is
 A PWA (mobile-first, installable web app) that helps fitness beginners. It removes the two biggest beginner pains: "I don't know what to do" and "logging food is too tedious." The app is **bi-cuisine and balanced**: a US/Western user must get Western-accurate answers and a Pakistani user desi-accurate answers — neither is an afterthought. Accuracy is backed by real data, not LLM guessing: a retrieval (RAG) food knowledge base combining USDA FoodData Central (CC0) for Western/generic foods + a curated South Asian layer we own. Roman Urdu/Urdu is an optional mode; English is default. Understanding desi food/portions well is a differentiator, NOT a bias — the LLM must extract the right item from whichever cuisine the user means.

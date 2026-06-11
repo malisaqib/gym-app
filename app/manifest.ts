@@ -4,8 +4,8 @@ import type { MetadataRoute } from "next";
 // This is what makes the app installable ("Add to Home Screen").
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "FitCoach",
-    short_name: "FitCoach",
+    name: "Zorfit",
+    short_name: "Zorfit",
     description:
       "A friendly fitness coach: calorie & protein targets, easy food logging, workouts and weight tracking.",
     start_url: "/dashboard",
