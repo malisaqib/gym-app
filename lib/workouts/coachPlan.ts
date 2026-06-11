@@ -466,8 +466,16 @@ function pickForSlot(
   usedDay: Set<string>,
   level: Level
 ): NormalizedExercise | null {
+  // W1 — minimum muscle fit. An accessory/isolation slot exists to train ITS
+  // muscle; when the pool has nothing that hits it (primary or secondary), the
+  // slot must DROP (caller skips it) — never fill with an arbitrary tie-break
+  // winner. This is what put "Isometric Neck Exercise" into a home-bodyweight
+  // Upper day: shoulders-isolation had zero bodyweight candidates, so ranking
+  // fell through to muscle-irrelevant junk. Compound slots keep pattern-only
+  // matching (the pattern itself guarantees relevance + they have fallbacks).
+  const requireMuscle = slot.role === "accessory" && slot.muscle != null;
   const cands = pool
-    .filter((e) => e.movementPattern === slot.pattern)
+    .filter((e) => e.movementPattern === slot.pattern && (!requireMuscle || muscleFit(e, slot.muscle) <= 1))
     .sort((a, b) => compareKeys(rankKey(a, slot, level), rankKey(b, slot, level)) || a.name.localeCompare(b.name));
   const notDay = cands.filter((e) => !usedDay.has(e.id));
   return notDay.find((e) => !usedWeek.has(e.id)) ?? notDay[0] ?? null;

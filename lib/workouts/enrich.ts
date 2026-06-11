@@ -100,7 +100,7 @@ const RE_CARRY = /\b(carry|farmer|yoke|suitcase|waiter)\b/i;
 //            stones, olympic lifts, plyo) — never in the default plan; reachable
 //            only via an explicit "Different" swap.
 const RE_NOVELTY =
-  /\b(alternat(e|ing)|bound|diagonal|around the worlds?|anti[- ]?gravity|clock|car drivers?|atlas|tire|sledge|zercher|sandbag|behind the neck|guillotine|renegade|kipping|jumps?|skater|burpee|windmill|turkish|get[- ]?ups?|muscle[- ]?ups?|planche|front lever|back lever|human flag|iron cross|skin the cat|flag|plyo)\b/i;
+  /\b(alternat(e|ing)|bound|diagonal|around the worlds?|anti[- ]?gravity|clock|car drivers?|atlas|tire|sledge|zercher|sandbag|behind the neck|guillotine|renegade|kipping|jumps?|skater|burpee|windmill|turkish|get[- ]?ups?|muscle[- ]?ups?|planche|front lever|back lever|human flag|iron cross|skin the cat|flag|plyo|towel)\b/i;
 const RE_FUNDAMENTAL =
   /\b(bench press|incline (bench press|press|dumbbell press|barbell press)|decline (press|bench press)|chest press|dumbbell bench press|overhead press|shoulder press|military press|arnold press|push press|lat ?pulldown|pulldown|pull[- ]?ups?|chin[- ]?ups?|seated (cable )?rows?|bent[- ]?over rows?|barbell rows?|dumbbell rows?|t[- ]?bar rows?|pendlay rows?|machine rows?|squats?|front squats?|hack squats?|leg press|deadlifts?|romanian deadlifts?|rdl|hip thrusts?|good ?mornings?|dips?|push[- ]?ups?)\b/i;
 const RE_ACCESSORY =

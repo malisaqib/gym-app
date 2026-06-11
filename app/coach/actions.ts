@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { sumMacros } from "@/lib/food/totals";
+import { itemMacros } from "@/lib/food/quantity";
 import { suggestMealCoach, type MealSuggestion } from "@/lib/coach/mealCoach";
 import { parseFoodText, type ParsedFoodItem } from "@/lib/food/parse";
 import { logEvent } from "@/lib/analytics";
@@ -53,7 +54,10 @@ export async function suggestMeal(input: {
       .eq("logged_on", input.date)
       .returns<FoodLog[]>();
 
-    const eaten = sumMacros(logs ?? []);
+    // LIVE totals (base × amount via itemMacros) — the same math the dashboard
+    // rings use. Never the stored totals cache: a desynced cache must not make
+    // the coach disagree with what the user sees on the dashboard.
+    const eaten = sumMacros((logs ?? []).map(itemMacros));
     remainingCalories = (profile!.calorie_target ?? 0) - Math.round(eaten.calories);
     remainingProtein = (profile!.protein_target_g ?? 0) - Math.round(eaten.protein_g);
   }

@@ -118,8 +118,8 @@ const T = {
     roman_urdu: "Itni calories mein protein poora karna thora mushkil hai — ye sab se qareeb plan hai. Koi protein wali cheez (anday, dahi, chicken) madad karegi.",
   },
   caloriesShortNote: {
-    en: "Couldn't build a full day with these restrictions. Try removing an avoided food or allowing a bit more variety.",
-    roman_urdu: "In restrictions ke saath poora din ka plan nahi ban saka. Koi avoid ki hui cheez hata dein ya thori aur variety allow karein.",
+    en: "This lands a bit under your calorie target — it's the closest plan within your current restrictions. Removing an avoided food or allowing more variety helps.",
+    roman_urdu: "Ye plan calorie target se thora kam hai — aapki restrictions ke saath ye sab se qareeb plan hai. Koi avoid ki hui cheez hata dein ya thori aur variety allow karein.",
   },
 } satisfies Record<string, Record<Lang, string>>;
 

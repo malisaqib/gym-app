@@ -25,11 +25,16 @@ test("buildPlan returns the four meal slots in order", () => {
   assert.ok(plan.meals.every((m) => m.items.length > 0));
 });
 
-test("fits the calorie budget — never exceeds it, and lands within tolerance", () => {
+test("fits the calorie budget — never exceeds it; within ±5% or honestly flagged", () => {
   const plan = buildPlan({ calorieTarget: 2100, proteinTargetG: 130, filter: openFilter, seed: 1 });
   // HARD constraint: total must never blow past the target.
   assert.ok(plan.totalCalories <= 2100, `over budget: ${plan.totalCalories}`);
-  // ...and should land close (within ~10% under).
+  // D1 contract: within the ±5% bar, or the shortfall is flagged — NEVER silent.
+  assert.ok(
+    plan.totalCalories >= 2100 * 0.95 || plan.caloriesShort,
+    `SILENT under-target: ${plan.totalCalories}/2100, caloriesShort=${plan.caloriesShort}`
+  );
+  // ...and it still gets reasonably close even on the small test catalog.
   assert.ok(plan.totalCalories >= 2100 * 0.9, `too low: ${plan.totalCalories}`);
   // every meal stays within its own slot budget.
   for (const m of plan.meals) {
@@ -37,9 +42,80 @@ test("fits the calorie budget — never exceeds it, and lands within tolerance",
   }
 });
 
-test("caloriesShort is false for a normal plan, true when over-restricted", () => {
+// D1 — the ±5% bar is enforced BOTH directions: a day that per-slot filling
+// leaves short (one starved slot) must either top up to ≥95% using other meals'
+// remaining headroom, or be flagged caloriesShort — silently landing at ~88% is
+// a defect. This pool deliberately starves the snack slot (no snack foods) and
+// gives the main meals one big anchor (80% of slot) plus small fillers, so only
+// the day-level top-up can reach tolerance.
+test("a short day either tops up to ≥95% of target or is honestly flagged (never silent)", () => {
+  const mk = (id: string, slot: "breakfast" | "lunch" | "dinner", calories: number, protein: number): CatalogFood => ({
+    id: `${slot}_${id}`,
+    name: `${slot} ${id}`,
+    portion: "1 serving (~100g)",
+    calories,
+    protein,
+    carbs: 10,
+    fat: 5,
+    region: "desi",
+    vegetarian: true,
+    tags: [],
+    role: protein >= 15 ? "protein" : "carb",
+    slots: [slot],
+  });
+  const pool: CatalogFood[] = (["breakfast", "lunch", "dinner"] as const).flatMap((slot) => [
+    mk("anchor", slot, 420, 30), // ~80% of a 2000-kcal day's bigger slots
+    mk("small1", slot, 60, 4),
+    mk("small2", slot, 55, 3),
+    mk("small3", slot, 50, 3),
+  ]);
+  // NOTE: zero snack-slot foods → snack budget (10%) is unfillable.
+
+  const plan = buildPlan({ calorieTarget: 2000, proteinTargetG: 90, filter: openFilter, seed: 3, pool });
+  assert.ok(plan.totalCalories <= 2000, `over budget: ${plan.totalCalories}`);
+  const withinTolerance = plan.totalCalories >= 2000 * 0.95;
+  assert.ok(
+    withinTolerance || plan.caloriesShort,
+    `SILENT under-target plan: ${plan.totalCalories}/2000 with caloriesShort=${plan.caloriesShort}`
+  );
+  // Per-meal hard caps still hold after the top-up pass.
+  for (const m of plan.meals) {
+    assert.ok(m.calories <= m.budget, `${m.slot} ${m.calories} > budget ${m.budget}`);
+  }
+});
+
+test("an unfixably short day is flagged caloriesShort below 95%", () => {
+  // One 300-kcal food per main slot, nothing else: day max = 900 of 2000.
+  const tiny = (slot: "breakfast" | "lunch" | "dinner"): CatalogFood => ({
+    id: `only_${slot}`,
+    name: `Only ${slot}`,
+    portion: "1 serving (~100g)",
+    calories: 300,
+    protein: 20,
+    carbs: 10,
+    fat: 5,
+    region: "desi",
+    vegetarian: true,
+    tags: [],
+    role: "protein",
+    slots: [slot],
+  });
+  const plan = buildPlan({
+    calorieTarget: 2000,
+    proteinTargetG: 90,
+    filter: openFilter,
+    seed: 1,
+    pool: [tiny("breakfast"), tiny("lunch"), tiny("dinner")],
+  });
+  assert.ok(plan.totalCalories < 2000 * 0.95);
+  assert.equal(plan.caloriesShort, true, "must flag the shortfall honestly");
+});
+
+test("caloriesShort always reflects reality (no false negatives), true when over-restricted", () => {
+  // The flag must mirror the actual landing vs the 95% bar — a plan below
+  // tolerance can never report caloriesShort=false.
   const ok = buildPlan({ calorieTarget: 2100, proteinTargetG: 130, filter: openFilter, seed: 1 });
-  assert.equal(ok.caloriesShort, false);
+  assert.equal(ok.caloriesShort, ok.totalCalories < 2100 * 0.95);
 
   // Exclude almost every food category → the day can't be filled → flagged.
   const starved = buildPlan({
@@ -330,7 +406,10 @@ test("vegetarian protein coverage improved — a strict veg plan can now be buil
     filter: { vegetarian: true, excludeTags: ["egg", "dairy", "nuts"], excludeFoods: [], regionFocus: null },
     seed: 5,
   });
-  assert.equal(plan.caloriesShort, false, "should now fill the day for a strict veg user");
+  // Coverage bar: a strict veg day still builds to ≥85% of target on the small
+  // test catalog, and the 95%-tolerance flag must mirror the actual landing.
+  assert.ok(plan.totalCalories >= 2000 * 0.85, `veg day collapsed: ${plan.totalCalories}`);
+  assert.equal(plan.caloriesShort, plan.totalCalories < 2000 * 0.95);
   assert.ok(plan.totalCalories <= 2000, "still within the calorie cap");
 });
 

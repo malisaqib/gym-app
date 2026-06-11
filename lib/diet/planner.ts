@@ -87,9 +87,10 @@ export interface DietPlan {
   seed: number;
 }
 
-// Below this fraction of the calorie target, the plan is "unbuildable" with the
-// current restrictions (normal plans land ≥90%). Used to surface a clear nudge.
-const SHORT_THRESHOLD = 0.85;
+// The tolerance bar (±5%): a generated plan must land within 95–100% of the
+// calorie target. Below 95% (after the day-level top-up pass) the plan is
+// honestly flagged as the closest fit possible under the user's restrictions.
+const SHORT_THRESHOLD = 0.95;
 
 const SLOT_META: { slot: MealSlot; title: string; pct: number }[] = [
   { slot: "breakfast", title: "Breakfast", pct: 0.25 },
@@ -380,6 +381,36 @@ function improveProtein(meals: BuiltMeal[], proteinTargetG: number): void {
   }
 }
 
+/**
+ * Day-level calorie top-up (D1). Per-slot filling stops at FILL_TO (95%), so
+ * when one slot can't fill well (thin candidates under the user's restrictions)
+ * the DAY can land below the ±5% tolerance even though other meals still have
+ * headroom under their hard caps. While the day is short, greedily add the
+ * largest candidate that still fits SOME meal's remaining budget. Every add
+ * stays under that meal's hard cap, so the day still can never exceed the
+ * target. Deterministic (largest calories, then id).
+ */
+function topUpCalories(meals: BuiltMeal[], calorieTarget: number): void {
+  const total = () => meals.reduce((s, m) => s + sumCal(m.chosen), 0);
+  let guard = 0;
+  while (total() < calorieTarget * SHORT_THRESHOLD && guard < 20) {
+    guard++;
+    let best: { meal: BuiltMeal; food: CatalogFood } | null = null;
+    for (const m of meals) {
+      if (m.chosen.length >= MAX_ITEMS[m.slot]) continue;
+      const remaining = m.budget - sumCal(m.chosen);
+      for (const f of m.cands) {
+        if (m.chosen.includes(f) || f.calories > remaining) continue;
+        if (!best || f.calories > best.food.calories || (f.calories === best.food.calories && f.id < best.food.id)) {
+          best = { meal: m, food: f };
+        }
+      }
+    }
+    if (!best) break;
+    best.meal.chosen.push(best.food);
+  }
+}
+
 /** Slot calorie budgets that sum to EXACTLY the daily target (snack absorbs rounding). */
 function slotBudgets(calorieTarget: number): { slot: MealSlot; title: string; cal: number }[] {
   const b = Math.round(calorieTarget * SLOT_META[0].pct);
@@ -440,6 +471,9 @@ export function buildPlan(input: {
   });
 
   improveProtein(built, input.proteinTargetG);
+  // After the protein pass had full freedom to swap, close any remaining
+  // calorie gap so the day lands within the ±5% tolerance whenever possible.
+  topUpCalories(built, input.calorieTarget);
 
   const meals = built.map(finalizeMeal);
   const totalCalories = meals.reduce((s, m) => s + m.calories, 0);

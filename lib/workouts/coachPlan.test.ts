@@ -45,6 +45,57 @@ test("Home + bodyweight + beginner → only beginner-safe home exercises", () =>
   }
 });
 
+// W1 — desperation slot-filling. When an accessory/isolation slot's target
+// muscle has NO eligible candidate, the slot must drop — never fill with a
+// muscle-irrelevant tie-break winner. The live bug: home/bodyweight/beginner
+// gain_muscle Upper days contained "Isometric Neck Exercise" (×2, filling the
+// shoulders/biceps isolation slots), "Standing Towel Triceps Extension" and a
+// leg move. Upper days must contain ONLY upper-body/core-relevant work.
+test("W1: home/bodyweight/beginner gain_muscle → zero irrelevant filler; unfillable slots drop", () => {
+  const UPPER_OK = new Set([
+    "chest", "shoulders", "triceps", "biceps", "forearms",
+    "lats", "middle back", "lower back", "traps", "abdominals",
+  ]);
+  const p = plan({ goal: "gain_muscle", location: "home", hasEquipment: false, level: "beginner", daysPerWeek: 4 });
+  const exs = flat(p);
+  assert.ok(exs.length > 0, "plan should not be empty");
+
+  for (const e of exs) {
+    // The exact junk class from the audit: neck isometrics + household-prop moves.
+    assert.ok(e.primaryMuscle !== "neck", `neck filler leaked: ${e.name}`);
+    assert.ok(!/towel/i.test(e.name), `household-prop filler leaked: ${e.name}`);
+  }
+  for (const d of p.days) {
+    if (d.isRest || !/upper/i.test(d.focus)) continue;
+    assert.ok(d.exercises.length >= 2, `${d.focus} day over-dropped: ${d.exercises.length} exercises`);
+    for (const e of d.exercises) {
+      assert.ok(
+        e.primaryMuscle !== null && UPPER_OK.has(e.primaryMuscle),
+        `irrelevant filler on an Upper day: ${e.name} (primary: ${e.primaryMuscle})`
+      );
+    }
+  }
+});
+
+test("W1: accessory slots only ever hold muscle-relevant picks (primary or secondary), all plans", () => {
+  // Across a spread of contexts, every accessory-role pick must train a muscle
+  // related to SOME slot of its template day. Cheap proxy that catches the
+  // desperation-fill class without over-constraining: no neck-primary picks and
+  // no towel-prop moves anywhere, in any context.
+  const contexts: Partial<WorkoutInput>[] = [
+    { goal: "gain_muscle", location: "home", hasEquipment: false, level: "beginner", daysPerWeek: 5 },
+    { goal: "tone", location: "home", hasEquipment: false, level: "beginner", daysPerWeek: 4 },
+    { goal: "build_strength", location: "home", hasEquipment: true, equipment: ["dumbbells"], level: "intermediate", daysPerWeek: 4 },
+    { goal: "gain_muscle", location: "gym", hasEquipment: true, level: "intermediate", daysPerWeek: 5 },
+  ];
+  for (const c of contexts) {
+    for (const e of flat(plan(c))) {
+      assert.ok(e.primaryMuscle !== "neck", `neck filler leaked (${JSON.stringify(c)}): ${e.name}`);
+      assert.ok(!/towel/i.test(e.name), `towel move leaked (${JSON.stringify(c)}): ${e.name}`);
+    }
+  }
+});
+
 test("Gym + gain muscle + 5 days (intermediate) → real split, compounds led", () => {
   const p = plan({ goal: "gain_muscle", location: "gym", hasEquipment: true, level: "intermediate", daysPerWeek: 5 });
   const trainingDays = p.days.filter((d) => !d.isRest);
