@@ -46,6 +46,12 @@ test("common Roman Urdu queries expand to English food terms", () => {
   assert.ok(expandFoodQueries("chawal").includes("rice"));
 });
 
+test("desi dish spellings bridge to USDA/FNDDS names", () => {
+  assert.ok(expandFoodQueries("beef kebab").includes("kabob")); // FNDDS spells it kabob
+  assert.ok(expandFoodQueries("chicken handi").includes("curry"));
+  assert.ok(expandFoodQueries("daal").includes("dal"));
+});
+
 test("expansion terms carry the right sourceWord (synonyms only, never the full query)", () => {
   const aam = expandFoodQueryTerms("aam").find((t) => t.term === "mango");
   assert.equal(aam?.sourceWord, "aam"); // true synonym: attach "aam" to mango rows

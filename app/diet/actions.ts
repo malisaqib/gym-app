@@ -45,7 +45,7 @@ async function loadClassifiedDb(supabase: Awaited<ReturnType<typeof createClient
     const { data, error } = await supabase
       .from("foods")
       .select("id,name,aliases,region,portion,portion_grams,calories,protein_g,carbs_g,fat_g,source")
-      .eq("source", "usda_sr")
+      .in("source", ["usda_sr", "usda_fndds"])
       .eq("plan_eligible", true)
       .range(from, from + PAGE - 1);
     if (error || !data || data.length === 0) break;

@@ -27,6 +27,18 @@ const QUERY_EXPANSIONS: Record<string, string[]> = {
   chana: ["chickpea"],
   cholay: ["chickpea"],
   lobia: ["black eyed peas"],
+  // Spelling bridges to USDA/FNDDS dish names.
+  kebab: ["kabob"],
+  kabab: ["kabob", "kebab"],
+  kebabs: ["kabob"],
+  kababs: ["kabob", "kebab"],
+  handi: ["curry"],
+  karahi: ["curry"],
+  daal: ["dal", "lentil"],
+  dhal: ["dal", "lentil"],
+  salan: ["curry"],
+  keema: ["ground beef"],
+  qeema: ["ground beef"],
 };
 
 export interface ExpandedQueryTerm {
