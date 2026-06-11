@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { deriveQuantity, itemMacros, totalsFor } from "./quantity.ts";
+import { deriveQuantity, itemMacros, totalsFor, explicitQuantityFromText, enforceExplicitQuantity } from "./quantity.ts";
 
 test("countable: '3 eggs' → per-unit base, total recomputes by amount", () => {
   const spec = deriveQuantity({ quantity: 3, unit: "egg", calories: 240, protein_g: 30, carbs_g: 6, fat_g: 15 });
@@ -66,3 +66,36 @@ test("backfill semantics: base = total, amount = 1 → exact original total", ()
 });
 
 const zero = { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 };
+
+// --- explicit quantity guard (the "chicken 200gms -> 100g" regression) -------
+
+test("explicitQuantityFromText: weights, serving words, counts, kg/l scaling", () => {
+  assert.deepEqual(explicitQuantityFromText("chicken 200gms"), { quantity: 200, unit: "g" });
+  assert.deepEqual(explicitQuantityFromText("300gm chicken"), { quantity: 300, unit: "g" });
+  assert.deepEqual(explicitQuantityFromText("250 ml milk"), { quantity: 250, unit: "g" });
+  assert.deepEqual(explicitQuantityFromText("1 kg rice"), { quantity: 1000, unit: "g" });
+  assert.deepEqual(explicitQuantityFromText("1 glass mango shake"), { quantity: 1, unit: "glass" });
+  assert.deepEqual(explicitQuantityFromText("2 roti"), { quantity: 2, unit: "roti" });
+  assert.deepEqual(explicitQuantityFromText("3 eggs"), { quantity: 3, unit: "egg" });
+  assert.equal(explicitQuantityFromText("chicken handi"), null); // no explicit amount
+});
+
+test("enforceExplicitQuantity: user's 200g wins over the model's 100g, macros rescaled", () => {
+  // Model anchored to a 100g candidate and dropped the user's "200gms".
+  const item = { food_name: "chicken", quantity: 100, unit: "g", calories: 165, protein_g: 31, carbs_g: 0, fat_g: 4 };
+  const fixed = enforceExplicitQuantity(item, { quantity: 200, unit: "g" });
+  assert.equal(fixed.quantity, 200);
+  assert.equal(fixed.unit, "g");
+  assert.equal(fixed.calories, 330);
+  assert.equal(fixed.protein_g, 62);
+  assert.equal(fixed.food_name, "chicken"); // unrelated fields preserved
+});
+
+test("enforceExplicitQuantity: incomparable units (grams vs count) keep the model's parse", () => {
+  const item = { quantity: 1, unit: "serving", calories: 200, protein_g: 10, carbs_g: 5, fat_g: 8 };
+  // serving -> grams is known (200g), so 100g rescales: scale 0.5
+  assert.equal(enforceExplicitQuantity(item, { quantity: 100, unit: "g" }).calories, 100);
+  // egg count vs grams is NOT comparable → unchanged
+  const eggish = { quantity: 2, unit: "egg", calories: 160, protein_g: 12, carbs_g: 1, fat_g: 11 };
+  assert.deepEqual(enforceExplicitQuantity(eggish, { quantity: 250, unit: "g" }), eggish);
+});

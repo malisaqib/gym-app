@@ -69,6 +69,78 @@ interface ParsedLike {
   fat_g: number;
 }
 
+// Grams represented by a quantity+unit, or null for a non-weight count (eggs,
+// roti) whose gram weight we can't know without the specific food.
+function gramsOf(quantity: number, unit: string): number | null {
+  if (isGramUnit(unit)) return quantity;
+  const serving = gramsForServingUnit(unit);
+  return serving != null ? quantity * serving : null;
+}
+
+/**
+ * Pull an EXPLICIT amount the user typed ("200g", "300gm", "2 roti", "1 katori",
+ * "1 glass"). Deterministic — the source of truth for quantity, so neither the
+ * LLM nor a matched candidate's serving size can silently turn "200gms" into
+ * "100g". Weight beats a count word; kg/litre scale to g/ml. Returns null when
+ * no explicit amount was given (then the model's own quantity is trusted).
+ */
+export function explicitQuantityFromText(text: string): { quantity: number; unit: string } | null {
+  const t = ` ${text.toLowerCase()} `;
+  const weight = t.match(/(\d+(?:\.\d+)?)\s*(kg|kilograms?|g|gm|gms|grams?|ml|millilit(?:re|er)s?|l|lit(?:re|er)s?)\b/);
+  if (weight) {
+    let n = parseFloat(weight[1]);
+    if (/^(kg|kilo|l|lit)/.test(weight[2])) n *= 1000; // kg/litre → g/ml
+    if (n > 0) return { quantity: n, unit: "g" };
+  }
+  const serving = t.match(
+    /(\d+(?:\.\d+)?)\s*(katori|pyali|plate|bowl|glass|cup|mug|serving|portion|can|scoop|slice|piece|egg|roti|chapati|paratha|naan|kabab|kebab)s?\b/
+  );
+  if (serving && parseFloat(serving[1]) > 0) return { quantity: parseFloat(serving[1]), unit: serving[2] };
+  // Bare leading count ("2 roti", "3 eggs") — a number directly before a word.
+  const lead = text.trim().match(/^(\d+(?:\.\d+)?)\s+[a-z]/i);
+  if (lead && parseFloat(lead[1]) > 0) return { quantity: parseFloat(lead[1]), unit: "" };
+  return null;
+}
+
+interface MacroQuantityItem {
+  quantity: number;
+  unit: string;
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+}
+
+/**
+ * Force a parsed item onto the user's explicit quantity, rescaling its macros so
+ * the per-unit numbers stay consistent (grounding may later replace them from a
+ * trusted food at this same quantity). Used for single-item logs, where the
+ * amount unambiguously belongs to that one item. When the model's unit and the
+ * explicit unit aren't comparable (grams vs an unknown count), the model's parse
+ * is kept rather than guessed.
+ */
+export function enforceExplicitQuantity<T extends MacroQuantityItem>(
+  item: T,
+  explicit: { quantity: number; unit: string }
+): T {
+  const fromGrams = gramsOf(item.quantity, item.unit);
+  const toGrams = gramsOf(explicit.quantity, explicit.unit);
+  let scale: number | null = null;
+  if (fromGrams != null && toGrams != null && fromGrams > 0) scale = toGrams / fromGrams;
+  else if (fromGrams == null && toGrams == null && item.quantity > 0) scale = explicit.quantity / item.quantity;
+  if (scale == null || !Number.isFinite(scale) || scale <= 0) return item;
+
+  return {
+    ...item,
+    quantity: explicit.quantity,
+    unit: explicit.unit,
+    calories: Math.round(item.calories * scale),
+    protein_g: Math.round(item.protein_g * scale),
+    carbs_g: Math.round(item.carbs_g * scale),
+    fat_g: Math.round(item.fat_g * scale),
+  };
+}
+
 function portionSpec(p: ParsedLike, grams: number, servingGrams: number): QuantitySpec {
   return {
     unit_mode: "portion",

@@ -1,5 +1,6 @@
 import { retrieveFoods, lexicalRetrieveFoods, type RetrievedFood } from "@/lib/food/retrieve";
 import { groundParsedFoodItems, regroundUnmatchedItems } from "@/lib/food/grounding";
+import { explicitQuantityFromText, enforceExplicitQuantity } from "@/lib/food/quantity";
 import { aiConfigError, aiHttpError } from "@/lib/ai/errors";
 import type { NutritionSource } from "@/lib/database.types";
 
@@ -56,9 +57,15 @@ RULES:
 - Do NOT assume a cuisine. Handle Western and South Asian foods equally well.
 - Interpret Roman Urdu quantities: ek/aik=1, do=2, teen=3, char=4, adha=half,
   pyali/katori=small bowl, plate=plate, glass=glass.
+- QUANTITY IS SACRED. If the user states an explicit amount (e.g. "200g",
+  "300gm", "2 roti", "1 katori"), the quantity and unit you output MUST match it
+  exactly. NEVER replace the user's amount with a candidate's serving size.
+- Match the user's ACTUAL dish. If they say "chicken handi", "karahi", "curry"
+  or "salan", do not output "chicken breast"; only use a candidate that is the
+  same dish. When unsure, keep the user's own words and estimate.
 - Every item's macros must be the TOTAL for the amount eaten, not per unit.
-- food_name is for display: use a short natural name from the user's words
-  (e.g. "coffee shake"), not a long database/candidate label with commas.
+- food_name is for display: use a short natural name from the user's own words
+  (e.g. "coffee shake", "chicken"), not a database/candidate label.
 - Round all numbers to integers. If no food is found, return an empty list.
 
 Respond with ONLY valid JSON in this exact shape:
@@ -162,15 +169,24 @@ export async function parseFoodText(text: string): Promise<ParsedFoodItem[]> {
   const rawItems = (parsed as { items?: unknown })?.items;
   if (!Array.isArray(rawItems)) return [];
 
-  const items = rawItems
+  let items = rawItems
     .map(coerceItem)
     .filter((item): item is ParsedFoodItem => item !== null);
 
+  // Quantity guard: for a single-item log, the explicit amount the user typed
+  // (e.g. "200gms") is the source of truth — enforce it BEFORE grounding so a
+  // trusted candidate scales to the user's amount instead of overriding it.
+  if (items.length === 1) {
+    const explicit = explicitQuantityFromText(text);
+    if (explicit) items = [enforceExplicitQuantity(items[0], explicit)];
+  }
+
   // Pass 1: ground against the meal-wide candidates (+ trusted catalog).
   const grounded = groundParsedFoodItems(items, { candidates, rawText: text });
-  // Pass 2 (step 4): items that still lack a trusted match get their OWN
-  // retrieval by item name — multi-item meals stop sharing one skewed candidate
-  // pool. LEXICAL-ONLY (no embedding round-trip) so logging stays fast; item
-  // names are short and literal after the LLM split, so lexical recall is fine.
+  // Pass 2 (step 4): in MULTI-item meals, items that still lack a trusted match
+  // get their OWN lexical retrieval (no embedding round-trip) — meal-wide
+  // candidates skew toward one food. Single-item logs already retrieved for
+  // exactly their one query in pass 1, so we skip this round trip → faster.
+  if (grounded.length < 2) return grounded;
   return regroundUnmatchedItems(grounded, lexicalRetrieveFoods);
 }
