@@ -128,3 +128,27 @@ test("real data: the well-known Pullups/Chin-Up rows are flagged correctly", () 
     assert.equal(e!.beginnerSafe, false, name);
   }
 });
+
+// W2 — a strength-lift NAME fragment must not make a core move Tier 1. "Push Up
+// to Side Plank" (a core exercise) matched the push-up fundamental regex and
+// outranked every true core exercise in core slots, surfacing in odd places
+// (e.g. a gym Lower day).
+test("W2: a core-pattern move with a fundamental-lift name stays Tier 2", () => {
+  const hybrid = normalizeExercise(
+    ex({ name: "Push Up to Side Plank", force: "push", mechanic: "compound", equipment: "body only", primaryMuscles: ["abdominals"] })
+  );
+  assert.equal(hybrid.movementPattern, "core");
+  assert.equal(hybrid.tier, 2, "core move must not be Tier 1 via the push-up name fragment");
+
+  // ...while a REAL push-up keeps its Tier-1 fundamental status.
+  const pushup = normalizeExercise(
+    ex({ name: "Pushups", force: "push", mechanic: "compound", equipment: "body only", primaryMuscles: ["chest"] })
+  );
+  assert.equal(pushup.movementPattern, "push");
+  assert.equal(pushup.tier, 1);
+});
+
+test("W2 real data: no core-pattern exercise is Tier 1 (cardio slots aside)", () => {
+  const offenders = ALL.filter((e) => e.movementPattern === "core" && e.tier === 1);
+  assert.equal(offenders.length, 0, `core moves ranked Tier 1: ${offenders.map((e) => e.name).join(", ")}`);
+});

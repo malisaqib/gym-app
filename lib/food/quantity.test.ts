@@ -1,6 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { deriveQuantity, itemMacros, totalsFor, explicitQuantityFromText, enforceExplicitQuantity } from "./quantity.ts";
+import {
+  deriveQuantity,
+  itemMacros,
+  totalsFor,
+  explicitQuantityFromText,
+  enforceExplicitQuantity,
+  enforcePerItemQuantities,
+  correctedMacroPatch,
+} from "./quantity.ts";
 
 test("countable: '3 eggs' → per-unit base, total recomputes by amount", () => {
   const spec = deriveQuantity({ quantity: 3, unit: "egg", calories: 240, protein_g: 30, carbs_g: 6, fat_g: 15 });
@@ -98,4 +106,68 @@ test("enforceExplicitQuantity: incomparable units (grams vs count) keep the mode
   // egg count vs grams is NOT comparable → unchanged
   const eggish = { quantity: 2, unit: "egg", calories: 160, protein_g: 12, carbs_g: 1, fat_g: 11 };
   assert.deepEqual(enforceExplicitQuantity(eggish, { quantity: 250, unit: "g" }), eggish);
+});
+
+// F3 — explicit quantities are enforced PER ITEM in multi-item logs, bound by
+// the text segment that mentions each food; ambiguity trusts the model.
+test("F3: '200g chicken and 2 roti' enforces both items' typed amounts", () => {
+  const chicken = { food_name: "chicken", quantity: 100, unit: "g", calories: 165, protein_g: 31, carbs_g: 0, fat_g: 4 };
+  const roti = { food_name: "roti", quantity: 1, unit: "roti", calories: 110, protein_g: 3, carbs_g: 22, fat_g: 2 };
+
+  const [c, r] = enforcePerItemQuantities([chicken, roti], "200g chicken and 2 roti");
+  // chicken: the model anchored to 100g; the user said 200g → rescaled ×2.
+  assert.equal(c.quantity, 200);
+  assert.equal(c.unit, "g");
+  assert.equal(c.calories, 330);
+  assert.equal(c.protein_g, 62);
+  // roti: the model said 1; the user said 2 → doubled.
+  assert.equal(r.quantity, 2);
+  assert.equal(r.calories, 220);
+  assert.equal(r.protein_g, 6);
+});
+
+test("F3: ambiguous segments never cross-assign amounts (model parse kept)", () => {
+  const a = { food_name: "chicken", quantity: 1, unit: "serving", calories: 200, protein_g: 25, carbs_g: 0, fat_g: 8 };
+  const b = { food_name: "chicken curry", quantity: 1, unit: "serving", calories: 300, protein_g: 20, carbs_g: 10, fat_g: 18 };
+  // Both items' tokens hit both segments ("chicken" appears in each) → ambiguous
+  // for both → neither is touched, even though "200g" sits in one segment.
+  const out = enforcePerItemQuantities([a, b], "chicken and chicken curry 200g");
+  assert.deepEqual(out[0], a);
+  assert.deepEqual(out[1], b);
+});
+
+test("F3: single-item logs still use the whole text (old behavior preserved)", () => {
+  const item = { food_name: "chicken", quantity: 100, unit: "g", calories: 165, protein_g: 31, carbs_g: 0, fat_g: 4 };
+  const [out] = enforcePerItemQuantities([item], "chicken 200gms");
+  assert.equal(out.quantity, 200);
+  assert.equal(out.calories, 330);
+});
+
+// F2 — a manual calories/protein correction rescales carbs/fat by the calorie
+// ratio (energy consistency) and rebases EVERY per-unit base at the current
+// amount so the correction still scales with later quantity edits.
+test("F2: correctedMacroPatch halves carbs/fat when calories are halved", () => {
+  const row = {
+    calories: 500, protein_g: 30, carbs_g: 60, fat_g: 15,
+    base_calories: 2.5, base_protein_g: 0.15, base_carbs_g: 0.3, base_fat_g: 0.075,
+    amount: 200,
+  };
+  const p = correctedMacroPatch(row, { calories: 250, protein_g: 30 });
+  assert.equal(p.calories, 250);
+  assert.equal(p.protein_g, 30);
+  assert.equal(p.carbs_g, 30); // 60 × (250/500)
+  assert.equal(p.fat_g, 8); // round(15 × 0.5)
+  // Bases reproduce the entered totals at the current amount (200).
+  assert.equal(Math.round(p.base_calories * 200), 250);
+  assert.equal(Math.round(p.base_carbs_g * 200), 30);
+});
+
+test("F2: zero-calorie old item leaves carbs/fat untouched (no ratio to scale by)", () => {
+  const row = { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0, base_calories: 0, base_protein_g: 0, base_carbs_g: 0, base_fat_g: 0, amount: 1 };
+  const p = correctedMacroPatch(row, { calories: 220, protein_g: 7 });
+  assert.equal(p.calories, 220);
+  assert.equal(p.protein_g, 7);
+  assert.equal(p.carbs_g, 0);
+  assert.equal(p.fat_g, 0);
+  assert.equal(p.base_calories, 220); // amount 1 → base = total
 });

@@ -223,6 +223,88 @@ export function itemMacros(item: MacroSource): MacroTotals {
   };
 }
 
+const normalizeSegmentText = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+/**
+ * Enforce explicit user-typed quantities on EVERY parsed item (F3) — not just
+ * single-item logs. "200g chicken and 2 roti" is split into segments on meal
+ * connectors (and / with / aur / commas / + / &); an item is bound to a segment
+ * only when EXACTLY ONE segment mentions one of its name tokens, so an
+ * ambiguous text ("chicken and chicken curry") never cross-assigns an amount —
+ * ambiguity keeps the model's own parse. Single-item logs use the whole text.
+ */
+export function enforcePerItemQuantities<T extends MacroQuantityItem & { food_name: string }>(
+  items: T[],
+  rawText: string
+): T[] {
+  if (items.length === 0) return items;
+  if (items.length === 1) {
+    const explicit = explicitQuantityFromText(rawText);
+    return explicit ? [enforceExplicitQuantity(items[0], explicit)] : items;
+  }
+
+  const segments = rawText
+    .split(/(?:,|\+|&|\band\b|\bwith\b|\baur\b)/i)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (segments.length < 2) return items;
+
+  const segmentWords = segments.map((s) => ` ${normalizeSegmentText(s)} `);
+  return items.map((item) => {
+    const tokens = normalizeSegmentText(item.food_name)
+      .split(" ")
+      .filter((t) => t.length >= 3);
+    if (tokens.length === 0) return item;
+    const matchIdx = segmentWords
+      .map((seg, i) => (tokens.some((t) => seg.includes(` ${t} `) || seg.includes(` ${t}s `)) ? i : -1))
+      .filter((i) => i >= 0);
+    if (matchIdx.length !== 1) return item; // ambiguous or unmentioned → trust the model
+    const explicit = explicitQuantityFromText(segments[matchIdx[0]]);
+    return explicit ? enforceExplicitQuantity(item, explicit) : item;
+  });
+}
+
+/**
+ * The macro patch for a manual calories/protein correction (F2). The user only
+ * enters calories + protein; carbs/fat are RESCALED by the calorie ratio so the
+ * item's implied energy stays consistent with the corrected calories — leaving
+ * them frozen let a 500→250 kcal correction keep 60g of carbs (240 kcal of
+ * carbs alone in a "250 kcal" item). Everything is also rebased per-unit at the
+ * current amount, so the corrected numbers still scale with quantity edits.
+ * Old calories of 0 give no ratio — carbs/fat are left as they are.
+ */
+export function correctedMacroPatch(
+  row: MacroSource & { amount?: number | null },
+  patch: { calories: number; protein_g: number }
+): {
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+  base_calories: number;
+  base_protein_g: number;
+  base_carbs_g: number;
+  base_fat_g: number;
+} {
+  const amount = row.amount && row.amount > 0 ? row.amount : 1;
+  const old = itemMacros(row); // live old totals (base × amount, cache as fallback)
+  const calories = Math.max(0, Math.round(Number(patch.calories) || 0));
+  const protein_g = Math.max(0, Math.round(Number(patch.protein_g) || 0));
+  const ratio = old.calories > 0 ? calories / old.calories : null;
+  const carbs_g = ratio === null ? old.carbs_g : Math.round(old.carbs_g * ratio);
+  const fat_g = ratio === null ? old.fat_g : Math.round(old.fat_g * ratio);
+  return {
+    calories,
+    protein_g,
+    carbs_g,
+    fat_g,
+    base_calories: calories / amount,
+    base_protein_g: protein_g / amount,
+    base_carbs_g: carbs_g / amount,
+    base_fat_g: fat_g / amount,
+  };
+}
+
 /** Rounded totals for a spec/amount — used when writing the synced cache columns. */
 export function totalsFor(spec: {
   base_calories: number;

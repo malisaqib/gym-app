@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { parseFoodText } from "@/lib/food/parse";
 import { displayNameForLoggedFood } from "@/lib/food/logDisplayName";
 import { retrieveFoods, lexicalRetrieveFoods, type RetrievedFood } from "@/lib/food/retrieve";
-import { deriveQuantity, itemMacros, totalsFor } from "@/lib/food/quantity";
+import { correctedMacroPatch, deriveQuantity, itemMacros, totalsFor } from "@/lib/food/quantity";
 import {
   labelForFoodQuality,
   normalizeFoodText,
@@ -447,18 +447,17 @@ type ItemResult =
   | { ok: false; error: string };
 
 /**
- * Manual correction: set an item's exact calories/protein. To stay consistent
- * with the live quantity model we store these as the per-unit base AT THE CURRENT
- * amount (base = entered / amount), so the corrected numbers hold now and still
- * scale if the user later changes the quantity. carbs/fat base is left as-is.
+ * Manual correction: set an item's exact calories/protein. The full macro patch
+ * (incl. carbs/fat rescaled by the calorie ratio, and every per-unit base at the
+ * current amount) is computed by the pure, unit-tested correctedMacroPatch — so
+ * the corrected numbers hold now, stay energy-consistent, and still scale if
+ * the user later changes the quantity.
  */
 export async function correctFoodItem(
   id: string,
   patch: { calories: number; protein_g: number }
 ): Promise<ItemResult> {
-  const calories = Math.max(0, Math.round(Number(patch.calories)));
-  const protein_g = Math.max(0, Math.round(Number(patch.protein_g)));
-  if (!Number.isFinite(calories) || !Number.isFinite(protein_g)) {
+  if (!Number.isFinite(Number(patch.calories)) || !Number.isFinite(Number(patch.protein_g))) {
     return { ok: false, error: "Enter valid numbers." };
   }
 
@@ -476,15 +475,10 @@ export async function correctFoodItem(
     .single<FoodLog>();
   if (!row) return { ok: false, error: "Item not found." };
 
-  const amount = row.amount && row.amount > 0 ? row.amount : 1;
-
   const { data, error } = await supabase
     .from("food_logs")
     .update({
-      base_calories: calories / amount,
-      base_protein_g: protein_g / amount,
-      calories,
-      protein_g,
+      ...correctedMacroPatch(row, patch),
       source: "corrected",
       nutrition_source: "corrected",
     })

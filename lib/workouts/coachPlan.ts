@@ -345,12 +345,18 @@ function templateFor(style: Style, days: number, level: Level): { split: string;
   return { split: splitLabel(tdays, style), days: tdays };
 }
 
+// The label must describe the REAL template days — a 4-day muscle block of
+// [Upper, Lower, Push, Pull] was labeled "Push / Pull / Legs" just because
+// "Push" appeared somewhere. Derive it from the distinct day focuses, in order.
 function splitLabel(days: TemplateDay[], style: Style): string {
-  const focuses = new Set(days.map((d) => d.focus.replace(/\s+[A-C]$/, "").replace(/ \+.*/, "")));
   if (style === "fatloss") return "Full-body + cardio + core";
-  if (focuses.has("Push") || focuses.has("Pull") || focuses.has("Legs")) return "Push / Pull / Legs";
-  if (focuses.has("Upper") || focuses.has("Lower")) return "Upper / Lower";
-  return "Full Body";
+  const seen: string[] = [];
+  for (const d of days) {
+    const f = d.focus.replace(/\s+[A-C]$/, "").replace(/ \+.*/, "").replace(/\s+focus$/i, "");
+    if (!seen.includes(f)) seen.push(f);
+  }
+  if (seen.length === 1) return seen[0];
+  return seen.join(" / ");
 }
 
 // Focus-area bias: add extra volume to the chosen region (deterministic).
@@ -702,8 +708,15 @@ export function swapPlanExercise(
   const conservative = isConservative(input, flags);
   const ctx = equipCtx(input);
   const exclude = new Set(excludeIds);
+  // Tier-3 novelty is reachable ONLY through an explicit "Different" swap (the
+  // user asking for variety). "easier"/"harder" are progression moves and must
+  // stay on fundamentals/accessories — never escalate someone into novelty.
   const pool = enriched.filter(
-    (e) => e.movementPattern === pattern && !exclude.has(e.id) && eligible(e, ctx, input, flags, conservative)
+    (e) =>
+      e.movementPattern === pattern &&
+      !exclude.has(e.id) &&
+      (direction === "different" || e.tier !== 3) &&
+      eligible(e, ctx, input, flags, conservative)
   );
   if (!pool.length) return null;
 

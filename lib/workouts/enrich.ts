@@ -184,10 +184,10 @@ function cautionTagsOf(raw: Exercise, lower: string): CautionTag[] {
 
 /**
  * Fundamental (1) vs accessory (2) vs novelty/obscure (3). Deterministic, from
- * name + category only. NOTE: independent of difficulty/level — a "beginner"-
- * tagged Barbell Bench Press is Tier 1.
+ * name + category + movement pattern. NOTE: independent of difficulty/level — a
+ * "beginner"-tagged Barbell Bench Press is Tier 1.
  */
-function deriveTier(raw: Exercise, lower: string): ExerciseTier {
+function deriveTier(raw: Exercise, lower: string, pattern: MovementPattern): ExerciseTier {
   // Sport-specific / explosive categories aren't default-plan material.
   if (raw.category === "strongman" || raw.category === "olympic weightlifting" || raw.category === "plyometrics") return 3;
   // Cardio fundamentals stay eligible for the cardio slot (checked before the
@@ -195,7 +195,10 @@ function deriveTier(raw: Exercise, lower: string): ExerciseTier {
   if (raw.category === "cardio") return 1;
   if (RE_NOVELTY.test(lower)) return 3;
   if (raw.category === "stretching" || raw.equipment === "foam roll") return 2;
-  if (RE_FUNDAMENTAL.test(lower)) return 1;
+  // A fundamental-lift NAME fragment only grants Tier 1 to a real strength
+  // pattern. "Push Up to Side Plank" is a CORE move that merely contains
+  // "push up" — as Tier 1 it outranked every true core exercise in core slots.
+  if (RE_FUNDAMENTAL.test(lower) && pattern !== "core" && pattern !== "mobility") return 1;
   if (RE_ACCESSORY.test(lower)) return 2;
   return 2;
 }
@@ -336,7 +339,7 @@ export function normalizeExercise(raw: Exercise): NormalizedExercise {
     instructions: raw.instructions,
     rawLevel: raw.level,
     normalizedDifficulty,
-    tier: deriveTier(raw, lower),
+    tier: deriveTier(raw, lower, movementPattern),
     rawEquipment: raw.equipment,
     normalizedEquipment,
     location,

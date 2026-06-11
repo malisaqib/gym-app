@@ -365,3 +365,51 @@ test("BACK-SLOT: home/bodyweight back work is genuine equipment-free posterior �
   // The non-pushy gear nudge is shown.
   assert.ok(p.adjustments.some((a) => /resistance band|pull-up bar/i.test(a)), "gear nudge expected on no-equipment back days");
 });
+
+// W3 — the split label must describe the REAL template days. The 4-day
+// intermediate muscle block is [Upper, Lower, Push, Pull]; it used to be
+// labeled "Push / Pull / Legs" just because "Push" appeared somewhere.
+test("W3: split label matches the actual template days", () => {
+  const fourDay = plan({ goal: "gain_muscle", location: "gym", hasEquipment: true, level: "intermediate", daysPerWeek: 4 });
+  const focuses = fourDay.days.filter((d) => !d.isRest).map((d) => d.focus);
+  assert.deepEqual(focuses, ["Upper", "Lower", "Push", "Pull"]);
+  assert.equal(fourDay.split, "Upper / Lower / Push / Pull");
+
+  // A true PPL stays labeled PPL; upper/lower stays upper/lower.
+  const ppl = plan({ goal: "gain_muscle", location: "gym", hasEquipment: true, level: "intermediate", daysPerWeek: 3 });
+  assert.equal(ppl.split, "Push / Pull / Legs");
+  const ul = plan({ goal: "gain_muscle", location: "gym", hasEquipment: true, level: "intermediate", daysPerWeek: 2 });
+  assert.equal(ul.split, "Upper / Lower");
+  // Beginner full-body keeps a clean label (A/B/C suffixes collapse).
+  const fb = plan({ goal: "gain_muscle", location: "home", hasEquipment: false, level: "beginner", daysPerWeek: 3 });
+  assert.equal(fb.split, "Full Body");
+});
+
+// W4 — tier-3 novelty is reachable ONLY via an explicit "Different" swap.
+// "easier"/"harder" are progression directions and must never escalate the
+// user into novelty/sport-specific moves.
+test("W4: easier/harder swaps never return a Tier-3 exercise (any context)", () => {
+  const contexts: WorkoutInput[] = [
+    { ...base, goal: "gain_muscle", location: "gym", hasEquipment: true, level: "intermediate" },
+    { ...base, goal: "build_strength", location: "gym", hasEquipment: true, level: "advanced" },
+    { ...base, goal: "tone", location: "home", hasEquipment: true, equipment: ["dumbbells", "bench"], level: "intermediate" },
+  ];
+  const patterns = ["push", "pull", "squat", "hinge", "lunge", "core"] as const;
+  let checked = 0;
+  for (const input of contexts) {
+    for (const pattern of patterns) {
+      // Walk several starting exercises so the swap explores the score range.
+      const starts = ALL.filter((e) => e.movementPattern === pattern).slice(0, 8);
+      for (const start of starts) {
+        for (const dir of ["easier", "harder"] as SwapDirection[]) {
+          const res = swapPlanExercise(input, pattern, start.id, [], dir, ALL);
+          if (!res) continue;
+          const tier = byId.get(res.id)!.tier;
+          assert.notEqual(tier, 3, `tier-3 via "${dir}": ${res.name} (from ${start.name})`);
+          checked++;
+        }
+      }
+    }
+  }
+  assert.ok(checked > 30, `too few swaps exercised the rule: ${checked}`);
+});

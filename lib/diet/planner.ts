@@ -170,16 +170,20 @@ function matchesAvoidedFood(food: CatalogFood, terms: string[]): boolean {
 }
 
 // Is this food mentioned in a free-text meal description ("paratha + egg")?
+// Word-boundary safe (D2): plain substring matching let "buttermilk" in the
+// user's usual text seed (and PROTECT) the catalog food "Milk", and "daal"
+// inside "daal-roti" style words could mis-bind. Every check goes through
+// wordPhrase so only whole words/phrases count.
 function mentioned(food: CatalogFood, text: string): boolean {
-  const t = ` ${text.toLowerCase()} `;
+  const t = text.toLowerCase();
   if (!t.trim()) return false;
   const name = food.name.toLowerCase();
-  if (t.includes(name)) return true;
-  if (food.tags.some((tag) => tag.length >= 3 && t.includes(tag))) return true;
+  if (wordPhrase(t, name)) return true;
+  if (food.tags.some((tag) => tag.length >= 3 && wordPhrase(t, tag.toLowerCase()))) return true;
   // Aliases incl. Roman Urdu (e.g. "nehari", "aam", "panir").
-  if ((food.aliases ?? []).some((a) => a.length >= 3 && t.includes(a.toLowerCase()))) return true;
+  if ((food.aliases ?? []).some((a) => a.length >= 3 && wordPhrase(t, a.toLowerCase()))) return true;
   const tokens = name.replace(/[^a-z]+/g, " ").split(" ").filter((w) => w.length >= 4);
-  return tokens.some((tok) => t.includes(tok));
+  return tokens.some((tok) => wordPhrase(t, tok));
 }
 
 function allowed(food: CatalogFood, filter: DietFilter): boolean {

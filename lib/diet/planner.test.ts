@@ -397,6 +397,17 @@ test("aliases (incl. Roman Urdu) match free text and search (Phase 4)", () => {
   assert.ok(searchCatalog("panir", openFilter, "lunch").some((f) => f.id === "paneer"));
 });
 
+// D2 — mentioned() is word-boundary safe: a word CONTAINING a food name must
+// not seed/protect that food ("buttermilk" is not "Milk"); whole words and
+// aliases still match. bestCatalogMatch goes through the same mentioned() the
+// plan seeder uses, so these assertions bind the seeding behavior too.
+test("D2: usual-text matching is word-boundary safe (buttermilk ≠ milk)", () => {
+  assert.notEqual(bestCatalogMatch("buttermilk", openFilter)?.id, "milk");
+  assert.equal(bestCatalogMatch("a glass of milk", openFilter)?.id, "milk");
+  // Multi-word names keep matching via their tokens ("daal" hits Daal (lentils)).
+  assert.ok(bestCatalogMatch("daal and rice", openFilter));
+});
+
 test("vegetarian protein coverage improved — a strict veg plan can now be built", () => {
   // Veg + avoid egg/dairy/nuts used to collapse to daal/chana (shortfall). With
   // the Phase 4 additions (rajma/lobia/soya/tofu/chana chaat) it should fill out.

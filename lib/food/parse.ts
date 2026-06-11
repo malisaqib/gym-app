@@ -1,6 +1,6 @@
 import { retrieveFoods, lexicalRetrieveFoods, type RetrievedFood } from "@/lib/food/retrieve";
 import { groundParsedFoodItems, regroundUnmatchedItems } from "@/lib/food/grounding";
-import { explicitQuantityFromText, enforceExplicitQuantity } from "@/lib/food/quantity";
+import { enforcePerItemQuantities } from "@/lib/food/quantity";
 import { aiConfigError, aiHttpError } from "@/lib/ai/errors";
 import type { NutritionSource } from "@/lib/database.types";
 
@@ -173,13 +173,11 @@ export async function parseFoodText(text: string): Promise<ParsedFoodItem[]> {
     .map(coerceItem)
     .filter((item): item is ParsedFoodItem => item !== null);
 
-  // Quantity guard: for a single-item log, the explicit amount the user typed
-  // (e.g. "200gms") is the source of truth — enforce it BEFORE grounding so a
-  // trusted candidate scales to the user's amount instead of overriding it.
-  if (items.length === 1) {
-    const explicit = explicitQuantityFromText(text);
-    if (explicit) items = [enforceExplicitQuantity(items[0], explicit)];
-  }
+  // Quantity guard (F3: every item, not just single-item logs): the explicit
+  // amounts the user typed ("200g chicken and 2 roti") are the source of truth —
+  // enforced BEFORE grounding so trusted candidates scale to the user's amounts
+  // instead of overriding them. Ambiguous segments keep the model's parse.
+  items = enforcePerItemQuantities(items, text);
 
   // Pass 1: ground against the meal-wide candidates (+ trusted catalog).
   const grounded = groundParsedFoodItems(items, { candidates, rawText: text });
