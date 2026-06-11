@@ -530,11 +530,27 @@ function RingStat({
   );
 }
 
-// A meal still being parsed — instant feedback while the LLM works.
 function FoodQualityBadge({ quality, label }: { quality: LogFoodSearchOption["quality"]; label: string }) {
   const tone =
     quality === "verified" ? "success" : quality === "recent" ? "primary" : quality === "estimated" ? "warning" : "muted";
   return <Badge tone={tone}>{label}</Badge>;
+}
+
+/**
+ * Trust badge for a LOGGED item: keyed to nutrition_source (where the NUMBERS
+ * came from), not `source` (how the row was created) — a typed meal that
+ * grounded to the verified catalog must show "Verified", not "estimated".
+ * Legacy rows (logged before the provenance migration) fall back to `source`.
+ */
+function NutritionSourceBadge({ item }: { item: FoodLog }) {
+  const ns =
+    item.nutrition_source ??
+    (item.source === "llm" ? "estimated" : item.source === "corrected" ? "corrected" : null);
+  if (ns === "verified") return <Badge tone="success">Verified</Badge>;
+  if (ns === "imported") return <Badge tone="muted">Imported</Badge>;
+  if (ns === "corrected") return <Badge tone="primary">Edited</Badge>;
+  if (ns === "estimated") return <Badge tone="warning">Estimated</Badge>;
+  return null;
 }
 
 function PendingRow({ text }: { text: string }) {
@@ -606,8 +622,7 @@ function FoodItemRow({
           <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
             <span className="font-semibold text-foreground tabular-nums">{m.calories}</span> kcal ·{" "}
             <span className="font-semibold text-accent tabular-nums">{m.protein_g}g</span> protein
-            {item.source === "llm" && <Badge tone="warning">estimated</Badge>}
-            {item.source === "corrected" && <Badge tone="primary">edited</Badge>}
+            <NutritionSourceBadge item={item} />
           </p>
         </div>
         <div className="flex shrink-0 gap-1">
