@@ -177,3 +177,34 @@ export function groundParsedFoodItems(
     return item;
   });
 }
+
+/**
+ * Per-item retrieval pass (step 4). Meal-wide retrieval skews toward one food in
+ * multi-item meals ("2 roti and daal with cold coffee"), so items that did NOT
+ * ground to a trusted row get their OWN candidate search and are re-grounded
+ * against it. Confidently-matched items are returned untouched, so single-food
+ * logs cost no extra retrieval.
+ */
+export function needsPerItemGrounding(item: ParsedFoodItem): boolean {
+  return !item.matched_food_id;
+}
+
+export async function regroundUnmatchedItems(
+  items: ParsedFoodItem[],
+  retrieve: (query: string, k: number) => Promise<RetrievedFood[]>
+): Promise<ParsedFoodItem[]> {
+  const indexes = items.map((item, i) => (needsPerItemGrounding(item) ? i : -1)).filter((i) => i >= 0);
+  if (indexes.length === 0) return items;
+
+  const perItem = await Promise.all(
+    indexes.map((i) => retrieve(items[i].food_name, 6).catch(() => [] as RetrievedFood[]))
+  );
+
+  const out = [...items];
+  indexes.forEach((i, k) => {
+    if (perItem[k].length === 0) return;
+    const regrounded = groundParsedFoodItems([out[i]], { candidates: perItem[k] })[0];
+    if (regrounded.matched_food_id) out[i] = regrounded;
+  });
+  return out;
+}
