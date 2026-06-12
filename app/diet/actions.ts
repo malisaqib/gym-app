@@ -23,6 +23,8 @@ import { parsePreferences, keywordPreferences } from "@/lib/coach/dietCoach";
 import { estimateMeal } from "@/app/coach/actions";
 import { FOOD_CATALOG, type CatalogFood, type MealSlot } from "@/lib/diet/foodCatalog";
 import { classifyFoods, type RawFoodRow } from "@/lib/diet/foodClassify";
+import { planItemToLogRow } from "@/lib/diet/planToLog";
+import { logEvent } from "@/lib/analytics";
 import type { FoodPreference, Lang } from "@/lib/database.types";
 
 const SLOTS: MealSlot[] = ["breakfast", "lunch", "dinner", "snack"];
@@ -301,6 +303,39 @@ async function persistPlan(supabase: Supa, userId: string, plan: DietPlan): Prom
   if (error) return { ok: false, error: error.message };
   revalidatePath("/diet");
   return { ok: true };
+}
+
+/**
+ * "I ate this" — log a plan meal's items into today's food log (the plan→log
+ * loop). SERVER-AUTHORITATIVE: items come from the user's SAVED plan, never
+ * from the client; macros are mapped by the pure planItemToLogRow through the
+ * same live-quantity model as every other logging path.
+ */
+export async function logPlanMeal(
+  slot: MealSlot,
+  date: string
+): Promise<{ ok: true; count: number } | { ok: false; error: string }> {
+  if (!SLOTS.includes(slot)) return { ok: false, error: "Unknown meal." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { ok: false, error: "Invalid date." };
+
+  const ctx = await planContext();
+  if (!ctx.ok) return ctx;
+
+  const meal = ctx.plan.meals.find((m) => m.slot === slot);
+  if (!meal || meal.items.length === 0) return { ok: false, error: "This meal has no foods to log." };
+
+  const rows = meal.items.map((item) => ({
+    ...planItemToLogRow(item),
+    user_id: ctx.userId,
+    logged_on: date,
+  }));
+
+  const { error } = await ctx.supabase.from("food_logs").insert(rows);
+  if (error) return { ok: false, error: error.message };
+
+  await logEvent(ctx.supabase, ctx.userId, "food_logged", { items: rows.length, method: "plan_meal", slot });
+  revalidatePath("/dashboard");
+  return { ok: true, count: rows.length };
 }
 
 function isRestorablePlanItem(item: PlanMealItem): item is PlanMealItem {

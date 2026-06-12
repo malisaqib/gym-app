@@ -20,7 +20,9 @@ import {
   setDietItemAmount,
   correctDietItem,
   getDietPlan,
+  logPlanMeal,
 } from "./actions";
+import { localDateString } from "@/lib/localDate";
 import UsualEatingCard, { type UsualEating } from "./UsualEatingCard";
 import AddFoodPanel from "./AddFoodPanel";
 import ReportFoodSheet from "@/components/ReportFoodSheet";
@@ -86,6 +88,8 @@ const T = {
     roman_urdu: "Preferences badli hain — apply karne ke liye Regenerate dabayein.",
   },
   swap: { en: "Swap", roman_urdu: "Badlein" },
+  logMeal: { en: "Log meal", roman_urdu: "Meal log karein" },
+  mealLogged: { en: "Added to Today ✓", roman_urdu: "Aaj mein add ho gaya ✓" },
   remove: { en: "Remove", roman_urdu: "Hatayein" },
   report: { en: "Report issue", roman_urdu: "Issue report karein" },
   adjust: { en: "Adjust amount", roman_urdu: "Miqdar adjust karein" },
@@ -155,6 +159,8 @@ export default function DietPlanView({
   const [avoidFoods, setAvoidFoods] = useState<string[]>(initialFilter.excludeFoods ?? []);
   const [busy, setBusy] = useState(false);
   const [swapping, setSwapping] = useState<MealSlot | null>(null);
+  // "I ate this" — logging a plan meal into today's food log.
+  const [loggingMeal, setLoggingMeal] = useState<MealSlot | null>(null);
   const [habits, setHabits] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Per-item editing (Phase 3): which item is mid-edit, and the open add panel.
@@ -267,6 +273,26 @@ export default function DietPlanView({
       toast.error(message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  // Log every item of a plan meal into TODAY's food log (the plan→log loop).
+  // The server reads the saved plan — nothing nutritional is sent from here.
+  async function logMealToToday(slot: MealSlot) {
+    if (loggingMeal) return;
+    setLoggingMeal(slot);
+    try {
+      const res = await logPlanMeal(slot, localDateString());
+      if (res.ok) {
+        haptic("success");
+        toast.success(t("mealLogged"));
+      } else {
+        toast.error(res.error);
+      }
+    } catch {
+      toast.error("Couldn't log that meal. Please try again.");
+    } finally {
+      setLoggingMeal(null);
     }
   }
 
@@ -622,21 +648,41 @@ export default function DietPlanView({
                           </p>
                         )}
                       </div>
-                      <button
-                        type="button"
-                        onPointerDown={() => haptic("tap")}
-                        onClick={() => swap(meal.slot)}
-                        disabled={mutating}
-                        className="min-h-[36px] shrink-0 rounded-pill border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition hover:border-primary/50 active:scale-[0.97] disabled:opacity-40"
-                      >
-                        {swapping === meal.slot ? (
-                          "…"
-                        ) : (
-                          <span className="inline-flex items-center gap-1">
-                            <RefreshCw size={13} aria-hidden /> {t("swap")}
-                          </span>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        {/* "I ate this" — log the whole meal into today (plan→log loop). */}
+                        {!habits && meal.items.length > 0 && (
+                          <button
+                            type="button"
+                            onPointerDown={() => haptic("tap")}
+                            onClick={() => logMealToToday(meal.slot)}
+                            disabled={loggingMeal !== null}
+                            className="min-h-[36px] rounded-pill bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition active:scale-[0.97] disabled:opacity-40"
+                          >
+                            {loggingMeal === meal.slot ? (
+                              "…"
+                            ) : (
+                              <span className="inline-flex items-center gap-1">
+                                <UtensilsCrossed size={13} aria-hidden /> {t("logMeal")}
+                              </span>
+                            )}
+                          </button>
                         )}
-                      </button>
+                        <button
+                          type="button"
+                          onPointerDown={() => haptic("tap")}
+                          onClick={() => swap(meal.slot)}
+                          disabled={mutating}
+                          className="min-h-[36px] rounded-pill border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition hover:border-primary/50 active:scale-[0.97] disabled:opacity-40"
+                        >
+                          {swapping === meal.slot ? (
+                            "…"
+                          ) : (
+                            <span className="inline-flex items-center gap-1">
+                              <RefreshCw size={13} aria-hidden /> {t("swap")}
+                            </span>
+                          )}
+                        </button>
+                      </div>
                     </div>
                     <ul className="flex flex-col gap-1.5">
                       {meal.items.map((item, i) => {
