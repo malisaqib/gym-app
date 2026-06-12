@@ -284,6 +284,10 @@ interface BuiltMeal {
 const sumCal = (items: CatalogFood[]) => items.reduce((s, f) => s + f.calories, 0);
 const sumPro = (items: CatalogFood[]) => items.reduce((s, f) => s + f.protein, 0);
 
+// Day-level variety: normalized display name, shared across the day's meals so
+// the same dish doesn't appear at lunch AND dinner AND snack.
+const normName = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
 function buildMealItems(
   budget: number,
   slotProtein: number,
@@ -291,11 +295,16 @@ function buildMealItems(
   cands: CatalogFood[],
   rng: () => number,
   usualText: string | undefined,
-  likeIds: Set<string>
+  likeIds: Set<string>,
+  usedDay: Set<string> = new Set()
 ): CatalogFood[] {
   const chosen: CatalogFood[] = [];
   const fits = (f: CatalogFood) => sumCal(chosen) + f.calories <= budget; // HARD cap
   const likeBonus = (f: CatalogFood) => (likeIds.has(f.id) ? 6 : 0);
+  // Strong penalty (not a hard ban) for a dish already in an earlier meal today:
+  // variety wins whenever a reasonable alternative exists, but a thin filtered
+  // pool can still fill the meal rather than starve it.
+  const dupPenalty = (f: CatalogFood) => (usedDay.has(normName(f.name)) ? -45 : 0);
   // Prefer our CURATED, recognizable dishes (the bi-cuisine, desi-rich catalog) as
   // the backbone of each meal; the ~thousands of USDA foods (id "db:…") add breadth
   // in fill/accessory slots and power swaps. Without this, generic USDA singles
@@ -319,7 +328,11 @@ function buildMealItems(
   // 2) Anchor a protein if none yet (real meals only).
   if (slot !== "snack" && !chosen.some((f) => f.role === "protein")) {
     const proteins = cands.filter((f) => f.role === "protein" && !chosen.includes(f) && fits(f));
-    const anchor = chooseTop(proteins, (f) => proteinDensity(f) * 100 + likeBonus(f) + curatedBonus(f), rng);
+    const anchor = chooseTop(
+      proteins,
+      (f) => proteinDensity(f) * 100 + likeBonus(f) + curatedBonus(f) + dupPenalty(f),
+      rng
+    );
     if (anchor) chosen.push(anchor);
   }
 
@@ -337,7 +350,8 @@ function buildMealItems(
         -(remaining - f.calories) / 12 + // close the calorie gap (never over)
         proteinDensity(f) * (needProtein ? 60 : 25) + // protein-per-calorie
         likeBonus(f) +
-        curatedBonus(f),
+        curatedBonus(f) +
+        dupPenalty(f),
       rng
     );
     if (!pick) break;
@@ -361,9 +375,17 @@ interface Swap {
 
 function improveProtein(meals: BuiltMeal[], proteinTargetG: number): void {
   const totalProtein = () => meals.reduce((s, m) => s + sumPro(m.chosen), 0);
+  // Day-wide names currently on the plate (variety: a protein swap must not
+  // introduce a dish that another meal already has).
+  const dayNames = () => {
+    const names = new Set<string>();
+    for (const m of meals) for (const f of m.chosen) names.add(normName(f.name));
+    return names;
+  };
   let guard = 0;
   while (totalProtein() < proteinTargetG && guard < 25) {
     guard++;
+    const used = dayNames();
     let best: Swap | null = null;
     for (const m of meals) {
       const calNow = sumCal(m.chosen);
@@ -372,6 +394,7 @@ function improveProtein(meals: BuiltMeal[], proteinTargetG: number): void {
         if (m.protectedIds.has(x.id)) continue; // keep the user's usual foods in place
         for (const y of m.cands) {
           if (m.chosen.includes(y)) continue;
+          if (used.has(normName(y.name)) ) continue; // already on the plate today
           if (calNow - x.calories + y.calories > m.budget) continue; // stay under the cap
           const gain = y.protein - x.protein;
           if (gain > 0 && (best === null || gain > best.gain)) {
@@ -399,17 +422,26 @@ function topUpCalories(meals: BuiltMeal[], calorieTarget: number): void {
   let guard = 0;
   while (total() < calorieTarget * SHORT_THRESHOLD && guard < 20) {
     guard++;
-    let best: { meal: BuiltMeal; food: CatalogFood } | null = null;
-    for (const m of meals) {
-      if (m.chosen.length >= MAX_ITEMS[m.slot]) continue;
-      const remaining = m.budget - sumCal(m.chosen);
-      for (const f of m.cands) {
-        if (m.chosen.includes(f) || f.calories > remaining) continue;
-        if (!best || f.calories > best.food.calories || (f.calories === best.food.calories && f.id < best.food.id)) {
-          best = { meal: m, food: f };
+    const used = new Set<string>();
+    for (const m of meals) for (const f of m.chosen) used.add(normName(f.name));
+    // Prefer foods NOT already on the plate today; only fall back to a repeat
+    // when nothing fresh can close the gap.
+    const findBest = (allowRepeats: boolean): { meal: BuiltMeal; food: CatalogFood } | null => {
+      let best: { meal: BuiltMeal; food: CatalogFood } | null = null;
+      for (const m of meals) {
+        if (m.chosen.length >= MAX_ITEMS[m.slot]) continue;
+        const remaining = m.budget - sumCal(m.chosen);
+        for (const f of m.cands) {
+          if (m.chosen.includes(f) || f.calories > remaining) continue;
+          if (!allowRepeats && used.has(normName(f.name))) continue;
+          if (!best || f.calories > best.food.calories || (f.calories === best.food.calories && f.id < best.food.id)) {
+            best = { meal: m, food: f };
+          }
         }
       }
-    }
+      return best;
+    };
+    const best = findBest(false) ?? findBest(true);
     if (!best) break;
     best.meal.chosen.push(best.food);
   }
@@ -460,6 +492,9 @@ export function buildPlan(input: {
     likeText ? pool.filter((f) => mentioned(f, likeText)).map((f) => f.id) : []
   );
 
+  // Variety: dishes picked by earlier meals carry a penalty in later meals, so
+  // one high-scoring food can't dominate the whole day (lunch AND dinner AND snack).
+  const usedDay = new Set<string>();
   const built: BuiltMeal[] = slotBudgets(input.calorieTarget).map((s) => {
     const slotProtein = input.proteinTargetG * (input.calorieTarget > 0 ? s.cal / input.calorieTarget : 0);
     const cands = pool.filter((f) => f.slots.includes(s.slot) && allowedForAutoPlan(f, input.filter));
@@ -467,7 +502,8 @@ export function buildPlan(input: {
     // every slot the food fits). Both become protected (never swapped for protein).
     const usualText =
       [usualForSlot(input.usual, s.slot), input.usual?.keep].filter(Boolean).join(" ") || undefined;
-    const chosen = buildMealItems(s.cal, slotProtein, s.slot, cands, rng, usualText, likeIds);
+    const chosen = buildMealItems(s.cal, slotProtein, s.slot, cands, rng, usualText, likeIds, usedDay);
+    for (const f of chosen) usedDay.add(normName(f.name));
     const protectedIds = new Set(
       usualText ? chosen.filter((f) => mentioned(f, usualText)).map((f) => f.id) : []
     );

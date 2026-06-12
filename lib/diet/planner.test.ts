@@ -397,6 +397,30 @@ test("aliases (incl. Roman Urdu) match free text and search (Phase 4)", () => {
   assert.ok(searchCatalog("panir", openFilter, "lunch").some((f) => f.id === "paneer"));
 });
 
+// Variety — the same MAIN DISH must not repeat across the day's meals when the
+// pool has alternatives (the live bug: "Chicken tikka" at lunch, dinner AND
+// snack). Small sides/drinks (a salad, a coffee) may appear twice — that's how
+// people actually eat, and the calorie top-up may legitimately reuse them when
+// no fresh tiny filler exists. The penalty is soft so thin pools still fill.
+test("variety: no substantial dish repeats across the day's meals", () => {
+  for (const seed of [1, 2, 3, 5, 9]) {
+    const plan = buildPlan({ calorieTarget: 2100, proteinTargetG: 130, filter: openFilter, seed });
+    const items = plan.meals.flatMap((m) => m.items);
+    const counts = new Map<string, { n: number; cal: number }>();
+    for (const it of items) {
+      const key = it.name.toLowerCase();
+      const prev = counts.get(key);
+      counts.set(key, { n: (prev?.n ?? 0) + 1, cal: it.calories });
+    }
+    for (const [name, { n, cal }] of counts) {
+      if (cal >= 100) assert.equal(n, 1, `seed ${seed}: main dish repeated: ${name} ×${n}`);
+      else assert.ok(n <= 2, `seed ${seed}: side repeated too often: ${name} ×${n}`);
+    }
+    // The variety pass must not break the hard budget guarantee.
+    assert.ok(plan.totalCalories <= 2100, `seed ${seed} over budget`);
+  }
+});
+
 // D2 — mentioned() is word-boundary safe: a word CONTAINING a food name must
 // not seed/protect that food ("buttermilk" is not "Milk"); whole words and
 // aliases still match. bestCatalogMatch goes through the same mentioned() the
