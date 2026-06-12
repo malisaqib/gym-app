@@ -2,16 +2,18 @@
 
 import { useEffect } from "react";
 import Link from "next/link";
+import * as Sentry from "@sentry/nextjs";
 import { Frown } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 
 /**
  * App-wide error boundary. Catches unexpected render/server errors in any page
  * and shows a friendly, branded fallback (with a retry) instead of Next's bare
- * default error screen. The real error goes to the console/logs, never the user.
+ * default error screen. The real error goes to Sentry + the console, never the user.
  */
 export default function Error({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {
+    Sentry.captureException(error);
     console.error(error);
   }, [error]);
 
