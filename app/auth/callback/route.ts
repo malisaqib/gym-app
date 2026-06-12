@@ -20,7 +20,10 @@ export async function GET(request: Request) {
   const code = searchParams.get("code");
   const tokenHash = searchParams.get("token_hash");
   const type = searchParams.get("type") as EmailOtpType | null;
-  const next = searchParams.get("next") ?? "/dashboard";
+  // Only ever redirect within the app: a same-origin path that can't be a
+  // protocol-relative URL ("//evil.com"). Anything else falls back to /dashboard.
+  const rawNext = searchParams.get("next") ?? "/dashboard";
+  const next = rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/dashboard";
   const errorDescription = searchParams.get("error_description");
 
   if (!errorDescription) {

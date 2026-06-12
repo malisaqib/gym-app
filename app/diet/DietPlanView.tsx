@@ -278,8 +278,11 @@ export default function DietPlanView({
 
   // Log every item of a plan meal into TODAY's food log (the plan→log loop).
   // The server reads the saved plan — nothing nutritional is sent from here.
+  // Synchronous ref latch: two fast taps must log ONE meal, not two.
+  const logMealLock = useRef(false);
   async function logMealToToday(slot: MealSlot) {
-    if (loggingMeal) return;
+    if (logMealLock.current || loggingMeal) return;
+    logMealLock.current = true;
     setLoggingMeal(slot);
     try {
       const res = await logPlanMeal(slot, localDateString());
@@ -293,6 +296,7 @@ export default function DietPlanView({
       toast.error("Couldn't log that meal. Please try again.");
     } finally {
       setLoggingMeal(null);
+      logMealLock.current = false;
     }
   }
 

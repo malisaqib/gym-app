@@ -21,6 +21,8 @@ import {
   type FoodSearchQuality,
 } from "@/lib/food/searchRank";
 import { logEvent } from "@/lib/analytics";
+import { consumeUsage, USAGE_LIMIT_MESSAGE } from "@/lib/usage";
+import { reportError } from "@/lib/log";
 import type { FoodLog, NutritionSource } from "@/lib/database.types";
 
 // Basic YYYY-MM-DD shape check for the client-supplied local date.
@@ -169,7 +171,9 @@ export async function getRecentLogFoods(limit = 10): Promise<SearchLogFoodsResul
 
 /** Parse free text with the LLM, then save each detected item for the day. */
 export async function logFood(input: { text: string; date: string }): Promise<LogResult> {
-  const text = input.text.trim();
+  // Length cap: this text goes into an LLM prompt (token cost) and is stored as
+  // raw_text on every resulting row. A real meal description fits in 300 chars.
+  const text = input.text.trim().slice(0, 300);
   if (!text) return { ok: false, error: "Type what you ate first." };
   if (!isDate(input.date)) return { ok: false, error: "Invalid date." };
 
@@ -179,10 +183,15 @@ export async function logFood(input: { text: string; date: string }): Promise<Lo
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Not signed in." };
 
+  // Rate limit BEFORE the LLM call — this is the expensive path.
+  const { allowed } = await consumeUsage(supabase, "food_parse");
+  if (!allowed) return { ok: false, error: USAGE_LIMIT_MESSAGE };
+
   let parsed;
   try {
     parsed = await parseFoodText(text);
   } catch (e) {
+    reportError("logFood.parse", e, { textLength: text.length });
     return { ok: false, error: e instanceof Error ? e.message : "Could not parse that." };
   }
 
@@ -228,7 +237,10 @@ export async function logFood(input: { text: string; date: string }): Promise<Lo
     .select()
     .returns<FoodLog[]>();
 
-  if (error) return { ok: false, error: error.message };
+  if (error) {
+    reportError("logFood.insert", error, { items: rows.length });
+    return { ok: false, error: error.message };
+  }
 
   await logEvent(supabase, user.id, "food_logged", { items: (data ?? []).length });
   revalidatePath("/dashboard"); // keep the server-rendered list fresh on next nav
@@ -707,7 +719,10 @@ export async function logSavedMeal(mealId: string, date: string): Promise<LogRes
   }));
 
   const { data, error } = await supabase.from("food_logs").insert(rows).select().returns<FoodLog[]>();
-  if (error) return { ok: false, error: error.message };
+  if (error) {
+    reportError("logSavedMeal.insert", error, { items: rows.length });
+    return { ok: false, error: error.message };
+  }
 
   await logEvent(supabase, user.id, "food_logged", { items: (data ?? []).length, method: "saved_meal" });
   revalidatePath("/dashboard");

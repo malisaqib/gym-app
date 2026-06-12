@@ -6,6 +6,8 @@ import { itemMacros } from "@/lib/food/quantity";
 import { suggestMealCoach, type MealSuggestion } from "@/lib/coach/mealCoach";
 import { parseFoodText, type ParsedFoodItem } from "@/lib/food/parse";
 import { logEvent } from "@/lib/analytics";
+import { consumeUsage, USAGE_LIMIT_MESSAGE } from "@/lib/usage";
+import { reportError } from "@/lib/log";
 import type { FoodLog, Lang, Profile } from "@/lib/database.types";
 
 const isDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s);
@@ -23,7 +25,8 @@ export async function suggestMeal(input: {
   date: string;
   focus?: string | null; // neutral behaviour focus from the user's motivation goal (optional)
 }): Promise<CoachResult> {
-  const question = input.question.trim();
+  // Length cap: the question goes into an LLM prompt (token cost).
+  const question = input.question.trim().slice(0, 500);
   if (!question) return { ok: false, error: "Ask me what to eat (and what options you have)." };
 
   const supabase = await createClient();
@@ -31,6 +34,10 @@ export async function suggestMeal(input: {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Not signed in." };
+
+  // Rate limit BEFORE the LLM call.
+  const { allowed } = await consumeUsage(supabase, "coach");
+  if (!allowed) return { ok: false, error: USAGE_LIMIT_MESSAGE };
 
   // Load targets (may be null if somehow not onboarded).
   const { data: profile } = await supabase
@@ -90,7 +97,20 @@ type EstimateResult =
  * the RAG pipeline itself is untouched.)
  */
 export async function estimateMeal(text: string): Promise<EstimateResult> {
-  const meal = text.trim();
+  // AUTH FIRST: server actions are public POST endpoints — without this gate,
+  // anonymous callers could burn the Groq/Gemini budget through this action.
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  // Rate limit BEFORE the LLM call.
+  const { allowed } = await consumeUsage(supabase, "estimate");
+  if (!allowed) return { ok: false, error: USAGE_LIMIT_MESSAGE };
+
+  // Length cap: this text goes into an LLM prompt and we pay per token.
+  const meal = text.trim().slice(0, 300);
   if (!meal) return { ok: false, error: "Type what you ate first." };
   try {
     const items = await parseFoodText(meal);
@@ -99,6 +119,7 @@ export async function estimateMeal(text: string): Promise<EstimateResult> {
     const protein = items.reduce((s, i) => s + i.protein_g, 0);
     return { ok: true, items, calories, protein };
   } catch (e) {
+    reportError("estimateMeal", e);
     return { ok: false, error: e instanceof Error ? e.message : "estimate-failed" };
   }
 }

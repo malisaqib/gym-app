@@ -25,6 +25,8 @@ import { FOOD_CATALOG, type CatalogFood, type MealSlot } from "@/lib/diet/foodCa
 import { classifyFoods, type RawFoodRow } from "@/lib/diet/foodClassify";
 import { planItemToLogRow } from "@/lib/diet/planToLog";
 import { logEvent } from "@/lib/analytics";
+import { consumeUsage, USAGE_LIMIT_MESSAGE } from "@/lib/usage";
+import { reportError } from "@/lib/log";
 import type { FoodPreference, Lang } from "@/lib/database.types";
 
 const SLOTS: MealSlot[] = ["breakfast", "lunch", "dinner", "snack"];
@@ -144,6 +146,11 @@ export async function generateDietPlan(input?: {
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Not signed in." };
 
+  // Rate limit: plan generation can invoke the LLM (notes parsing) and does
+  // heavy pool work — cap regenerate-spamming.
+  const { allowed } = await consumeUsage(supabase, "plan_generate");
+  if (!allowed) return { ok: false, error: USAGE_LIMIT_MESSAGE };
+
   const { data: profile } = await supabase
     .from("profiles")
     .select(
@@ -241,7 +248,10 @@ export async function generateDietPlan(input?: {
   const { error } = await supabase
     .from("meal_plans")
     .upsert({ user_id: user.id, plan }, { onConflict: "user_id" });
-  if (error) return { ok: false, error: error.message };
+  if (error) {
+    reportError("generateDietPlan.upsert", error);
+    return { ok: false, error: error.message };
+  }
 
   revalidatePath("/diet");
   return { ok: true, plan };
@@ -331,7 +341,10 @@ export async function logPlanMeal(
   }));
 
   const { error } = await ctx.supabase.from("food_logs").insert(rows);
-  if (error) return { ok: false, error: error.message };
+  if (error) {
+    reportError("logPlanMeal.insert", error, { slot, items: rows.length });
+    return { ok: false, error: error.message };
+  }
 
   await logEvent(ctx.supabase, ctx.userId, "food_logged", { items: rows.length, method: "plan_meal", slot });
   revalidatePath("/dashboard");

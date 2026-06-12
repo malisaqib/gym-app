@@ -130,6 +130,10 @@ export default function FoodLogger({
   }
   // Tracks in-flight logs so a focus-refetch doesn't clobber an optimistic add.
   const inFlight = useRef(0);
+  // SYNCHRONOUS double-submit latch. React state guards (e.g. pickPending) are
+  // set asynchronously — two fast taps both pass the check before the re-render
+  // and insert duplicate rows. A ref flips immediately; released in finally.
+  const submitLock = useRef(false);
   // Per-item debounce timers for quantity edits (coalesce rapid +/- taps).
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -152,7 +156,8 @@ export default function FoodLogger({
 
   // One tap: log every item of a saved meal into today.
   async function handleLogSavedMeal(id: string) {
-    if (mealLogging) return;
+    if (submitLock.current || mealLogging) return;
+    submitLock.current = true;
     setMealLogging(id);
     setError(null);
     inFlight.current += 1;
@@ -165,6 +170,7 @@ export default function FoodLogger({
     } finally {
       inFlight.current -= 1;
       setMealLogging(null);
+      submitLock.current = false;
     }
   }
 
@@ -253,6 +259,8 @@ export default function FoodLogger({
     e.preventDefault();
     const meal = text.trim();
     if (!meal) return;
+    if (submitLock.current) return; // double-Enter = one log, not two
+    submitLock.current = true;
 
     // OPTIMISTIC: show a "reading…" row and clear the input right away.
     const tempId = crypto.randomUUID();
@@ -282,10 +290,13 @@ export default function FoodLogger({
     } finally {
       setPending((p) => p.filter((x) => x.tempId !== tempId));
       inFlight.current -= 1;
+      submitLock.current = false;
     }
   }
 
   async function handlePickSearchResult(optionId: string) {
+    if (submitLock.current) return;
+    submitLock.current = true;
     setPickPending(true);
     setError(null);
     setUnrecognized(null);
@@ -305,11 +316,13 @@ export default function FoodLogger({
     } finally {
       inFlight.current -= 1;
       setPickPending(false);
+      submitLock.current = false;
     }
   }
 
   async function copyYesterday() {
-    if (copyPending || count > 0) return;
+    if (submitLock.current || copyPending || count > 0) return;
+    submitLock.current = true;
     setCopyPending(true);
     setError(null);
     setUnrecognized(null);
@@ -327,6 +340,7 @@ export default function FoodLogger({
     } finally {
       inFlight.current -= 1;
       setCopyPending(false);
+      submitLock.current = false;
     }
   }
 
