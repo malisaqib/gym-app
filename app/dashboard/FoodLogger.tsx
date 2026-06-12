@@ -47,7 +47,21 @@ const REPORT_T = {
   noExact: { en: "No exact match. Log will estimate it.", roman_urdu: "Exact match nahi mila. Log estimate kar de ga." },
   showMore: { en: "Show more", roman_urdu: "Aur dikhayein" },
   showLess: { en: "Show less", roman_urdu: "Kam dikhayein" },
+  howTo: {
+    en: "Type any meal with amounts (English or Roman Urdu — “200g chicken and 2 roti”), or tap a suggestion below to log it exactly.",
+    roman_urdu: "Koi bhi khana amount ke saath likhein (English ya Roman Urdu — “200g chicken aur 2 roti”), ya neeche suggestion par tap kar ke exact log karein.",
+  },
 } satisfies Record<string, Record<Lang, string>>;
+
+// Plain-words explanation of each trust badge (shown as a tooltip / long-press
+// title), so "Verified / Imported / Estimated / Edited" are never mystery labels.
+const BADGE_TITLES: Record<string, string> = {
+  verified: "Verified — nutrition checked by us",
+  recent: "Recent — something you logged before",
+  imported: "Imported — from the USDA food database",
+  estimated: "Estimated — AI estimate, tap Edit to correct it",
+  corrected: "Edited — you set these numbers yourself",
+};
 
 // A meal being parsed by the LLM — shown immediately so logging feels instant.
 interface PendingLog {
@@ -343,6 +357,9 @@ export default function FoodLogger({
             Log
           </Button>
         </div>
+        {/* One line of "how this works" — shown only before the first log so it
+            teaches without becoming permanent noise. */}
+        {count === 0 && <p className="text-xs leading-relaxed text-muted-foreground">{rt("howTo")}</p>}
         {showQuickAdd && (
           <div className="rounded-card-lg border border-border bg-card p-3">
             <div className="mb-2 flex items-center justify-between gap-2">
@@ -533,7 +550,11 @@ function RingStat({
 function FoodQualityBadge({ quality, label }: { quality: LogFoodSearchOption["quality"]; label: string }) {
   const tone =
     quality === "verified" ? "success" : quality === "recent" ? "primary" : quality === "estimated" ? "warning" : "muted";
-  return <Badge tone={tone}>{label}</Badge>;
+  return (
+    <Badge tone={tone} title={BADGE_TITLES[quality]}>
+      {label}
+    </Badge>
+  );
 }
 
 /**
@@ -546,10 +567,10 @@ function NutritionSourceBadge({ item }: { item: FoodLog }) {
   const ns =
     item.nutrition_source ??
     (item.source === "llm" ? "estimated" : item.source === "corrected" ? "corrected" : null);
-  if (ns === "verified") return <Badge tone="success">Verified</Badge>;
-  if (ns === "imported") return <Badge tone="muted">Imported</Badge>;
-  if (ns === "corrected") return <Badge tone="primary">Edited</Badge>;
-  if (ns === "estimated") return <Badge tone="warning">Estimated</Badge>;
+  if (ns === "verified") return <Badge tone="success" title={BADGE_TITLES.verified}>Verified</Badge>;
+  if (ns === "imported") return <Badge tone="muted" title={BADGE_TITLES.imported}>Imported</Badge>;
+  if (ns === "corrected") return <Badge tone="primary" title={BADGE_TITLES.corrected}>Edited</Badge>;
+  if (ns === "estimated") return <Badge tone="warning" title={BADGE_TITLES.estimated}>Estimated</Badge>;
   return null;
 }
 

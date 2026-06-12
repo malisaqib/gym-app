@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import type { WorkoutLog } from "@/lib/database.types";
 import { type ExerciseHistory } from "@/lib/workouts/history";
 import { buildProgram } from "./programActions";
+import { Alert } from "@/components/ui/Alert";
 import { Spinner } from "@/components/ui/Spinner";
 import BottomNav from "@/components/BottomNav";
 import TrainingSetup from "./TrainingSetup";
@@ -24,6 +25,8 @@ export default function WorkoutLogger({
   const [plan, setPlan] = useState<WorkoutPlan | null>(null);
   const [history, setHistory] = useState<Record<string, ExerciseHistory>>({});
   const [programLoading, setProgramLoading] = useState(false);
+  // A failed plan build must never leave a silent blank section.
+  const [programError, setProgramError] = useState<string | null>(null);
   // Keep the current setup so Swap can re-query against the same constraints.
   const [setup, setSetup] = useState<TrainingSetupData | null>(null);
 
@@ -49,6 +52,7 @@ export default function WorkoutLogger({
   // TrainingSetup emits the setup on mount (if configured) and after each save.
   const handleSetupChange = useCallback(async (next: TrainingSetupData | null) => {
     setSetup(next);
+    setProgramError(null);
     if (!next) {
       setPlan(null);
       return;
@@ -61,9 +65,11 @@ export default function WorkoutLogger({
         setHistory(res.history);
       } else {
         setPlan(null);
+        setProgramError(res.error);
       }
     } catch {
       setPlan(null);
+      setProgramError("Couldn't build your plan. Check your connection and save your setup again.");
     } finally {
       setProgramLoading(false);
     }
@@ -90,6 +96,9 @@ export default function WorkoutLogger({
             <p className="text-sm text-muted-foreground">Building your plan…</p>
           </div>
         )}
+
+        {/* A failed build shows WHY and how to recover — never a blank section. */}
+        {programError && !programLoading && <Alert tone="error">{programError}</Alert>}
 
         {plan && (
           <ProgramView
