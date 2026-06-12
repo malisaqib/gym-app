@@ -5,7 +5,15 @@ import { createClient } from "@/lib/supabase/server";
 import { parseFoodText } from "@/lib/food/parse";
 import { displayNameForLoggedFood } from "@/lib/food/logDisplayName";
 import { retrieveFoods, lexicalRetrieveFoods, type RetrievedFood } from "@/lib/food/retrieve";
-import { correctedMacroPatch, deriveQuantity, itemMacros, specFromFoodRow, totalsFor } from "@/lib/food/quantity";
+import {
+  correctedMacroPatch,
+  deriveQuantity,
+  itemMacros,
+  specFromFoodRow,
+  totalsFor,
+  MAX_AMOUNT_GRAMS,
+  MAX_AMOUNT_UNITS,
+} from "@/lib/food/quantity";
 import {
   labelForFoodQuality,
   normalizeFoodText,
@@ -347,6 +355,20 @@ export async function logSearchedFood(input: { optionId: string; date: string })
     if (error || !food) return { ok: false, error: "Food not found." };
 
     const q = foodQuantity(food);
+    // Per-food memory: default to the amount the user logged LAST time for this
+    // exact food (your usual 200g chicken, not the row's 100g reference) — same
+    // unit mode only, so a serving count never masquerades as grams.
+    const { data: lastLog } = await supabase
+      .from("food_logs")
+      .select("amount, unit_mode")
+      .eq("user_id", user.id)
+      .eq("matched_food_id", `db:${food.id}`)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle<{ amount: number | null; unit_mode: "count" | "portion" | null }>();
+    if (lastLog?.amount && lastLog.amount > 0 && lastLog.unit_mode === q.unit_mode) {
+      q.amount = Math.min(lastLog.amount, q.unit_mode === "portion" ? MAX_AMOUNT_GRAMS : MAX_AMOUNT_UNITS);
+    }
     const totals = totalsFor(q);
     row = {
       user_id: user.id,
@@ -544,5 +566,163 @@ export async function deleteFoodItem(id: string): Promise<{ ok: boolean; error?:
 
   if (error) return { ok: false, error: error.message };
   revalidatePath("/dashboard");
+  return { ok: true };
+}
+
+// --- saved meals ("My meals") — one-tap repeat logging ------------------------
+// A saved meal is a named snapshot of logged rows in the live-quantity shape
+// (base_* + amount + totals + provenance). Logging it later is a pure insert:
+// no parsing, no AI — instant and exactly what was saved. Table: saved_meals
+// (migration 0020, RLS owner-only).
+
+export interface SavedMealSummary {
+  id: string;
+  name: string;
+  itemCount: number;
+  calories: number;
+  protein_g: number;
+}
+
+// The snapshot keeps exactly the columns a food_logs insert needs (no ids/dates).
+const SNAPSHOT_KEYS = [
+  "raw_text", "food_name", "quantity", "unit", "unit_mode",
+  "base_calories", "base_protein_g", "base_carbs_g", "base_fat_g",
+  "amount", "serving_grams", "calories", "protein_g", "carbs_g", "fat_g",
+  "source", "matched_food_id", "match_confidence", "nutrition_source",
+] as const;
+type MealItemSnapshot = Record<(typeof SNAPSHOT_KEYS)[number], unknown>;
+
+const MAX_SAVED_MEALS = 50;
+const MAX_MEAL_ITEMS = 15;
+
+function toSnapshot(row: FoodLog): MealItemSnapshot {
+  const out = {} as MealItemSnapshot;
+  for (const k of SNAPSHOT_KEYS) out[k] = (row as unknown as Record<string, unknown>)[k] ?? null;
+  return out;
+}
+
+/** Save the given logged items (today's rows, typically) as a named meal. */
+export async function saveMeal(
+  name: string,
+  itemIds: string[]
+): Promise<{ ok: true; meal: SavedMealSummary } | { ok: false; error: string }> {
+  const cleanName = name.trim().slice(0, 60);
+  if (!cleanName) return { ok: false, error: "Give the meal a name." };
+  const ids = [...new Set(itemIds)].slice(0, MAX_MEAL_ITEMS);
+  if (ids.length === 0) return { ok: false, error: "Log some food first, then save it as a meal." };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const { count } = await supabase
+    .from("saved_meals")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", user.id);
+  if ((count ?? 0) >= MAX_SAVED_MEALS) {
+    return { ok: false, error: "You've reached the saved-meals limit — delete one first." };
+  }
+
+  // Only rows the user actually owns become part of the snapshot.
+  const { data: rows } = await supabase
+    .from("food_logs")
+    .select("*")
+    .eq("user_id", user.id)
+    .in("id", ids)
+    .returns<FoodLog[]>();
+  if (!rows?.length) return { ok: false, error: "Those items weren't found." };
+
+  const items = rows.map(toSnapshot);
+  const { data, error } = await supabase
+    .from("saved_meals")
+    .insert({ user_id: user.id, name: cleanName, items })
+    .select("id, name")
+    .single<{ id: string; name: string }>();
+  if (error || !data) return { ok: false, error: error?.message ?? "Couldn't save the meal." };
+
+  const totals = sumSnapshotMacros(rows);
+  await logEvent(supabase, user.id, "meal_saved", { items: rows.length });
+  return { ok: true, meal: { id: data.id, name: data.name, itemCount: rows.length, ...totals } };
+}
+
+function sumSnapshotMacros(rows: FoodLog[]): { calories: number; protein_g: number } {
+  return rows.reduce(
+    (acc, r) => {
+      const m = itemMacros(r);
+      return { calories: acc.calories + m.calories, protein_g: acc.protein_g + m.protein_g };
+    },
+    { calories: 0, protein_g: 0 }
+  );
+}
+
+/** The user's saved meals, newest first, with display totals. */
+export async function listSavedMeals(): Promise<{ ok: boolean; meals: SavedMealSummary[] }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, meals: [] };
+
+  const { data } = await supabase
+    .from("saved_meals")
+    .select("id, name, items")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false })
+    .limit(MAX_SAVED_MEALS)
+    .returns<{ id: string; name: string; items: MealItemSnapshot[] }[]>();
+
+  const meals = (data ?? []).map((m) => {
+    const items = Array.isArray(m.items) ? m.items : [];
+    const totals = sumSnapshotMacros(items as unknown as FoodLog[]);
+    return { id: m.id, name: m.name, itemCount: items.length, ...totals };
+  });
+  return { ok: true, meals };
+}
+
+/** One-tap: log every item of a saved meal into the given day. */
+export async function logSavedMeal(mealId: string, date: string): Promise<LogResult> {
+  if (!isDate(date)) return { ok: false, error: "Invalid date." };
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const { data: meal } = await supabase
+    .from("saved_meals")
+    .select("items")
+    .eq("id", mealId)
+    .eq("user_id", user.id)
+    .single<{ items: MealItemSnapshot[] }>();
+  if (!meal || !Array.isArray(meal.items) || meal.items.length === 0) {
+    return { ok: false, error: "Saved meal not found." };
+  }
+
+  const rows = meal.items.slice(0, MAX_MEAL_ITEMS).map((item) => ({
+    ...item,
+    user_id: user.id,
+    logged_on: date,
+  }));
+
+  const { data, error } = await supabase.from("food_logs").insert(rows).select().returns<FoodLog[]>();
+  if (error) return { ok: false, error: error.message };
+
+  await logEvent(supabase, user.id, "food_logged", { items: (data ?? []).length, method: "saved_meal" });
+  revalidatePath("/dashboard");
+  return { ok: true, items: data ?? [] };
+}
+
+/** Remove a saved meal (does not touch any logged food). */
+export async function deleteSavedMeal(mealId: string): Promise<{ ok: boolean; error?: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const { error } = await supabase.from("saved_meals").delete().eq("id", mealId).eq("user_id", user.id);
+  if (error) return { ok: false, error: error.message };
   return { ok: true };
 }

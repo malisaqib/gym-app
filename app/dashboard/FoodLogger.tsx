@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { CopyPlus, Flag, History, UtensilsCrossed } from "lucide-react";
+import { BookmarkPlus, CopyPlus, Flag, History, UtensilsCrossed, X } from "lucide-react";
 import type { FoodLog, Lang, ReportContext, ReportType } from "@/lib/database.types";
 import { listContainer, listItem, fadeUp } from "@/lib/motion";
 import { sumMacros } from "@/lib/food/totals";
@@ -18,7 +18,12 @@ import {
   getRecentLogFoods,
   searchLogFoods,
   logSearchedFood,
+  saveMeal,
+  listSavedMeals,
+  logSavedMeal,
+  deleteSavedMeal,
   type LogFoodSearchOption,
+  type SavedMealSummary,
 } from "./actions";
 import QuantityControl, { type QtySpec } from "@/components/QuantityControl";
 import { Button } from "@/components/ui/Button";
@@ -51,6 +56,11 @@ const REPORT_T = {
     en: "Type any meal with amounts (English or Roman Urdu — “200g chicken and 2 roti”), or tap a suggestion below to log it exactly.",
     roman_urdu: "Koi bhi khana amount ke saath likhein (English ya Roman Urdu — “200g chicken aur 2 roti”), ya neeche suggestion par tap kar ke exact log karein.",
   },
+  saveMeal: { en: "Save today's foods as a meal", roman_urdu: "Aaj ke khane ko meal bana kar save karein" },
+  mealNamePlaceholder: { en: "Meal name (e.g. My breakfast)", roman_urdu: "Meal ka naam (jaise Mera nashta)" },
+  save: { en: "Save", roman_urdu: "Save" },
+  mealItems: { en: "items", roman_urdu: "cheezein" },
+  deleteMeal: { en: "Delete meal", roman_urdu: "Meal delete karein" },
 } satisfies Record<string, Record<Lang, string>>;
 
 // Plain-words explanation of each trust badge (shown as a tooltip / long-press
@@ -99,6 +109,12 @@ export default function FoodLogger({
   const [searchResults, setSearchResults] = useState<LogFoodSearchOption[]>([]);
   const [searchExpanded, setSearchExpanded] = useState(false);
   const [recentQuick, setRecentQuick] = useState<LogFoodSearchOption[]>([]);
+  // Saved meals ("My meals") — named one-tap repeat combos.
+  const [savedMeals, setSavedMeals] = useState<SavedMealSummary[]>([]);
+  const [mealLogging, setMealLogging] = useState<string | null>(null);
+  const [savingMealOpen, setSavingMealOpen] = useState(false);
+  const [mealName, setMealName] = useState("");
+  const [mealSaving, setMealSaving] = useState(false);
   const [pickPending, setPickPending] = useState(false);
   const [copyPending, setCopyPending] = useState(false);
   // The last meal the parser couldn't recognise — offers a "report missing" CTA.
@@ -128,7 +144,60 @@ export default function FoodLogger({
 
   useEffect(() => {
     void refreshRecentQuick();
+    // Saved meals load once; mutations update the list locally.
+    void listSavedMeals().then((res) => {
+      if (res.ok) setSavedMeals(res.meals);
+    });
   }, [refreshRecentQuick]);
+
+  // One tap: log every item of a saved meal into today.
+  async function handleLogSavedMeal(id: string) {
+    if (mealLogging) return;
+    setMealLogging(id);
+    setError(null);
+    inFlight.current += 1;
+    try {
+      const res = await logSavedMeal(id, localDateString());
+      if (res.ok) setItems((prev) => [...prev, ...res.items]);
+      else setError(res.error);
+    } catch {
+      setError("Couldn't log that meal. Please try again.");
+    } finally {
+      inFlight.current -= 1;
+      setMealLogging(null);
+    }
+  }
+
+  async function handleSaveMeal() {
+    const name = mealName.trim();
+    if (!name || mealSaving) return;
+    setMealSaving(true);
+    setError(null);
+    try {
+      const res = await saveMeal(name, items.map((i) => i.id));
+      if (res.ok) {
+        setSavedMeals((prev) => [res.meal, ...prev]);
+        setMealName("");
+        setSavingMealOpen(false);
+      } else {
+        setError(res.error);
+      }
+    } catch {
+      setError("Couldn't save the meal. Please try again.");
+    } finally {
+      setMealSaving(false);
+    }
+  }
+
+  async function handleDeleteSavedMeal(id: string) {
+    const snapshot = savedMeals;
+    setSavedMeals((prev) => prev.filter((m) => m.id !== id)); // optimistic
+    const res = await deleteSavedMeal(id);
+    if (!res.ok) {
+      setSavedMeals(snapshot);
+      setError(res.error ?? "Couldn't delete that meal.");
+    }
+  }
 
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
@@ -331,7 +400,7 @@ export default function FoodLogger({
   const count = items.length + pending.length;
   const query = text.trim();
   const visibleSearchResults = searchExpanded ? searchResults : searchResults.slice(0, 8);
-  const showQuickAdd = query.length === 0 && (recentQuick.length > 0 || count === 0);
+  const showQuickAdd = query.length === 0 && (recentQuick.length > 0 || savedMeals.length > 0 || count === 0);
 
   return (
     <motion.div variants={listContainer} initial="hidden" animate="show" className="flex flex-col gap-7">
@@ -373,6 +442,42 @@ export default function FoodLogger({
                 </Button>
               )}
             </div>
+            {/* Saved meals — one tap logs the whole named combo, exactly as saved. */}
+            {savedMeals.length > 0 && (
+              <div className="-mx-1 mb-2 flex gap-2 overflow-x-auto px-1 pb-1">
+                {savedMeals.map((meal) => (
+                  <div
+                    key={meal.id}
+                    className="relative w-40 shrink-0 rounded-field border border-primary/30 bg-primary-soft"
+                  >
+                    <button
+                      type="button"
+                      disabled={mealLogging !== null}
+                      onClick={() => handleLogSavedMeal(meal.id)}
+                      className="min-h-[74px] w-full px-3 py-2 text-left transition active:scale-[0.98] disabled:opacity-50"
+                    >
+                      <span className="block truncate text-sm font-semibold text-primary">
+                        {mealLogging === meal.id ? "…" : meal.name}
+                      </span>
+                      <span className="mt-1 block text-xs text-muted-foreground">
+                        {meal.itemCount} {rt("mealItems")}
+                      </span>
+                      <span className="mt-1 block text-xs text-muted-foreground tabular-nums">
+                        {meal.calories} kcal · {meal.protein_g}g
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`${rt("deleteMeal")}: ${meal.name}`}
+                      onClick={() => handleDeleteSavedMeal(meal.id)}
+                      className="absolute right-1 top-1 rounded-full p-1 text-muted-foreground transition hover:text-foreground"
+                    >
+                      <X size={13} aria-hidden />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
             {recentQuick.length > 0 ? (
               <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
                 {recentQuick.map((food) => (
@@ -492,6 +597,41 @@ export default function FoodLogger({
               ))}
             </AnimatePresence>
           </motion.div>
+        )}
+
+        {/* Save today's items as a named meal — most logs are repeats, so the
+            next time it's ONE tap from Quick add instead of typing it all again. */}
+        {items.length >= 2 && (
+          <div className="rounded-card-lg border border-border bg-card p-3">
+            {savingMealOpen ? (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void handleSaveMeal();
+                }}
+                className="flex gap-2"
+              >
+                <Input
+                  value={mealName}
+                  onChange={(e) => setMealName(e.target.value)}
+                  placeholder={rt("mealNamePlaceholder")}
+                  maxLength={60}
+                  autoFocus
+                />
+                <Button type="submit" size="sm" loading={mealSaving} disabled={!mealName.trim()}>
+                  {rt("save")}
+                </Button>
+              </form>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setSavingMealOpen(true)}
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-primary transition active:scale-[0.98]"
+              >
+                <BookmarkPlus size={16} aria-hidden /> {rt("saveMeal")}
+              </button>
+            )}
+          </div>
         )}
       </motion.section>
 
