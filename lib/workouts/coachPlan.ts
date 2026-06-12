@@ -184,6 +184,12 @@ interface EquipCtx {
   barbell: boolean;
   dumbbell: boolean;
   bench: boolean;
+  kettlebell: boolean;
+  bands: boolean;
+  // Gym-only odds and ends: trap bars, sleds, dip stations, cardio machines,
+  // med/exercise balls — the dataset buckets these as "other"/"ball"/"foam
+  // roll", which set NO requires* flag. Only a gym can be assumed to have them.
+  gymExtras: boolean;
   bodyweightOnly: boolean;
 }
 
@@ -198,6 +204,9 @@ function equipCtx(input: WorkoutInput): EquipCtx {
     barbell: has("barbell_rack"),
     dumbbell: has("dumbbells"),
     bench: has("bench"),
+    kettlebell: has("kettlebell"),
+    bands: has("bands"),
+    gymExtras: gym,
     bodyweightOnly: input.location === "home" && !input.hasEquipment,
   };
 }
@@ -210,6 +219,24 @@ function eligible(e: NormalizedExercise, ctx: EquipCtx, input: WorkoutInput, fla
   if (e.requiresBarbell && !ctx.barbell) return false;
   if (e.requiresDumbbell && !ctx.dumbbell) return false;
   if (e.requiresBench && !ctx.bench) return false;
+  // Equipment KIND gate — the requires* flags only cover six kinds. Kettlebell,
+  // band, ball/foam-roller and "other" (trap bar, sled, dip station…) moves set
+  // none of them and used to leak into home-with-some-equipment plans (e.g. a
+  // Trap Bar Deadlift in a home + bands beginner plan). The user must actually
+  // have the equipment a move needs.
+  switch (e.normalizedEquipment) {
+    case "kettlebell":
+      if (!ctx.kettlebell) return false;
+      break;
+    case "bands":
+      if (!ctx.bands) return false;
+      break;
+    case "ball":
+    case "foam roller":
+    case "other":
+      if (!ctx.gymExtras) return false;
+      break;
+  }
   // no-equipment home → bodyweight-safe only
   if (ctx.bodyweightOnly && !e.homeBodyweightSafe) return false;
   // real difficulty

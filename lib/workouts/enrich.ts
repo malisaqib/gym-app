@@ -80,7 +80,7 @@ export interface NormalizedExercise {
 }
 
 // --- name pattern signals (the dataset tags aren't enough; names carry intent) -
-const RE_PULLUP_BAR = /\b(pull[- ]?ups?|chin[- ]?ups?|v[- ]?bar|muscle[- ]?ups?)\b|\bhang(ing)?\b|toes[- ]?to[- ]?bar/i;
+const RE_PULLUP_BAR = /\b(pull[- ]?ups?|chin[- ]?ups?|chins|v[- ]?bar|muscle[- ]?ups?)\b|\bhang(ing)?\b|toes[- ]?to[- ]?bar/i;
 const RE_ADVANCED = /\b(muscle[- ]?up|planche|one[- ]?arm|single[- ]?arm|pistol|handstand|front lever|back lever|human flag|iron cross|sissy|nordic|dragon flag|l[- ]?sit|skin the cat)\b/i;
 const RE_HIGH_IMPACT = /\b(jump|jumping|burpee|box jump|hop|bound|plyo|skater|tuck|broad jump|depth jump|jumping jack|star jump)\b/i;
 const RE_LUNGE = /\b(lunges?|split squats?|step[- ]?ups?)\b/i;

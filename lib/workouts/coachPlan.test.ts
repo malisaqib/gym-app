@@ -413,3 +413,61 @@ test("W4: easier/harder swaps never return a Tier-3 exercise (any context)", () 
   }
   assert.ok(checked > 30, `too few swaps exercised the rule: ${checked}`);
 });
+
+// P4 — equipment-kind gate. Kettlebell/band/ball/"other" (trap bar, sled, dip
+// station) moves set NO requires* flag, so home-with-some-equipment plans
+// leaked gear the user never selected — a home + bands beginner got a Trap Bar
+// Deadlift, Sled Row, Goblet Squat (kettlebell) and Gironda Sternum Chins (a
+// chin-up the regex missed). The plan may only use what the user actually has.
+test("P4: home + dumbbells only → every exercise is bodyweight or dumbbell", () => {
+  const p = plan({ goal: "gain_muscle", location: "home", hasEquipment: true, equipment: ["dumbbells"], level: "intermediate", daysPerWeek: 4 });
+  const exs = flat(p);
+  assert.ok(exs.length > 0);
+  for (const e of exs) {
+    assert.ok(["bodyweight", "dumbbell"].includes(e.equipment), `unowned equipment leaked: ${e.name} <${e.equipment}>`);
+  }
+});
+
+test("P4: home + bands only → only bodyweight/bands; zero kettlebell/other/chins", () => {
+  const p = plan({ goal: "tone", location: "home", hasEquipment: true, equipment: ["bands"], level: "beginner", daysPerWeek: 3 });
+  const exs = flat(p);
+  assert.ok(exs.length > 0);
+  for (const e of exs) {
+    assert.ok(["bodyweight", "bands"].includes(e.equipment), `unowned equipment leaked: ${e.name} <${e.equipment}>`);
+    assert.ok(!/\bchins?\b/i.test(e.name), `bar move leaked: ${e.name}`);
+  }
+});
+
+test("P4: home + kettlebell selected → kettlebell moves become available again", () => {
+  const p = plan({ goal: "build_strength", location: "home", hasEquipment: true, equipment: ["kettlebell"], level: "intermediate", daysPerWeek: 3 });
+  for (const e of flat(p)) {
+    assert.ok(["bodyweight", "kettlebell"].includes(e.equipment), `unowned equipment leaked: ${e.name} <${e.equipment}>`);
+  }
+});
+
+test("P4: gym keeps its full breadth (gym extras stay eligible) and plans stay non-empty", () => {
+  const p = plan({ goal: "gain_muscle", location: "gym", hasEquipment: true, level: "intermediate", daysPerWeek: 5 });
+  const exs = flat(p);
+  assert.ok(exs.length >= 15, `gym plan unexpectedly thin: ${exs.length}`);
+});
+
+test("P4: swaps respect the equipment-kind gate too (home+dumbbells never offers kettlebell/other)", () => {
+  const input: WorkoutInput = { ...base, goal: "gain_muscle", location: "home", hasEquipment: true, equipment: ["dumbbells"], level: "intermediate" };
+  const patterns = ["push", "pull", "squat", "hinge"] as const;
+  for (const pattern of patterns) {
+    const starts = ALL.filter((e) => e.movementPattern === pattern).slice(0, 6);
+    for (const start of starts) {
+      for (const dir of ["easier", "different", "harder"] as SwapDirection[]) {
+        const res = swapPlanExercise(input, pattern, start.id, [], dir, ALL);
+        if (!res) continue;
+        assert.ok(["bodyweight", "dumbbell"].includes(res.equipment), `swap leaked gear (${dir}): ${res.name} <${res.equipment}>`);
+      }
+    }
+  }
+});
+
+test("P4: 1 training day clamps to 2; 0 falls back to 3 (never a crash)", () => {
+  assert.equal(plan({ daysPerWeek: 1 }).daysPerWeek, 2);
+  assert.equal(plan({ daysPerWeek: 0 }).daysPerWeek, 3);
+  assert.equal(plan({ daysPerWeek: Number.NaN }).daysPerWeek, 3);
+});
