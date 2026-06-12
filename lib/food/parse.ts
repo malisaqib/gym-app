@@ -1,6 +1,6 @@
 import { retrieveFoods, lexicalRetrieveFoods, type RetrievedFood } from "@/lib/food/retrieve";
 import { groundParsedFoodItems, regroundUnmatchedItems } from "@/lib/food/grounding";
-import { enforcePerItemQuantities } from "@/lib/food/quantity";
+import { enforcePerItemQuantities, sanitizeParsedMacros } from "@/lib/food/quantity";
 import { aiConfigError, aiHttpError } from "@/lib/ai/errors";
 import type { NutritionSource } from "@/lib/database.types";
 
@@ -185,6 +185,9 @@ export async function parseFoodText(text: string): Promise<ParsedFoodItem[]> {
   // get their OWN lexical retrieval (no embedding round-trip) — meal-wide
   // candidates skew toward one food. Single-item logs already retrieved for
   // exactly their one query in pass 1, so we skip this round trip → faster.
-  if (grounded.length < 2) return grounded;
-  return regroundUnmatchedItems(grounded, lexicalRetrieveFoods);
+  const final = grounded.length < 2 ? grounded : await regroundUnmatchedItems(grounded, lexicalRetrieveFoods);
+  // Last line of defense: physically impossible macros (protein heavier than
+  // the food, macro energy exceeding calories) are clamped deterministically,
+  // so one bad LLM estimate can't make the whole app feel unreliable.
+  return final.map(sanitizeParsedMacros);
 }

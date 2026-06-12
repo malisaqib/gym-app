@@ -27,6 +27,15 @@ export interface QuantitySpec {
 // Units that mean grams.
 const GRAM_UNITS = new Set(["g", "gm", "gms", "gram", "grams"]);
 
+// Hard input ceilings, shared by every write path (QuantityControl mirrors
+// them client-side). One meal can't realistically exceed these; anything
+// bigger is a typo or abuse and must not poison the day's totals.
+export const MAX_AMOUNT_GRAMS = 5000;
+export const MAX_AMOUNT_UNITS = 100;
+// Correction ceilings (match the LLM-output clamps in the parser).
+const MAX_CORRECTED_CALORIES = 5000;
+const MAX_CORRECTED_MACRO_G = 1000;
+
 // Serving words → grams in ONE serving. Used to turn a "1 plate" / "1 katori"
 // parse into a per-gram portion food so any gram amount computes exactly.
 const SERVING_GRAMS: Record<string, number> = {
@@ -123,16 +132,23 @@ export function enforceExplicitQuantity<T extends MacroQuantityItem>(
   item: T,
   explicit: { quantity: number; unit: string }
 ): T {
+  // Ceiling first: "20 kg chicken" must not produce a 5-figure-kcal row. Weight
+  // units cap at MAX_AMOUNT_GRAMS; counts/servings at MAX_AMOUNT_UNITS.
+  const rawQty = Number(explicit.quantity);
+  if (!Number.isFinite(rawQty) || rawQty <= 0) return item;
+  const cap = isGramUnit(explicit.unit) ? MAX_AMOUNT_GRAMS : MAX_AMOUNT_UNITS;
+  const explicitQty = Math.min(rawQty, cap);
+
   const fromGrams = gramsOf(item.quantity, item.unit);
-  const toGrams = gramsOf(explicit.quantity, explicit.unit);
+  const toGrams = gramsOf(explicitQty, explicit.unit);
   let scale: number | null = null;
   if (fromGrams != null && toGrams != null && fromGrams > 0) scale = toGrams / fromGrams;
-  else if (fromGrams == null && toGrams == null && item.quantity > 0) scale = explicit.quantity / item.quantity;
+  else if (fromGrams == null && toGrams == null && item.quantity > 0) scale = explicitQty / item.quantity;
   if (scale == null || !Number.isFinite(scale) || scale <= 0) return item;
 
   return {
     ...item,
-    quantity: explicit.quantity,
+    quantity: explicitQty,
     unit: explicit.unit,
     calories: Math.round(item.calories * scale),
     protein_g: Math.round(item.protein_g * scale),
@@ -145,7 +161,9 @@ function portionSpec(p: ParsedLike, grams: number, servingGrams: number): Quanti
   return {
     unit_mode: "portion",
     unit: "g",
-    amount: grams,
+    // The per-gram base below is true for ANY amount, so capping the stored
+    // amount alone keeps totals (= base × amount) self-consistent.
+    amount: Math.min(grams, MAX_AMOUNT_GRAMS),
     serving_grams: servingGrams,
     base_calories: safeDiv(p.calories, grams),
     base_protein_g: safeDiv(p.protein_g, grams),
@@ -178,13 +196,62 @@ export function deriveQuantity(p: ParsedLike): QuantitySpec {
   return {
     unit_mode: "count",
     unit: unit || "item",
-    amount: q,
+    amount: Math.min(q, MAX_AMOUNT_UNITS),
     serving_grams: null,
     base_calories: safeDiv(p.calories, q),
     base_protein_g: safeDiv(p.protein_g, q),
     base_carbs_g: safeDiv(p.carbs_g, q),
     base_fat_g: safeDiv(p.fat_g, q),
   };
+}
+
+/**
+ * Physical sanity net for parsed/estimated macros — the "protein is too high"
+ * reliability fix. Deterministic invariants no real food can violate:
+ *   - with a known weight: calories ≤ 9 kcal/g (pure fat is the densest food);
+ *   - each macro's ENERGY can't exceed the item's calories (with slack for
+ *     rounding) — 100 g of protein cannot live inside a 150 kcal item;
+ *   - zero calories with real macros gets calories derived from the macros.
+ * No per-gram caps on individual macros: protein powders are ~80% protein by
+ * weight, so a weight-density cap would wrongly clamp a whey scoop. Trusted
+ * grounded foods satisfy all of these already; this catches the LLM's bad days
+ * without touching plausible numbers.
+ */
+export function sanitizeParsedMacros<T extends MacroQuantityItem>(item: T): T {
+  let { calories, protein_g, carbs_g, fat_g } = item;
+  const clean = (n: number) => (Number.isFinite(n) && n > 0 ? n : 0);
+  calories = clean(calories);
+  protein_g = clean(protein_g);
+  carbs_g = clean(carbs_g);
+  fat_g = clean(fat_g);
+
+  const grams = gramsOf(item.quantity, item.unit);
+  if (grams != null && grams > 0) {
+    calories = Math.min(calories, Math.round(grams * 9));
+  }
+
+  // Zero calories but real macros → derive calories from the macros (Atwater),
+  // instead of showing a "0 kcal, 20g protein" contradiction.
+  const macroKcal = protein_g * 4 + carbs_g * 4 + fat_g * 9;
+  if (calories === 0 && macroKcal > 10) calories = Math.round(macroKcal);
+
+  // Macro-vs-energy consistency (slack covers honest rounding).
+  const slack = Math.max(15, calories * 0.05);
+  if (calories > 0) {
+    if (protein_g * 4 > calories + slack) protein_g = Math.floor(calories / 4);
+    if (carbs_g * 4 > calories + slack) carbs_g = Math.floor(calories / 4);
+    if (fat_g * 9 > calories + slack) fat_g = Math.floor(calories / 9);
+  }
+
+  if (
+    calories === item.calories &&
+    protein_g === item.protein_g &&
+    carbs_g === item.carbs_g &&
+    fat_g === item.fat_g
+  ) {
+    return item;
+  }
+  return { ...item, calories, protein_g, carbs_g, fat_g };
 }
 
 // What `itemMacros` needs — a saved FoodLog satisfies this structurally.
@@ -288,11 +355,13 @@ export function correctedMacroPatch(
 } {
   const amount = row.amount && row.amount > 0 ? row.amount : 1;
   const old = itemMacros(row); // live old totals (base × amount, cache as fallback)
-  const calories = Math.max(0, Math.round(Number(patch.calories) || 0));
-  const protein_g = Math.max(0, Math.round(Number(patch.protein_g) || 0));
+  // Clamp to the same ceilings as parsed items — a "correction" can't store a
+  // 7-figure-kcal row any more than the parser can.
+  const calories = Math.min(MAX_CORRECTED_CALORIES, Math.max(0, Math.round(Number(patch.calories) || 0)));
+  const protein_g = Math.min(MAX_CORRECTED_MACRO_G, Math.max(0, Math.round(Number(patch.protein_g) || 0)));
   const ratio = old.calories > 0 ? calories / old.calories : null;
-  const carbs_g = ratio === null ? old.carbs_g : Math.round(old.carbs_g * ratio);
-  const fat_g = ratio === null ? old.fat_g : Math.round(old.fat_g * ratio);
+  const carbs_g = Math.min(MAX_CORRECTED_MACRO_G, ratio === null ? old.carbs_g : Math.round(old.carbs_g * ratio));
+  const fat_g = Math.min(MAX_CORRECTED_MACRO_G, ratio === null ? old.fat_g : Math.round(old.fat_g * ratio));
   return {
     calories,
     protein_g,
@@ -302,6 +371,45 @@ export function correctedMacroPatch(
     base_protein_g: protein_g / amount,
     base_carbs_g: carbs_g / amount,
     base_fat_g: fat_g / amount,
+  };
+}
+
+/**
+ * Quantity spec for logging a FOOD ROW from the database (search-tap logging).
+ * A gram-anchored row (portion_grams > 0) becomes a per-gram portion — this is
+ * where "165 kcal per 100g → base 1.65/g" happens, so any grams scale exactly.
+ * A row with no gram anchor logs as ONE serving (count mode) — a serving is
+ * NEVER treated as one gram.
+ */
+export function specFromFoodRow(food: {
+  portion_grams: number | null;
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+}): QuantitySpec {
+  const grams = Number(food.portion_grams);
+  if (Number.isFinite(grams) && grams > 0) {
+    return {
+      unit_mode: "portion",
+      unit: "g",
+      amount: Math.min(grams, MAX_AMOUNT_GRAMS),
+      serving_grams: grams,
+      base_calories: Number(food.calories) / grams,
+      base_protein_g: Number(food.protein_g) / grams,
+      base_carbs_g: Number(food.carbs_g) / grams,
+      base_fat_g: Number(food.fat_g) / grams,
+    };
+  }
+  return {
+    unit_mode: "count",
+    unit: "serving",
+    amount: 1,
+    serving_grams: null,
+    base_calories: Number(food.calories),
+    base_protein_g: Number(food.protein_g),
+    base_carbs_g: Number(food.carbs_g),
+    base_fat_g: Number(food.fat_g),
   };
 }
 

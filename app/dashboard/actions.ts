@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { parseFoodText } from "@/lib/food/parse";
 import { displayNameForLoggedFood } from "@/lib/food/logDisplayName";
 import { retrieveFoods, lexicalRetrieveFoods, type RetrievedFood } from "@/lib/food/retrieve";
-import { correctedMacroPatch, deriveQuantity, itemMacros, totalsFor } from "@/lib/food/quantity";
+import { correctedMacroPatch, deriveQuantity, itemMacros, specFromFoodRow, totalsFor } from "@/lib/food/quantity";
 import {
   labelForFoodQuality,
   normalizeFoodText,
@@ -319,30 +319,10 @@ export async function searchLogFoods(query: string): Promise<SearchLogFoodsResul
   return { ok: true, foods: dedupeOptions([...verified, ...recent, ...imported]).slice(0, 20) };
 }
 
+// Canonical per-gram/per-serving spec for a DB food row — single tested
+// implementation in lib/food/quantity.ts (no duplicated scaling formula here).
 function foodQuantity(food: FoodRow) {
-  const grams = Number(food.portion_grams);
-  if (Number.isFinite(grams) && grams > 0) {
-    return {
-      unit_mode: "portion" as const,
-      unit: "g",
-      amount: grams,
-      serving_grams: grams,
-      base_calories: Number(food.calories) / grams,
-      base_protein_g: Number(food.protein_g) / grams,
-      base_carbs_g: Number(food.carbs_g) / grams,
-      base_fat_g: Number(food.fat_g) / grams,
-    };
-  }
-  return {
-    unit_mode: "count" as const,
-    unit: "serving",
-    amount: 1,
-    serving_grams: null,
-    base_calories: Number(food.calories),
-    base_protein_g: Number(food.protein_g),
-    base_carbs_g: Number(food.carbs_g),
-    base_fat_g: Number(food.fat_g),
-  };
+  return specFromFoodRow(food);
 }
 
 /** Log an exact search result from the full food database or the user's recents. */

@@ -8,6 +8,10 @@ import {
   enforceExplicitQuantity,
   enforcePerItemQuantities,
   correctedMacroPatch,
+  sanitizeParsedMacros,
+  specFromFoodRow,
+  MAX_AMOUNT_GRAMS,
+  MAX_AMOUNT_UNITS,
 } from "./quantity.ts";
 
 test("countable: '3 eggs' → per-unit base, total recomputes by amount", () => {
@@ -170,4 +174,110 @@ test("F2: zero-calorie old item leaves carbs/fat untouched (no ratio to scale by
   assert.equal(p.carbs_g, 0);
   assert.equal(p.fat_g, 0);
   assert.equal(p.base_calories, 220); // amount 1 → base = total
+});
+
+// --- production hardening (audit R1–R4) + the user's acceptance case ---------
+
+test("ACCEPTANCE: '200gms rice with 200gm chicken' logs both at exactly 200g", () => {
+  // The model anchored both items to 100g candidates; the user typed 200g each.
+  const rice = { food_name: "rice", quantity: 100, unit: "g", calories: 130, protein_g: 2, carbs_g: 28, fat_g: 0 };
+  const chicken = { food_name: "chicken", quantity: 100, unit: "g", calories: 165, protein_g: 31, carbs_g: 0, fat_g: 4 };
+  const [r, c] = enforcePerItemQuantities([rice, chicken], "200gms rice with 200gm chicken");
+  assert.equal(r.quantity, 200);
+  assert.equal(r.calories, 260);
+  assert.equal(r.protein_g, 4);
+  assert.equal(c.quantity, 200);
+  assert.equal(c.calories, 330);
+  assert.equal(c.protein_g, 62);
+});
+
+test("reference table: 100g identity, 50g half, 200g double, 1g, decimal 37.5g", () => {
+  const per100 = { food_name: "chicken", quantity: 100, unit: "g", calories: 165, protein_g: 31, carbs_g: 0, fat_g: 3.6 };
+  const at = (g: number) => enforceExplicitQuantity(per100, { quantity: g, unit: "g" });
+  assert.equal(at(100).calories, 165); // identity
+  assert.equal(at(50).calories, 83); // round(82.5)
+  assert.equal(at(50).protein_g, 16); // round(15.5)
+  assert.equal(at(200).calories, 330);
+  assert.equal(at(200).protein_g, 62);
+  assert.equal(at(1).calories, 2); // round(1.65)
+  assert.equal(at(37.5).calories, 62); // round(61.875)
+  assert.equal(at(37.5).protein_g, 12); // round(11.625)
+});
+
+test("no double scaling: enforcing the same text twice is a no-op the second time", () => {
+  const item = { food_name: "chicken", quantity: 100, unit: "g", calories: 165, protein_g: 31, carbs_g: 0, fat_g: 4 };
+  const once = enforcePerItemQuantities([item], "chicken 200gms")[0];
+  const twice = enforcePerItemQuantities([once], "chicken 200gms")[0];
+  assert.deepEqual(twice, once);
+});
+
+test("ceilings: 20 kg clamps to MAX grams; 500 roti clamps to MAX units; NaN/Infinity rejected", () => {
+  const item = { food_name: "chicken", quantity: 100, unit: "g", calories: 165, protein_g: 31, carbs_g: 0, fat_g: 4 };
+  const huge = enforceExplicitQuantity(item, { quantity: 20000, unit: "g" });
+  assert.equal(huge.quantity, MAX_AMOUNT_GRAMS);
+  assert.equal(huge.calories, Math.round(165 * (MAX_AMOUNT_GRAMS / 100)));
+
+  const roti = { food_name: "roti", quantity: 1, unit: "roti", calories: 110, protein_g: 3, carbs_g: 22, fat_g: 2 };
+  const many = enforceExplicitQuantity(roti, { quantity: 500, unit: "roti" });
+  assert.equal(many.quantity, MAX_AMOUNT_UNITS);
+
+  assert.deepEqual(enforceExplicitQuantity(item, { quantity: Number.NaN, unit: "g" }), item);
+  assert.deepEqual(enforceExplicitQuantity(item, { quantity: Number.POSITIVE_INFINITY, unit: "g" }), item);
+  assert.deepEqual(enforceExplicitQuantity(item, { quantity: -50, unit: "g" }), item);
+
+  // deriveQuantity caps the STORED amount too (any writer path).
+  assert.equal(deriveQuantity({ quantity: 99999, unit: "g", calories: 100, protein_g: 1, carbs_g: 1, fat_g: 1 }).amount, MAX_AMOUNT_GRAMS);
+  assert.equal(deriveQuantity({ quantity: 9999, unit: "egg", calories: 80, protein_g: 6, carbs_g: 0, fat_g: 5 }).amount, MAX_AMOUNT_UNITS);
+});
+
+test("corrections are capped at sane ceilings", () => {
+  const row = { calories: 300, protein_g: 20, carbs_g: 10, fat_g: 5, base_calories: 300, base_protein_g: 20, base_carbs_g: 10, base_fat_g: 5, amount: 1 };
+  const p = correctedMacroPatch(row, { calories: 99999999, protein_g: 88888 });
+  assert.equal(p.calories, 5000);
+  assert.equal(p.protein_g, 1000);
+});
+
+test("sanitizeParsedMacros: impossible protein/energy is clamped; plausible foods untouched", () => {
+  // 200 kcal cannot hold 90g protein (360 kcal of protein energy alone).
+  const absurd = sanitizeParsedMacros({ food_name: "x", quantity: 100, unit: "g", calories: 200, protein_g: 90, carbs_g: 0, fat_g: 5 });
+  assert.equal(absurd.protein_g, 50); // floor(200/4)
+
+  // 150 kcal cannot hold 100g protein (400 kcal of protein energy).
+  const energy = sanitizeParsedMacros({ food_name: "x", quantity: 1, unit: "serving", calories: 150, protein_g: 100, carbs_g: 0, fat_g: 0 });
+  assert.equal(energy.protein_g, 37); // floor(150/4)
+
+  // 100g of food cannot exceed 900 kcal (pure fat is 9 kcal/g).
+  const dense = sanitizeParsedMacros({ food_name: "x", quantity: 100, unit: "g", calories: 2500, protein_g: 10, carbs_g: 10, fat_g: 90 });
+  assert.equal(dense.calories, 900);
+
+  // 0 kcal with real macros → calories derived from macros (no contradiction).
+  const zero = sanitizeParsedMacros({ food_name: "x", quantity: 1, unit: "glass", calories: 0, protein_g: 7, carbs_g: 32, fat_g: 7 });
+  assert.equal(zero.calories, 7 * 4 + 32 * 4 + 7 * 9);
+
+  // NaN/negative inputs are zeroed, never propagated.
+  const nan = sanitizeParsedMacros({ food_name: "x", quantity: 1, unit: "", calories: Number.NaN, protein_g: -5, carbs_g: 10, fat_g: 2 });
+  assert.equal(nan.protein_g, 0);
+  assert.equal(nan.calories, 10 * 4 + 2 * 9); // derived from surviving macros
+
+  // Real foods pass through IDENTICAL (same object — no churn).
+  const chicken = { food_name: "chicken", quantity: 100, unit: "g", calories: 165, protein_g: 31, carbs_g: 0, fat_g: 3.6 };
+  assert.equal(sanitizeParsedMacros(chicken), chicken);
+  const whey = { food_name: "whey", quantity: 1, unit: "scoop", calories: 120, protein_g: 24, carbs_g: 3, fat_g: 1 };
+  assert.equal(sanitizeParsedMacros(whey), whey);
+  const lassi = { food_name: "namkeen lassi", quantity: 1, unit: "glass", calories: 120, protein_g: 6, carbs_g: 8, fat_g: 5 };
+  assert.equal(sanitizeParsedMacros(lassi), lassi);
+});
+
+test("specFromFoodRow: per-100g row scales to any grams; no gram anchor → ONE serving (never 1g)", () => {
+  const chicken = specFromFoodRow({ portion_grams: 100, calories: 165, protein_g: 31, carbs_g: 0, fat_g: 3.6 });
+  assert.equal(chicken.unit_mode, "portion");
+  assert.equal(chicken.amount, 100);
+  // 50g = exactly half via base × amount.
+  assert.equal(Math.round(chicken.base_calories * 50), 83);
+  assert.equal(Math.round(chicken.base_protein_g * 50 * 10) / 10, 15.5);
+
+  const noAnchor = specFromFoodRow({ portion_grams: null, calories: 250, protein_g: 12, carbs_g: 30, fat_g: 9 });
+  assert.equal(noAnchor.unit_mode, "count");
+  assert.equal(noAnchor.amount, 1);
+  assert.equal(noAnchor.base_calories, 250); // one full serving, NOT 1 gram
 });
