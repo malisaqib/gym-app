@@ -7,6 +7,7 @@
  * No app data, logic, auth or RAG involved.
  */
 
+import { notFound } from "next/navigation";
 import { ActivityRing } from "@/components/ui/ActivityRing";
 import { Counter } from "@/components/ui/Counter";
 
@@ -22,6 +23,8 @@ const SWATCHES: { name: string; var: string }[] = [
 ];
 
 export default function DesignPreview() {
+  // Dev-only preview — not part of the public app.
+  if (process.env.NODE_ENV === "production") notFound();
   return (
     <div className="fitness min-h-screen bg-background px-5 py-10 text-foreground">
       <div className="mx-auto flex max-w-md flex-col gap-10">

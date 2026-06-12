@@ -39,6 +39,10 @@ const SLOTS: MealSlot[] = ["breakfast", "lunch", "dinner", "snack"];
 // derive planner metadata (role/slots/vegetarian/tags) and as a second safety
 // gate. Cached per server instance; degrades to the catalog if the DB is down.
 let CLASSIFIED_DB: CatalogFood[] | null = null;
+let CLASSIFIED_AT = 0;
+// Refresh the per-instance pool cache periodically so reclassification scripts
+// (persist-classification, new imports) take effect without a redeploy.
+const POOL_TTL_MS = 15 * 60 * 1000;
 
 const normName = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
@@ -61,11 +65,14 @@ async function loadClassifiedDb(supabase: Awaited<ReturnType<typeof createClient
 
 /** Curated catalog (authoritative) ∪ classified USDA foods, deduped by name. */
 async function getMealPool(supabase: Awaited<ReturnType<typeof createClient>>): Promise<CatalogFood[]> {
-  if (!CLASSIFIED_DB) {
+  if (!CLASSIFIED_DB || Date.now() - CLASSIFIED_AT > POOL_TTL_MS) {
     try {
       CLASSIFIED_DB = await loadClassifiedDb(supabase);
+      CLASSIFIED_AT = Date.now();
     } catch {
-      CLASSIFIED_DB = []; // degrade to the curated catalog if the DB is unavailable
+      // Degrade to the curated catalog (or keep the stale pool if we had one).
+      CLASSIFIED_DB = CLASSIFIED_DB ?? [];
+      CLASSIFIED_AT = Date.now(); // don't hammer a failing DB on every request
     }
   }
   // Dedupe by display name against the curated catalog AND within the imported
@@ -245,9 +252,11 @@ export async function generateDietPlan(input?: {
   const pool = await getMealPool(supabase);
   const plan = buildPlan({ calorieTarget, proteinTargetG, filter, usual, seed: randomSeed(), pool });
 
+  // A regenerate is an intentional full replace — no compare-and-swap, but it
+  // stamps a fresh rev so per-item edits in stale tabs conflict afterwards.
   const { error } = await supabase
     .from("meal_plans")
-    .upsert({ user_id: user.id, plan }, { onConflict: "user_id" });
+    .upsert({ user_id: user.id, plan: { ...plan, rev: Date.now() } }, { onConflict: "user_id" });
   if (error) {
     reportError("generateDietPlan.upsert", error);
     return { ok: false, error: error.message };
@@ -275,15 +284,12 @@ export async function swapDietMeal(slot: MealSlot): Promise<PlanResult> {
   if (!row?.plan) return { ok: false, error: "Generate a plan first." };
 
   const pool = await getMealPool(supabase);
-  const swapped = swapMeal(row.plan as DietPlan, slot, randomSeed(), pool);
+  const prior = row.plan as DietPlan;
+  const swapped = swapMeal(prior, slot, randomSeed(), pool);
 
-  const { error } = await supabase
-    .from("meal_plans")
-    .update({ plan: swapped })
-    .eq("user_id", user.id);
-  if (error) return { ok: false, error: error.message };
+  const saved = await persistPlan(supabase, user.id, swapped, prior.rev);
+  if (!saved.ok) return { ok: false, error: saved.error! };
 
-  revalidatePath("/diet");
   return { ok: true, plan: swapped };
 }
 
@@ -308,9 +314,27 @@ async function planContext(): Promise<
   return { ok: true, supabase, userId: user.id, plan: data.plan as DietPlan };
 }
 
-async function persistPlan(supabase: Supa, userId: string, plan: DietPlan): Promise<{ ok: boolean; error?: string }> {
-  const { error } = await supabase.from("meal_plans").update({ plan }).eq("user_id", userId);
+/**
+ * Persist a plan with optimistic concurrency: the write only lands if the
+ * stored plan still carries the rev this request started from (compare-and-
+ * swap on plan->>rev). A stale tab gets an honest conflict error instead of
+ * silently overwriting edits made elsewhere. Plans saved before `rev` existed
+ * upgrade on their first write (one unguarded update, then guarded forever).
+ */
+async function persistPlan(
+  supabase: Supa,
+  userId: string,
+  plan: DietPlan,
+  expectedRev: number | undefined
+): Promise<{ ok: boolean; error?: string }> {
+  const stamped = { ...plan, rev: Date.now() };
+  let query = supabase.from("meal_plans").update({ plan: stamped }).eq("user_id", userId);
+  if (expectedRev != null) query = query.filter("plan->>rev", "eq", String(expectedRev));
+  const { data, error } = await query.select("user_id");
   if (error) return { ok: false, error: error.message };
+  if (expectedRev != null && (data ?? []).length === 0) {
+    return { ok: false, error: "Your plan changed in another tab. Refresh to see the latest, then retry." };
+  }
   revalidatePath("/diet");
   return { ok: true };
 }
@@ -372,7 +396,7 @@ export async function swapDietItem(slot: MealSlot, index: number): Promise<PlanR
   const pool = await getMealPool(ctx.supabase);
   const next = swapPlanItem(ctx.plan, slot, index, randomSeed(), pool);
   if (next === ctx.plan) return { ok: false, error: "No other option fits this slot." };
-  const saved = await persistPlan(ctx.supabase, ctx.userId, next);
+  const saved = await persistPlan(ctx.supabase, ctx.userId, next, ctx.plan.rev);
   return saved.ok ? { ok: true, plan: next } : { ok: false, error: saved.error! };
 }
 
@@ -382,7 +406,7 @@ export async function removeDietItem(slot: MealSlot, index: number): Promise<Pla
   const ctx = await planContext();
   if (!ctx.ok) return ctx;
   const next = removePlanItem(ctx.plan, slot, index);
-  const saved = await persistPlan(ctx.supabase, ctx.userId, next);
+  const saved = await persistPlan(ctx.supabase, ctx.userId, next, ctx.plan.rev);
   return saved.ok ? { ok: true, plan: next } : { ok: false, error: saved.error! };
 }
 
@@ -393,7 +417,7 @@ export async function restoreDietItem(slot: MealSlot, index: number, item: PlanM
   const ctx = await planContext();
   if (!ctx.ok) return ctx;
   const next = insertPlanItem(ctx.plan, slot, index, item);
-  const saved = await persistPlan(ctx.supabase, ctx.userId, next);
+  const saved = await persistPlan(ctx.supabase, ctx.userId, next, ctx.plan.rev);
   return saved.ok ? { ok: true, plan: next } : { ok: false, error: saved.error! };
 }
 
@@ -405,7 +429,7 @@ export async function addDietItem(slot: MealSlot, foodId: string): Promise<PlanR
   const pool = await getMealPool(ctx.supabase);
   const next = addPlanItem(ctx.plan, slot, foodId, pool);
   if (next === ctx.plan) return { ok: false, error: "Couldn't add that food." };
-  const saved = await persistPlan(ctx.supabase, ctx.userId, next);
+  const saved = await persistPlan(ctx.supabase, ctx.userId, next, ctx.plan.rev);
   return saved.ok ? { ok: true, plan: next } : { ok: false, error: saved.error! };
 }
 
@@ -417,7 +441,7 @@ export async function setDietItemAmount(slot: MealSlot, index: number, amount: n
   const ctx = await planContext();
   if (!ctx.ok) return ctx;
   const next = setPlanItemAmount(ctx.plan, slot, index, n);
-  const saved = await persistPlan(ctx.supabase, ctx.userId, next);
+  const saved = await persistPlan(ctx.supabase, ctx.userId, next, ctx.plan.rev);
   return saved.ok ? { ok: true, plan: next } : { ok: false, error: saved.error! };
 }
 
@@ -436,7 +460,7 @@ export async function correctDietItem(
   const ctx = await planContext();
   if (!ctx.ok) return ctx;
   const next = setPlanItemMacros(ctx.plan, slot, index, { calories: cal, protein_g: pro });
-  const saved = await persistPlan(ctx.supabase, ctx.userId, next);
+  const saved = await persistPlan(ctx.supabase, ctx.userId, next, ctx.plan.rev);
   return saved.ok ? { ok: true, plan: next } : { ok: false, error: saved.error! };
 }
 
@@ -492,6 +516,6 @@ export async function addCustomDietItem(slot: MealSlot, text: string): Promise<A
     next = appendPlanItem(ctx.plan, slot, item);
     approx = true;
   }
-  const saved = await persistPlan(ctx.supabase, ctx.userId, next);
+  const saved = await persistPlan(ctx.supabase, ctx.userId, next, ctx.plan.rev);
   return saved.ok ? { ok: true, plan: next, approx } : { ok: false, error: saved.error! };
 }

@@ -8,6 +8,7 @@ import { listContainer, listItem, fadeUp } from "@/lib/motion";
 import { sumMacros } from "@/lib/food/totals";
 import { itemMacros } from "@/lib/food/quantity";
 import { localDateString } from "@/lib/localDate";
+import { redirectIfSignedOut } from "@/lib/clientAuth";
 import {
   logFood,
   getFoodLogs,
@@ -128,6 +129,12 @@ export default function FoodLogger({
     setReportTarget(target);
     setReportOpen(true);
   }
+  // Surface a server-action error — an expired session redirects to login
+  // instead of dead-ending the installed PWA on "Not signed in." forever.
+  function surfaceError(message: string) {
+    if (redirectIfSignedOut(message)) return;
+    setError(message);
+  }
   // Tracks in-flight logs so a focus-refetch doesn't clobber an optimistic add.
   const inFlight = useRef(0);
   // SYNCHRONOUS double-submit latch. React state guards (e.g. pickPending) are
@@ -164,7 +171,7 @@ export default function FoodLogger({
     try {
       const res = await logSavedMeal(id, localDateString());
       if (res.ok) setItems((prev) => [...prev, ...res.items]);
-      else setError(res.error);
+      else surfaceError(res.error);
     } catch {
       setError("Couldn't log that meal. Please try again.");
     } finally {
@@ -186,7 +193,7 @@ export default function FoodLogger({
         setMealName("");
         setSavingMealOpen(false);
       } else {
-        setError(res.error);
+        surfaceError(res.error);
       }
     } catch {
       setError("Couldn't save the meal. Please try again.");
@@ -240,6 +247,12 @@ export default function FoodLogger({
       if (inFlight.current > 0) return; // don't fight an optimistic add mid-write
       const rows = await getFoodLogs(localDateString());
       if (!cancelled) setItems(rows);
+      // Keep quick-add lists in sync across tabs too (a meal saved in another
+      // tab shows up here on refocus).
+      void refreshRecentQuick();
+      void listSavedMeals().then((res) => {
+        if (!cancelled && res.ok) setSavedMeals(res.meals);
+      });
     }
     // Align on mount only when the client's real day != the day we rendered for.
     if (localDateString() !== today) void refresh();
@@ -253,7 +266,7 @@ export default function FoodLogger({
       window.removeEventListener("focus", onVisible);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [today]);
+  }, [today, refreshRecentQuick]);
 
   async function handleLog(e: React.FormEvent) {
     e.preventDefault();
@@ -278,7 +291,7 @@ export default function FoodLogger({
         setItems((prev) => [...prev, ...res.items]);
         void refreshRecentQuick();
       } else {
-        setError(res.error);
+        surfaceError(res.error);
         setText(meal); // never silently drop the user's input — let them retry
         // Only offer "report missing food" when the parser genuinely found
         // nothing (not for network/parse errors).
@@ -309,7 +322,7 @@ export default function FoodLogger({
         setSearchResults([]);
         void refreshRecentQuick();
       } else {
-        setError(res.error);
+        surfaceError(res.error);
       }
     } catch {
       setError("Couldn't log that food. Please try again.");
@@ -333,7 +346,7 @@ export default function FoodLogger({
         setItems(res.items);
         void refreshRecentQuick();
       } else {
-        setError(res.error);
+        surfaceError(res.error);
       }
     } catch {
       setError("Couldn't copy yesterday. Please try again.");
@@ -361,7 +374,7 @@ export default function FoodLogger({
         if (res.ok) {
           setItems((prev) => prev.map((i) => (i.id === id ? res.item : i)));
         } else {
-          setError(res.error);
+          surfaceError(res.error);
           setItems(await getFoodLogs(localDateString())); // reconcile with DB truth
         }
       } catch {
@@ -394,7 +407,7 @@ export default function FoodLogger({
     const res = await correctFoodItem(id, patch);
     if (!res.ok) {
       setItems(snapshot);
-      setError(res.error);
+      surfaceError(res.error);
     } else {
       setItems((prev) => prev.map((i) => (i.id === id ? res.item : i)));
     }

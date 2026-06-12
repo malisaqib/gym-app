@@ -23,6 +23,7 @@ import {
   logPlanMeal,
 } from "./actions";
 import { localDateString } from "@/lib/localDate";
+import { redirectIfSignedOut } from "@/lib/clientAuth";
 import UsualEatingCard, { type UsualEating } from "./UsualEatingCard";
 import AddFoodPanel from "./AddFoodPanel";
 import ReportFoodSheet from "@/components/ReportFoodSheet";
@@ -149,6 +150,13 @@ export default function DietPlanView({
 }) {
   const t = (k: keyof typeof T) => T[k][lang];
 
+  // Toast a server-action error — an expired session redirects to login
+  // instead of dead-ending the installed PWA on "Not signed in." forever.
+  function surfaceActionError(message: string) {
+    if (redirectIfSignedOut(message)) return;
+    toast.error(message);
+  }
+
   const [plan, setPlan] = useState<DietPlan | null>(initialPlan);
   const [usual, setUsual] = useState<UsualEating>(initialUsual);
   const [notes, setNotes] = useState("");
@@ -265,7 +273,7 @@ export default function DietPlanView({
         haptic("success");
       } else {
         setError(res.error);
-        toast.error(res.error);
+        surfaceActionError(res.error);
       }
     } catch {
       const message = "Couldn't build a plan. Please try again.";
@@ -290,7 +298,7 @@ export default function DietPlanView({
         haptic("success");
         toast.success(t("mealLogged"));
       } else {
-        toast.error(res.error);
+        surfaceActionError(res.error);
       }
     } catch {
       toast.error("Couldn't log that meal. Please try again.");
@@ -313,7 +321,7 @@ export default function DietPlanView({
         haptic("tap");
       } else {
         setError(res.error);
-        toast.error(res.error);
+        surfaceActionError(res.error);
       }
     } catch {
       const message = "Couldn't swap that meal. Please try again.";
@@ -344,7 +352,7 @@ export default function DietPlanView({
         showRemoveUndo({ slot, index, item });
       } else {
         setPlan(prev);
-        toast.error(res.error);
+        surfaceActionError(res.error);
       }
     } catch {
       setPlan(prev);
@@ -364,7 +372,7 @@ export default function DietPlanView({
       const res = await restoreDietItem(target.slot, target.index, target.item);
       if (res.ok) setPlan(res.plan);
       else {
-        toast.error(res.error);
+        surfaceActionError(res.error);
         const fresh = await getDietPlan();
         if (fresh) setPlan(fresh);
       }
@@ -389,7 +397,7 @@ export default function DietPlanView({
       if (res.ok) {
         setPlan(res.plan);
         haptic("tap");
-      } else toast.error(res.error);
+      } else surfaceActionError(res.error);
     } catch {
       toast.error("Couldn't swap that item — please try again.");
     } finally {
@@ -408,7 +416,7 @@ export default function DietPlanView({
         setPlan(res.plan);
         setAddOpen(null);
         haptic("success");
-      } else toast.error(res.error);
+      } else surfaceActionError(res.error);
     } catch {
       toast.error("Couldn't add that — please try again.");
     } finally {
@@ -428,7 +436,7 @@ export default function DietPlanView({
         setAddOpen(null);
         haptic("success");
         if (res.approx) toast.success(t("addedEst"));
-      } else toast.error(res.error);
+      } else surfaceActionError(res.error);
     } catch {
       toast.error("Couldn't add that — please try again.");
     } finally {
@@ -455,7 +463,7 @@ export default function DietPlanView({
       const res = await setDietItemAmount(slot, index, amount);
       if (res.ok) setPlan(res.plan);
       else {
-        toast.error(res.error);
+        surfaceActionError(res.error);
         const fresh = await getDietPlan();
         if (fresh) setPlan(fresh); // reconcile with DB truth
       }
@@ -469,7 +477,7 @@ export default function DietPlanView({
     const res = await correctDietItem(slot, index, patch);
     if (res.ok) setPlan(res.plan);
     else {
-      toast.error(res.error);
+      surfaceActionError(res.error);
       const fresh = await getDietPlan();
       if (fresh) setPlan(fresh);
     }

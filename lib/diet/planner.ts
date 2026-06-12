@@ -85,6 +85,10 @@ export interface DietPlan {
   proteinShort: boolean; // couldn't reach the protein target within the calorie budget
   caloriesShort: boolean; // couldn't fill the day (usually too-restrictive prefs / few foods)
   seed: number;
+  // Optimistic-concurrency stamp, set on every persist (Date.now()). Writes
+  // compare-and-swap on it so a stale tab can't silently overwrite edits made
+  // in another tab. Absent on plans saved before this field existed.
+  rev?: number;
 }
 
 // The tolerance bar (±5%): a generated plan must land within 95–100% of the
