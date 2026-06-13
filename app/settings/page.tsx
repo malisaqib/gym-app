@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
+import { Compass } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { Screen } from "@/components/ui/Screen";
 import { LargeTitle } from "@/components/ui/LargeTitle";
@@ -62,6 +64,16 @@ export default async function SettingsPage() {
         <LargeTitle title="Settings" />
         {/* Basic info from onboarding — viewable & editable here. */}
         <ProfileEditor initial={details} />
+
+        {/* Replay the feature walkthrough (?tour=1 forces it on the dashboard). */}
+        <Link
+          href="/dashboard?tour=1"
+          className="flex items-center gap-3 rounded-card-lg border border-border bg-card px-4 py-3 text-sm font-medium text-foreground transition hover:bg-muted active:scale-[0.99]"
+        >
+          <Compass size={18} className="shrink-0 text-primary" aria-hidden />
+          {lang === "roman_urdu" ? "App ka tour dobara dekhein" : "Replay app tour"}
+        </Link>
+
         <SupportResources />
         <SignOutButton />
         <p className="text-center text-xs text-muted-foreground break-all">{user.email}</p>

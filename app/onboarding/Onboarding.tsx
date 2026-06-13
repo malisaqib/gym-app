@@ -152,7 +152,8 @@ export default function Onboarding({ initialLang }: { initialLang: Lang }) {
   // always sees where they're being taken.
   useEffect(() => {
     if (!redirecting) return;
-    const t = setTimeout(() => router.push("/dashboard"), 1400);
+    // ?tour=1 launches the one-time feature walkthrough on arrival.
+    const t = setTimeout(() => router.push("/dashboard?tour=1"), 1400);
     return () => clearTimeout(t);
   }, [redirecting, router]);
 

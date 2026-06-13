@@ -16,7 +16,14 @@ import EmotionalGoalOnboarding from "@/app/coach/EmotionalGoalOnboarding";
 
 // Protected page. The middleware already blocks logged-out users, but we
 // re-check here (defense in depth) and to actually get the user's data.
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tour?: string }>;
+}) {
+  // `?tour=1` (set by the onboarding finale and the Settings "replay" link)
+  // forces the feature walkthrough even if its first-visit flag is already set.
+  const { tour } = await searchParams;
   const supabase = await createClient();
   const {
     data: { user },
@@ -96,8 +103,9 @@ export default async function DashboardPage() {
       <BottomNav />
       {/* Wipe device-local coach data if a different user is on this device. */}
       <LocalDataGuard userId={user.id} />
-      {/* One-time, skippable walkthrough of the tabs (first visit only). */}
-      <IntroTour lang={lang} />
+      {/* Skippable feature walkthrough — auto on first visit, or forced by
+          ?tour=1 (post-onboarding finale + Settings "replay"). */}
+      <IntroTour lang={lang} forceTour={tour === "1"} />
     </div>
   );
 }
