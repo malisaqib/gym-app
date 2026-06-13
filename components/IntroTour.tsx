@@ -10,6 +10,7 @@ import {
   ClipboardList,
   Dumbbell,
   TrendingUp,
+  Share,
   CheckCircle2,
   type LucideIcon,
 } from "lucide-react";
@@ -46,8 +47,8 @@ const STEPS: TourStep[] = [
     highlight: null,
     title: { en: "Welcome to Zorfit", roman_urdu: "Zorfit mein khush aamdeed" },
     body: {
-      en: "Your targets are set. Here's a 30-second tour of the five tabs — skip anytime.",
-      roman_urdu: "Aap ke targets set hain. Ye paanch tabs ka 30-second tour hai — jab chahein chhor dein.",
+      en: "Your targets are set. Here's a quick tour of the five tabs — plus how to install on your phone. Skip anytime.",
+      roman_urdu: "Aap ke targets set hain. Paanch tabs ka tour — aur phone par install ka tareeqa. Jab chahein chhor dein.",
     },
   },
   {
@@ -96,11 +97,20 @@ const STEPS: TourStep[] = [
     },
   },
   {
+    icon: Share,
+    highlight: null,
+    title: { en: "Install on your phone", roman_urdu: "Phone par install karein" },
+    body: {
+      en: "Zorfit is a web app — add it to your home screen so it opens like a native app. On iPhone (Safari): tap Share at the bottom, then Add to Home Screen. On Android (Chrome): tap the menu (⋮) → Install app or Add to Home screen.",
+      roman_urdu: "Zorfit web app hai — home screen par add karein taake app ki tarah khule. iPhone (Safari): neeche Share dabayein, phir Add to Home Screen. Android (Chrome): menu (⋮) → Install app ya Add to Home screen.",
+    },
+  },
+  {
     icon: CheckCircle2,
     highlight: null,
     title: { en: "You're all set", roman_urdu: "Sab tayyar hai" },
     body: {
-      en: "Start by logging your first meal on Home. You can replay this tour anytime from Settings.",
+      en: "Start by logging your first meal on Home. Replay this tour anytime from Settings.",
       roman_urdu: "Home par apna pehla meal log kar ke shuru karein. Ye tour kabhi bhi Settings se dobara dekh sakte hain.",
     },
   },
@@ -192,7 +202,7 @@ export default function IntroTour({ lang, forceTour = false }: { lang: Lang; for
               <h2 className="font-display text-lg font-semibold text-foreground">{t(s.title)}</h2>
             </div>
 
-            <p className="min-h-[3.5rem] text-sm leading-relaxed text-muted-foreground">{t(s.body)}</p>
+            <p className="min-h-[4.5rem] text-sm leading-relaxed text-muted-foreground">{t(s.body)}</p>
 
             {/* Progress dots */}
             <div className="flex justify-center gap-1.5" aria-hidden>
