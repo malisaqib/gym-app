@@ -30,6 +30,13 @@ export interface CatalogFood {
   slots: MealSlot[];
   tags: string[]; // for preference filtering, e.g. ["beef"], ["egg","dairy"]
   aliases?: string[]; // extra search terms incl. Roman Urdu (e.g. "nehari", "aam")
+  /**
+   * Staple classification for SIMPLE plan generation (diet rebuild): protein
+   * anchors, carb bases, fruit snacks and plain sides. Foods without a staple
+   * tag stay fully loggable/searchable/swappable but don't anchor generated
+   * plans. Assigned via STAPLES below.
+   */
+  staple?: "protein" | "carb" | "fruit" | "side";
 }
 
 const B: MealSlot = "breakfast";
@@ -134,6 +141,29 @@ export const FOOD_CATALOG: CatalogFood[] = [
 ];
 
 /** Quick lookup by id (used when applying swaps). */
+// Staple assignments for the simple, repeatable generator: hit protein from a
+// few familiar sources, fill calories with plain carb bases, fruit for snacks.
+const STAPLES: Record<string, NonNullable<CatalogFood["staple"]>> = {
+  // protein anchors (desi + western + veg)
+  eggs2: "protein", omelette: "protein", scrambled: "protein", boiled_egg1: "protein",
+  chicken_salan: "protein", chicken_karahi: "protein", chicken_tikka: "protein",
+  chicken_breast: "protein", qeema: "protein", ground_beef: "protein",
+  beef_karahi: "protein", fish_curry: "protein", tuna: "protein", salmon: "protein",
+  daal: "protein", chana: "protein", paneer: "protein", tofu: "protein",
+  soya: "protein", rajma: "protein", lobia: "protein", greek_yogurt: "protein",
+  // carb bases
+  roti1: "carb", roti2: "carb", rice: "carb", brown_rice: "carb",
+  oats: "carb", bread2: "carb", baked_potato: "carb",
+  // fruit snacks
+  banana: "fruit", apple: "fruit", orange: "fruit", mango: "fruit", dates: "fruit",
+  // plain sides
+  salad: "side", mix_sabzi: "side", palak: "side", dahi: "side",
+};
+for (const f of FOOD_CATALOG) {
+  const s = STAPLES[f.id];
+  if (s) f.staple = s;
+}
+
 export const CATALOG_BY_ID: Record<string, CatalogFood> = Object.fromEntries(
   FOOD_CATALOG.map((f) => [f.id, f])
 );

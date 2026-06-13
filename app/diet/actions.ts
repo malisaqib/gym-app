@@ -249,8 +249,10 @@ export async function generateDietPlan(input?: {
     keep: pick(ue?.keep, profile?.keep_foods),
   };
 
-  const pool = await getMealPool(supabase);
-  const plan = buildPlan({ calorieTarget, proteinTargetG, filter, usual, seed: randomSeed(), pool });
+  // GENERATION uses the curated staples catalog only (simple, repeatable,
+  // desi-friendly plans). The full imported pool stays one tap away via
+  // per-item swap / Add food / search, which DO pass getMealPool.
+  const plan = buildPlan({ calorieTarget, proteinTargetG, filter, usual, seed: randomSeed() });
 
   // A regenerate is an intentional full replace — no compare-and-swap, but it
   // stamps a fresh rev so per-item edits in stale tabs conflict afterwards.
@@ -283,9 +285,9 @@ export async function swapDietMeal(slot: MealSlot): Promise<PlanResult> {
     .maybeSingle();
   if (!row?.plan) return { ok: false, error: "Generate a plan first." };
 
-  const pool = await getMealPool(supabase);
+  // Meal re-selection is generation too → curated staples only (see above).
   const prior = row.plan as DietPlan;
-  const swapped = swapMeal(prior, slot, randomSeed(), pool);
+  const swapped = swapMeal(prior, slot, randomSeed());
 
   const saved = await persistPlan(supabase, user.id, swapped, prior.rev);
   if (!saved.ok) return { ok: false, error: saved.error! };

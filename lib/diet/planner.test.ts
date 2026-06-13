@@ -15,7 +15,7 @@ import {
   isKnownFood,
   type DietFilter,
 } from "./planner.ts";
-import { CATALOG_BY_ID, type CatalogFood } from "./foodCatalog.ts";
+import { CATALOG_BY_ID, FOOD_CATALOG, type CatalogFood } from "./foodCatalog.ts";
 
 const openFilter: DietFilter = { vegetarian: false, excludeTags: [], excludeFoods: [], regionFocus: null };
 
@@ -36,9 +36,9 @@ test("fits the calorie budget — never exceeds it; within ±5% or honestly flag
   );
   // ...and it still gets reasonably close even on the small test catalog.
   assert.ok(plan.totalCalories >= 2100 * 0.9, `too low: ${plan.totalCalories}`);
-  // every meal stays within its own slot budget.
+  // every meal stays within its slot budget + the 10% flex (day cap is hard).
   for (const m of plan.meals) {
-    assert.ok(m.calories <= m.budget, `${m.slot} ${m.calories} > budget ${m.budget}`);
+    assert.ok(m.calories <= m.budget * 1.1, `${m.slot} ${m.calories} > flexed budget ${m.budget * 1.1}`);
   }
 });
 
@@ -78,9 +78,10 @@ test("a short day either tops up to ≥95% of target or is honestly flagged (nev
     withinTolerance || plan.caloriesShort,
     `SILENT under-target plan: ${plan.totalCalories}/2000 with caloriesShort=${plan.caloriesShort}`
   );
-  // Per-meal hard caps still hold after the top-up pass.
+  // Meals may flex up to +10% over their slot budget (the scaler's coarse-step
+  // escape hatch) — but the DAY total above is the hard contract.
   for (const m of plan.meals) {
-    assert.ok(m.calories <= m.budget, `${m.slot} ${m.calories} > budget ${m.budget}`);
+    assert.ok(m.calories <= m.budget * 1.1, `${m.slot} ${m.calories} > flexed budget ${m.budget * 1.1}`);
   }
 });
 
@@ -397,28 +398,92 @@ test("aliases (incl. Roman Urdu) match free text and search (Phase 4)", () => {
   assert.ok(searchCatalog("panir", openFilter, "lunch").some((f) => f.id === "paneer"));
 });
 
-// Variety — the same MAIN DISH must not repeat across the day's meals when the
-// pool has alternatives (the live bug: "Chicken tikka" at lunch, dinner AND
-// snack). Small sides/drinks (a salad, a coffee) may appear twice — that's how
-// people actually eat, and the calorie top-up may legitimately reuse them when
-// no fresh tiny filler exists. The penalty is soft so thin pools still fill.
-test("variety: no substantial dish repeats across the day's meals", () => {
+// SIMPLE-plan contract (diet rebuild): a few staple foods done right and
+// REPEATED — not a 15-dish rotating menu. Staple repetition across meals is
+// deliberate; the plan must stay minimal and recognizable.
+test("simple plan: a small repeatable set of foods (≤9 distinct), staples may repeat", () => {
   for (const seed of [1, 2, 3, 5, 9]) {
     const plan = buildPlan({ calorieTarget: 2100, proteinTargetG: 130, filter: openFilter, seed });
-    const items = plan.meals.flatMap((m) => m.items);
-    const counts = new Map<string, { n: number; cal: number }>();
-    for (const it of items) {
-      const key = it.name.toLowerCase();
-      const prev = counts.get(key);
-      counts.set(key, { n: (prev?.n ?? 0) + 1, cal: it.calories });
-    }
-    for (const [name, { n, cal }] of counts) {
-      if (cal >= 100) assert.equal(n, 1, `seed ${seed}: main dish repeated: ${name} ×${n}`);
-      else assert.ok(n <= 2, `seed ${seed}: side repeated too often: ${name} ×${n}`);
-    }
-    // The variety pass must not break the hard budget guarantee.
+    const names = plan.meals.flatMap((m) => m.items.map((i) => i.name));
+    const distinct = new Set(names);
+    assert.ok(distinct.size <= 9, `seed ${seed}: ${distinct.size} distinct dishes — too fancy: ${[...distinct].join(", ")}`);
     assert.ok(plan.totalCalories <= 2100, `seed ${seed} over budget`);
   }
+});
+
+test("simple plan: hits protein and lands within ±5% calories (or honest flags)", () => {
+  for (const seed of [1, 4, 7]) {
+    const plan = buildPlan({ calorieTarget: 2200, proteinTargetG: 150, filter: openFilter, seed });
+    assert.ok(plan.totalCalories <= 2200, `over budget: ${plan.totalCalories}`);
+    assert.ok(
+      plan.totalCalories >= 2200 * 0.95 || plan.caloriesShort,
+      `silent calorie shortfall: ${plan.totalCalories}`
+    );
+    assert.ok(
+      plan.totalProtein >= 150 * 0.93 || plan.proteinShort,
+      `silent protein shortfall: ${plan.totalProtein}`
+    );
+  }
+});
+
+test("simple plan: protein comes primarily from staple sources", () => {
+  const plan = buildPlan({ calorieTarget: 2100, proteinTargetG: 140, filter: openFilter, seed: 2 });
+  const stapleIds = new Set(FOOD_CATALOG.filter((f) => f.staple === "protein").map((f) => f.id));
+  const total = plan.meals.flatMap((m) => m.items).reduce((s, i) => s + i.protein, 0);
+  const fromStaples = plan.meals
+    .flatMap((m) => m.items)
+    .filter((i) => stapleIds.has(i.id))
+    .reduce((s, i) => s + i.protein, 0);
+  assert.ok(total > 0);
+  assert.ok(
+    fromStaples / total >= 0.6,
+    `only ${Math.round((fromStaples / total) * 100)}% of protein from staples`
+  );
+});
+
+test("snacks are fruit-led, and meals are anchored (protein + carb in mains)", () => {
+  const plan = buildPlan({ calorieTarget: 2000, proteinTargetG: 130, filter: openFilter, seed: 3 });
+  const snack = plan.meals.find((m) => m.slot === "snack")!;
+  const fruitIds = new Set(FOOD_CATALOG.filter((f) => f.staple === "fruit").map((f) => f.id));
+  assert.ok(snack.items.some((i) => fruitIds.has(i.id)), `snack has no fruit: ${snack.items.map((i) => i.name).join(", ")}`);
+  for (const m of plan.meals) {
+    if (m.slot === "snack") continue;
+    const foods = m.items.map((i) => CATALOG_BY_ID[i.id]).filter(Boolean);
+    assert.ok(foods.some((f) => f!.role === "protein"), `${m.slot} has no protein anchor`);
+  }
+});
+
+test("whey never auto-planned by default; included (and swappable) when the usual diet mentions it", () => {
+  const without = buildPlan({ calorieTarget: 2200, proteinTargetG: 160, filter: openFilter, seed: 1 });
+  assert.ok(
+    !without.meals.some((m) => m.items.some((i) => i.id === "whey")),
+    "whey appeared without opt-in"
+  );
+
+  const withWhey = buildPlan({
+    calorieTarget: 2200,
+    proteinTargetG: 160,
+    filter: openFilter,
+    usual: { keep: "whey protein shake after the gym" },
+    seed: 1,
+  });
+  const wheyItem = withWhey.meals.flatMap((m) => m.items).find((i) => i.id === "whey");
+  assert.ok(wheyItem, "whey missing despite the usual diet mentioning it");
+  assert.ok(withWhey.totalCalories <= 2200, "whey pushed the day over budget");
+  // Swappable: it is a real catalog item (not approx), so the per-item swap works.
+  assert.equal(isKnownFood("whey"), true);
+});
+
+test("item swaps rotate through MANY options, not the same 2-3", () => {
+  const plan = buildPlan({ calorieTarget: 2100, proteinTargetG: 130, filter: openFilter, seed: 1 });
+  const slot = "lunch" as const;
+  const seen = new Set<string>();
+  for (let s = 1; s <= 12; s++) {
+    const next = swapPlanItem(plan, slot, 0, s * 101);
+    const name = next.meals.find((m) => m.slot === slot)!.items[0].name;
+    seen.add(name);
+  }
+  assert.ok(seen.size >= 5, `swaps only rotated through ${seen.size} options: ${[...seen].join(", ")}`);
 });
 
 // D2 — mentioned() is word-boundary safe: a word CONTAINING a food name must

@@ -103,8 +103,6 @@ const SLOT_META: { slot: MealSlot; title: string; pct: number }[] = [
   { slot: "snack", title: "Snack", pct: 0.1 },
 ];
 
-const FILL_TO = 0.95; // try to fill at least 95% of each slot (lands within ±5%)
-const MAX_ITEMS: Record<MealSlot, number> = { breakfast: 5, lunch: 5, dinner: 5, snack: 3 };
 
 // --- preferences ------------------------------------------------------------
 
@@ -274,180 +272,230 @@ function chooseTop(
   return sorted[Math.floor(rng() * Math.min(topN, sorted.length))];
 }
 
-// --- meal building (hard-capped) --------------------------------------------
+// --- meal building (hard-capped, staple-anchored) ----------------------------
+// Real-world simple (the diet rebuild): each main meal is ONE staple protein
+// portion-scaled to its protein share, ONE staple carb scaled to fill the
+// calories, and at most one simple side. Snacks are fruit. A few familiar foods
+// done right and repeated — not a 15-dish rotating menu. Staple repetition
+// across meals is deliberate (chicken at lunch AND dinner is how people eat).
+
+/** A chosen food at a portion multiplier of its catalog serving. */
+interface MealPick {
+  food: CatalogFood;
+  mult: number; // 0.5–3.0 in 0.25 steps
+  isProtected: boolean; // usual-food seed (kept; may still be scaled up)
+}
 
 interface BuiltMeal {
   slot: MealSlot;
   title: string;
   budget: number;
-  cands: CatalogFood[]; // allowed, slot-suitable (reused by the protein-swap pass)
-  chosen: CatalogFood[];
-  protectedIds: Set<string>; // usual-food seeds — never swapped out for protein
+  cands: CatalogFood[];
+  picks: MealPick[];
 }
 
-const sumCal = (items: CatalogFood[]) => items.reduce((s, f) => s + f.calories, 0);
-const sumPro = (items: CatalogFood[]) => items.reduce((s, f) => s + f.protein, 0);
+const MULT_MIN = 0.5;
+const MULT_MAX = 3;
+const MULT_STEP = 0.25;
 
-// Day-level variety: normalized display name, shared across the day's meals so
-// the same dish doesn't appear at lunch AND dinner AND snack.
-const normName = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+// Protein lives in the MAIN meals (30/35/35); snacks are fruit by design.
+const PROTEIN_SHARE: Record<MealSlot, number> = { breakfast: 0.3, lunch: 0.35, dinner: 0.35, snack: 0 };
 
-function buildMealItems(
+const pickCal = (p: MealPick) => p.food.calories * p.mult;
+const pickPro = (p: MealPick) => p.food.protein * p.mult;
+const mealCal = (picks: MealPick[]) => picks.reduce((s, p) => s + pickCal(p), 0);
+const mealPro = (picks: MealPick[]) => picks.reduce((s, p) => s + pickPro(p), 0);
+
+const snapMult = (m: number) => Math.round(m / MULT_STEP) * MULT_STEP;
+const clampMult = (m: number) => Math.min(MULT_MAX, Math.max(MULT_MIN, snapMult(m)));
+
+/** Largest multiplier (≥ MULT_MIN) of `f` that keeps the meal within `budget`, or null. */
+function maxAffordableMult(f: CatalogFood, calSoFar: number, budget: number): number | null {
+  if (f.calories <= 0) return 1;
+  const m = Math.floor((budget - calSoFar) / f.calories / MULT_STEP) * MULT_STEP;
+  if (m < MULT_MIN) return null;
+  return Math.min(m, MULT_MAX);
+}
+
+function buildSimpleMeal(
   budget: number,
   slotProtein: number,
   slot: MealSlot,
   cands: CatalogFood[],
   rng: () => number,
   usualText: string | undefined,
-  likeIds: Set<string>,
-  usedDay: Set<string> = new Set()
-): CatalogFood[] {
-  const chosen: CatalogFood[] = [];
-  const fits = (f: CatalogFood) => sumCal(chosen) + f.calories <= budget; // HARD cap
-  const likeBonus = (f: CatalogFood) => (likeIds.has(f.id) ? 6 : 0);
-  // Strong penalty (not a hard ban) for a dish already in an earlier meal today:
-  // variety wins whenever a reasonable alternative exists, but a thin filtered
-  // pool can still fill the meal rather than starve it.
-  const dupPenalty = (f: CatalogFood) => (usedDay.has(normName(f.name)) ? -45 : 0);
-  // Prefer our CURATED, recognizable dishes (the bi-cuisine, desi-rich catalog) as
-  // the backbone of each meal; the ~thousands of USDA foods (id "db:…") add breadth
-  // in fill/accessory slots and power swaps. Without this, generic USDA singles
-  // (lean cuts, cottage cheese, egg white) crowd out karahi/daal/biryani and a
-  // desi user's plan ends up all Western. Curated still competes on protein.
-  const curatedBonus = (f: CatalogFood) =>
-    f.id.startsWith("db:") || f.tags.includes("supplement") ? 0 : 20; // supplements (whey) shouldn't anchor every meal
-  const maxItems = MAX_ITEMS[slot];
+  likeIds: Set<string>
+): MealPick[] {
+  const picks: MealPick[] = [];
+  const calSoFar = () => mealCal(picks);
+  const has = (f: CatalogFood) => picks.some((p) => p.food.id === f.id);
+  const likeBonus = (f: CatalogFood) => (likeIds.has(f.id) ? 8 : 0);
 
-  // 1) Seed with the user's usual foods for this slot (highest priority).
+  // 1) The user's usual foods for this slot seed the meal first (kept as-is;
+  //    the day-level scale pass may grow their portions later).
   if (usualText) {
     const seeds = cands
       .filter((f) => mentioned(f, usualText))
-      .sort((a, b) => b.protein - a.protein || a.id.localeCompare(b.id));
+      .sort((a, b) => b.protein - a.protein || a.id.localeCompare(b.id))
+      .slice(0, 3);
     for (const s of seeds) {
-      if (chosen.length >= maxItems) break;
-      if (!chosen.includes(s) && fits(s)) chosen.push(s);
+      const m = maxAffordableMult(s, calSoFar(), budget);
+      if (m != null && !has(s)) picks.push({ food: s, mult: Math.min(1, m), isProtected: true });
     }
   }
 
-  // 2) Anchor a protein if none yet (real meals only).
-  if (slot !== "snack" && !chosen.some((f) => f.role === "protein")) {
-    const proteins = cands.filter((f) => f.role === "protein" && !chosen.includes(f) && fits(f));
+  // SNACK: fruit (plus whatever the user's usual snack seeds brought, e.g. an
+  // opted-in shake). Simple and small by design.
+  if (slot === "snack") {
+    if (!picks.some((p) => p.food.staple === "fruit")) {
+      const fruit = chooseTop(
+        cands.filter((f) => f.staple === "fruit" && !has(f)),
+        (f) => likeBonus(f) - Math.abs(budget - f.calories) / 20,
+        rng,
+        4
+      );
+      if (fruit) {
+        const m = maxAffordableMult(fruit, calSoFar(), budget);
+        if (m != null) picks.push({ food: fruit, mult: Math.min(2, m), isProtected: false });
+      }
+    }
+    return picks;
+  }
+
+  // 2) PROTEIN FIRST: one staple protein (chicken/beef/eggs/daal…), scaled
+  //    toward this meal's protein share. Anchors the meal.
+  if (!picks.some((p) => p.food.role === "protein")) {
+    const staples = cands.filter((f) => f.staple === "protein" && !has(f));
+    const fallback = cands.filter((f) => f.role === "protein" && !has(f));
     const anchor = chooseTop(
-      proteins,
-      (f) => proteinDensity(f) * 100 + likeBonus(f) + curatedBonus(f) + dupPenalty(f),
-      rng
+      staples.length ? staples : fallback,
+      (f) => proteinDensity(f) * 100 + likeBonus(f),
+      rng,
+      4
     );
-    if (anchor) chosen.push(anchor);
+    if (anchor) {
+      const need = Math.max(0, slotProtein - mealPro(picks));
+      const ideal = anchor.protein > 0 ? clampMult(need / anchor.protein) : 1;
+      // Leave ~20% of the budget for the carb base.
+      const cap = maxAffordableMult(anchor, calSoFar(), budget * 0.8);
+      if (cap != null) picks.push({ food: anchor, mult: Math.min(ideal, cap), isProtected: false });
+    }
   }
 
-  // 3) Fill toward FILL_TO of the budget — never exceeding it.
-  let guard = 0;
-  while (sumCal(chosen) < budget * FILL_TO && chosen.length < maxItems && guard < 30) {
-    guard++;
-    const remaining = budget - sumCal(chosen);
-    const pool = cands.filter((f) => !chosen.includes(f) && f.calories <= remaining);
-    if (pool.length === 0) break;
-    const needProtein = sumPro(chosen) < slotProtein;
-    const pick = chooseTop(
-      pool,
-      (f) =>
-        -(remaining - f.calories) / 12 + // close the calorie gap (never over)
-        proteinDensity(f) * (needProtein ? 60 : 25) + // protein-per-calorie
-        likeBonus(f) +
-        curatedBonus(f) +
-        dupPenalty(f),
-      rng
+  // 3) CARB BASE: one staple carb (rice/roti/oats…) scaled to fill the calories.
+  if (!picks.some((p) => p.food.staple === "carb" || p.food.role === "carb")) {
+    const carbs = cands.filter((f) => f.staple === "carb" && !has(f));
+    const fallback = cands.filter((f) => f.role === "carb" && !has(f));
+    const base = chooseTop(
+      carbs.length ? carbs : fallback,
+      (f) => likeBonus(f) - Math.abs((budget - calSoFar()) * 0.9 - f.calories) / 15,
+      rng,
+      4
     );
-    if (!pick) break;
-    chosen.push(pick);
+    if (base) {
+      const remaining = budget - calSoFar();
+      const ideal = base.calories > 0 ? clampMult((remaining * 0.95) / base.calories) : 1;
+      const cap = maxAffordableMult(base, calSoFar(), budget);
+      if (cap != null) picks.push({ food: base, mult: Math.min(ideal, cap), isProtected: false });
+    }
   }
 
-  return chosen;
+  // 4) At most ONE simple side (salad / sabzi / dahi / fruit) if real room remains.
+  if (picks.length < 4 && budget - calSoFar() >= 90) {
+    const sides = cands.filter((f) => (f.staple === "side" || f.staple === "fruit") && !has(f));
+    const side = chooseTop(
+      sides,
+      (f) => likeBonus(f) - Math.abs(budget - calSoFar() - f.calories) / 12,
+      rng,
+      4
+    );
+    if (side) {
+      const m = maxAffordableMult(side, calSoFar(), budget);
+      if (m != null) picks.push({ food: side, mult: Math.min(1.5, m), isProtected: false });
+    }
+  }
+
+  return picks;
 }
 
 /**
- * Day-level pass: while under the protein target, SWAP one chosen item for a
- * higher-protein candidate that still fits its slot budget. Never adds calories
- * beyond the caps. Deterministic (picks the largest protein gain each round).
+ * Day pass: portion-scale what's already on the plate toward the targets
+ * instead of adding more dishes. Protein first (grow the protein-densest pick),
+ * then fill calories (grow carbs/sides). Every bump must fit its meal's hard
+ * budget, so the day can never exceed the calorie target.
  */
-interface Swap {
-  meal: BuiltMeal;
-  outIdx: number;
-  inFood: CatalogFood;
-  gain: number;
-}
+function scaleDayToTargets(meals: BuiltMeal[], calorieTarget: number, proteinTargetG: number): void {
+  // Per-meal budgets shape the day; the DAY total is the hard contract. A meal
+  // may flex up to +10% over its own slot budget if (and only if) the whole
+  // day still stays at or under the calorie target — otherwise coarse portion
+  // steps (one more roti = 110 kcal) strand the day ~8% under target.
+  const MEAL_FLEX = 1.1;
+  // Totals as the plan will actually RENDER (amounts floor-snap to whole counts
+  // / 5g steps). Driving the loops by planned multiplier totals instead left a
+  // hidden gap: floored amounts can drop ~5-8% below the planned numbers.
+  const rendered = () =>
+    meals
+      .flatMap((m) => m.picks)
+      .map((p) => toScaledItem(p.food, p.mult))
+      .reduce((acc, i) => ({ cal: acc.cal + i.calories, pro: acc.pro + i.protein }), { cal: 0, pro: 0 });
+  const dayCal = () => rendered().cal;
+  const dayPro = () => rendered().pro;
 
-function improveProtein(meals: BuiltMeal[], proteinTargetG: number): void {
-  const totalProtein = () => meals.reduce((s, m) => s + sumPro(m.chosen), 0);
-  // Day-wide names currently on the plate (variety: a protein swap must not
-  // introduce a dish that another meal already has).
-  const dayNames = () => {
-    const names = new Set<string>();
-    for (const m of meals) for (const f of m.chosen) names.add(normName(f.name));
-    return names;
+  const renderedMealCal = (m: BuiltMeal) =>
+    m.picks.reduce((s, p) => s + toScaledItem(p.food, p.mult).calories, 0);
+
+  // One +step bump of the best-scoring pick that (a) actually moves the metric
+  // we're raising and (b) keeps its meal under the hard cap. Deltas are
+  // computed on RENDERED items — count foods jump in WHOLE units (one more
+  // egg), which can be far more than calories × step, so estimating would
+  // either block valid bumps or blow the budget.
+  // The smallest multiplier ABOVE p.mult whose rendered output actually
+  // changes. Count foods snap to whole units (3 eggs stays 3 eggs from
+  // mult 1.5 to 1.75), so a single fixed step can stall the ladder.
+  const nextUsefulMult = (p: MealPick): number | null => {
+    const cur = toScaledItem(p.food, p.mult);
+    for (let m = p.mult + MULT_STEP; m <= MULT_MAX + 1e-9; m += MULT_STEP) {
+      const next = toScaledItem(p.food, snapMult(m));
+      if (next.calories !== cur.calories || next.protein !== cur.protein) return snapMult(m);
+    }
+    return null;
   };
-  let guard = 0;
-  while (totalProtein() < proteinTargetG && guard < 25) {
-    guard++;
-    const used = dayNames();
-    let best: Swap | null = null;
+
+  const bump = (metric: (i: PlanMealItem) => number, score: (p: MealPick) => number): boolean => {
+    const day = dayCal();
+    let best: { pick: MealPick; mult: number } | null = null;
     for (const m of meals) {
-      const calNow = sumCal(m.chosen);
-      for (let xi = 0; xi < m.chosen.length; xi++) {
-        const x = m.chosen[xi];
-        if (m.protectedIds.has(x.id)) continue; // keep the user's usual foods in place
-        for (const y of m.cands) {
-          if (m.chosen.includes(y)) continue;
-          if (used.has(normName(y.name)) ) continue; // already on the plate today
-          if (calNow - x.calories + y.calories > m.budget) continue; // stay under the cap
-          const gain = y.protein - x.protein;
-          if (gain > 0 && (best === null || gain > best.gain)) {
-            best = { meal: m, outIdx: xi, inFood: y, gain };
-          }
-        }
+      const cal = renderedMealCal(m);
+      for (const p of m.picks) {
+        // Supplements stay at ONE serving — the scaler must never decide the
+        // user should drink more whey; food anchors grow instead.
+        if (p.food.tags.includes("supplement")) continue;
+        const mult = nextUsefulMult(p);
+        if (mult == null) continue;
+        const cur = toScaledItem(p.food, p.mult);
+        const next = toScaledItem(p.food, mult);
+        const delta = next.calories - cur.calories;
+        if (metric(next) - metric(cur) <= 0) continue; // no progress on this metric
+        if (cal + delta > m.budget * MEAL_FLEX) continue; // soft per-meal shape
+        if (day + delta > calorieTarget) continue; // HARD day cap
+        if (!best || score(p) > score(best.pick)) best = { pick: p, mult };
       }
     }
-    if (best === null) break;
-    best.meal.chosen[best.outIdx] = best.inFood;
-  }
-}
+    if (!best) return false;
+    best.pick.mult = best.mult;
+    return true;
+  };
 
-/**
- * Day-level calorie top-up (D1). Per-slot filling stops at FILL_TO (95%), so
- * when one slot can't fill well (thin candidates under the user's restrictions)
- * the DAY can land below the ±5% tolerance even though other meals still have
- * headroom under their hard caps. While the day is short, greedily add the
- * largest candidate that still fits SOME meal's remaining budget. Every add
- * stays under that meal's hard cap, so the day still can never exceed the
- * target. Deterministic (largest calories, then id).
- */
-function topUpCalories(meals: BuiltMeal[], calorieTarget: number): void {
-  const total = () => meals.reduce((s, m) => s + sumCal(m.chosen), 0);
   let guard = 0;
-  while (total() < calorieTarget * SHORT_THRESHOLD && guard < 20) {
+  while (dayPro() < proteinTargetG && guard < 80) {
     guard++;
-    const used = new Set<string>();
-    for (const m of meals) for (const f of m.chosen) used.add(normName(f.name));
-    // Prefer foods NOT already on the plate today; only fall back to a repeat
-    // when nothing fresh can close the gap.
-    const findBest = (allowRepeats: boolean): { meal: BuiltMeal; food: CatalogFood } | null => {
-      let best: { meal: BuiltMeal; food: CatalogFood } | null = null;
-      for (const m of meals) {
-        if (m.chosen.length >= MAX_ITEMS[m.slot]) continue;
-        const remaining = m.budget - sumCal(m.chosen);
-        for (const f of m.cands) {
-          if (m.chosen.includes(f) || f.calories > remaining) continue;
-          if (!allowRepeats && used.has(normName(f.name))) continue;
-          if (!best || f.calories > best.food.calories || (f.calories === best.food.calories && f.id < best.food.id)) {
-            best = { meal: m, food: f };
-          }
-        }
-      }
-      return best;
-    };
-    const best = findBest(false) ?? findBest(true);
-    if (!best) break;
-    best.meal.chosen.push(best.food);
+    if (!bump((i) => i.protein, (p) => proteinDensity(p.food))) break;
+  }
+  guard = 0;
+  while (dayCal() < calorieTarget * SHORT_THRESHOLD && guard < 80) {
+    guard++;
+    // Prefer carbs/sides for pure calorie filling (protein already handled).
+    if (!bump((i) => i.calories, (p) => -proteinDensity(p.food))) break;
   }
 }
 
@@ -465,13 +513,44 @@ function slotBudgets(calorieTarget: number): { slot: MealSlot; title: string; ca
   ];
 }
 
-function finalizeMeal(b: { slot: MealSlot; title: string; budget: number; chosen: CatalogFood[] }): PlanMeal {
+/**
+ * A plan item from a catalog food at a portion multiplier. Amounts snap to
+ * real-world units — whole counts (3 eggs, 2 roti) and 5g gram steps — and
+ * always FLOOR, so rendered totals can never exceed what the builder budgeted.
+ */
+function toScaledItem(f: CatalogFood, mult: number): PlanMealItem {
+  const s = catalogSpec(f);
+  const amount =
+    s.unitMode === "count"
+      ? Math.max(1, Math.floor(s.amount * mult))
+      : Math.max(5, Math.floor((s.amount * mult) / 5) * 5);
+  return {
+    id: f.id,
+    name: f.name,
+    portion: f.portion,
+    calories: Math.round(s.baseCalories * amount),
+    protein: Math.round(s.baseProtein * amount),
+    carbs: Math.round(s.baseCarbs * amount),
+    fat: Math.round(s.baseFat * amount),
+    unitMode: s.unitMode,
+    baseCalories: s.baseCalories,
+    baseProtein: s.baseProtein,
+    baseCarbs: s.baseCarbs,
+    baseFat: s.baseFat,
+    amount,
+    servingGrams: s.servingGrams,
+    unit: s.unit,
+  };
+}
+
+function finalizeMeal(b: BuiltMeal): PlanMeal {
+  const items = b.picks.map((p) => toScaledItem(p.food, p.mult));
   return {
     slot: b.slot,
     title: b.title,
-    items: b.chosen.map(toItem),
-    calories: sumCal(b.chosen),
-    protein: sumPro(b.chosen),
+    items,
+    calories: items.reduce((s, i) => s + i.calories, 0),
+    protein: items.reduce((s, i) => s + i.protein, 0),
     budget: b.budget,
   };
 }
@@ -496,28 +575,51 @@ export function buildPlan(input: {
     likeText ? pool.filter((f) => mentioned(f, likeText)).map((f) => f.id) : []
   );
 
-  // Variety: dishes picked by earlier meals carry a penalty in later meals, so
-  // one high-scoring food can't dominate the whole day (lunch AND dinner AND snack).
-  const usedDay = new Set<string>();
+  // Whey/supplements are auto-plannable ONLY when the user's usual diet
+  // mentions them (e.g. "whey shake after gym") — and stay swappable like any
+  // item. Otherwise they never enter a generated plan.
+  const usualAll = [
+    input.usual?.breakfast,
+    input.usual?.lunch,
+    input.usual?.dinner,
+    input.usual?.foods,
+    input.usual?.keep,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   const built: BuiltMeal[] = slotBudgets(input.calorieTarget).map((s) => {
-    const slotProtein = input.proteinTargetG * (input.calorieTarget > 0 ? s.cal / input.calorieTarget : 0);
-    const cands = pool.filter((f) => f.slots.includes(s.slot) && allowedForAutoPlan(f, input.filter));
+    const slotProtein = input.proteinTargetG * PROTEIN_SHARE[s.slot];
+    const cands = pool.filter(
+      (f) =>
+        f.slots.includes(s.slot) &&
+        (allowedForAutoPlan(f, input.filter) ||
+          (f.tags.includes("supplement") && allowed(f, input.filter) && !!usualAll && mentioned(f, usualAll)))
+    );
     // Seed from this slot's usual meal PLUS any "keep" foods (keep applies to
-    // every slot the food fits). Both become protected (never swapped for protein).
+    // every slot the food fits).
     const usualText =
       [usualForSlot(input.usual, s.slot), input.usual?.keep].filter(Boolean).join(" ") || undefined;
-    const chosen = buildMealItems(s.cal, slotProtein, s.slot, cands, rng, usualText, likeIds, usedDay);
-    for (const f of chosen) usedDay.add(normName(f.name));
-    const protectedIds = new Set(
-      usualText ? chosen.filter((f) => mentioned(f, usualText)).map((f) => f.id) : []
-    );
-    return { slot: s.slot, title: s.title, budget: s.cal, cands, chosen, protectedIds };
+    const picks = buildSimpleMeal(s.cal, slotProtein, s.slot, cands, rng, usualText, likeIds);
+    return { slot: s.slot, title: s.title, budget: s.cal, cands, picks };
   });
 
-  improveProtein(built, input.proteinTargetG);
-  // After the protein pass had full freedom to swap, close any remaining
-  // calorie gap so the day lands within the ±5% tolerance whenever possible.
-  topUpCalories(built, input.calorieTarget);
+  // The user's "keep" text applies to every slot, which would put an opted-in
+  // whey shake in several meals. One scoop a day is the sensible read: keep the
+  // FIRST occurrence, drop the rest (still swappable/addable like any item).
+  let supplementSeen = false;
+  for (const m of built) {
+    m.picks = m.picks.filter((p) => {
+      if (!p.food.tags.includes("supplement")) return true;
+      if (supplementSeen) return false;
+      supplementSeen = true;
+      return true;
+    });
+  }
+
+  // Scale portions toward the targets (protein first, then calories) — grow
+  // what's on the plate instead of adding more dishes.
+  scaleDayToTargets(built, input.calorieTarget, input.proteinTargetG);
 
   const meals = built.map(finalizeMeal);
   const totalCalories = meals.reduce((s, m) => s + m.calories, 0);
@@ -542,11 +644,11 @@ export function swapMeal(plan: DietPlan, slot: MealSlot, newSeed: number, pool: 
   const meta = SLOT_META.find((x) => x.slot === slot)!;
   const rng = mulberry32(newSeed);
   const budget = target.budget;
-  const slotProtein = plan.proteinTargetG * (plan.calorieTarget > 0 ? budget / plan.calorieTarget : 0);
+  const slotProtein = plan.proteinTargetG * PROTEIN_SHARE[slot];
   const cands = pool.filter((f) => f.slots.includes(slot) && allowedForAutoPlan(f, plan.filter));
-  const chosen = buildMealItems(budget, slotProtein, slot, cands, rng, undefined, new Set());
+  const picks = buildSimpleMeal(budget, slotProtein, slot, cands, rng, undefined, new Set());
 
-  const meal = finalizeMeal({ slot, title: meta.title, budget, chosen });
+  const meal = finalizeMeal({ slot, title: meta.title, budget, cands, picks });
   const meals = plan.meals.map((m) => (m.slot === slot ? meal : m));
   const totalCalories = meals.reduce((s, m) => s + m.calories, 0);
   const totalProtein = meals.reduce((s, m) => s + m.protein, 0);
@@ -752,11 +854,16 @@ export function swapPlanItem(
   const finalPool = rolePool.length ? rolePool : base(() => true);
   if (finalPool.length === 0) return plan;
 
-  const pick = chooseTop(
-    finalPool,
-    (f) => -Math.abs(f.calories - item.calories) / 10 + proteinDensity(f) * 40,
-    rng
+  // Rotate WIDELY: sort by fit, then let the seed pick anywhere in the top 25
+  // (not always the same best 3) — repeated swaps walk through many options.
+  const sorted = [...finalPool].sort(
+    (a, b) =>
+      -Math.abs(a.calories - item.calories) / 10 + proteinDensity(a) * 40 <
+      -Math.abs(b.calories - item.calories) / 10 + proteinDensity(b) * 40
+        ? 1
+        : -1
   );
+  const pick = sorted[Math.floor(rng() * Math.min(sorted.length, 25))];
   if (!pick) return plan;
   return withMeal(plan, slot, meal.items.map((it, i) => (i === index ? toItem(pick) : it)));
 }
