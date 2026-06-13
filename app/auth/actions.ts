@@ -16,6 +16,16 @@ import { createClient } from "@/lib/supabase/server";
 
 // Map raw Supabase auth errors to friendly, non-technical copy. Unknown errors
 // fall back to a generic line so we never surface internal wording to users.
+// The app's public origin, for building absolute email-link redirects. `origin`
+// is usually absent on server-action POSTs, so we reconstruct it from the host
+// (https everywhere except localhost). Used by every email that links back in.
+async function getOrigin(): Promise<string> {
+  const h = await headers();
+  const host = h.get("host") ?? "";
+  const proto = h.get("x-forwarded-proto") ?? (host.includes("localhost") ? "http" : "https");
+  return h.get("origin") ?? `${proto}://${host}`;
+}
+
 function friendlyAuthError(message: string | undefined): string {
   const m = (message ?? "").toLowerCase();
   if (m.includes("invalid login credentials")) return "Email or password is incorrect.";
@@ -37,7 +47,13 @@ export async function login(formData: FormData) {
   const { error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) {
-    redirect(`/login?error=${encodeURIComponent(friendlyAuthError(error.message))}`);
+    const friendly = friendlyAuthError(error.message);
+    // An unconfirmed email is a recoverable dead-end — pass it back so the login
+    // page can offer a one-tap "resend confirmation".
+    if ((error.message ?? "").toLowerCase().includes("email not confirmed")) {
+      redirect(`/login?error=${encodeURIComponent(friendly)}&unconfirmed=${encodeURIComponent(email)}`);
+    }
+    redirect(`/login?error=${encodeURIComponent(friendly)}`);
   }
 
   // Clear any cached render that assumed "logged out", then go to dashboard.
@@ -50,20 +66,31 @@ export async function signup(formData: FormData) {
   const password = String(formData.get("password"));
 
   const supabase = await createClient();
-  const { data, error } = await supabase.auth.signUp({ email, password });
+  // emailRedirectTo points the confirmation link at our callback (which
+  // exchanges the code/verifies the token and signs the user in). WITHOUT this,
+  // Supabase falls back to the project Site URL — the link lands on "/" which
+  // can't process it, so confirmation silently fails. The URL must also be in
+  // Supabase → Auth → URL Configuration → Redirect URLs.
+  const origin = await getOrigin();
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: { emailRedirectTo: `${origin}/auth/callback?next=/dashboard` },
+  });
 
   if (error) {
     redirect(`/signup?error=${encodeURIComponent(friendlyAuthError(error.message))}`);
   }
 
   // If "Confirm email" is ON in Supabase, signUp returns no session — the user
-  // must click the email link first. If it's OFF, we get a session immediately.
-  // Keep the message neutral (don't claim a new account was made — the same
-  // no-session response also occurs for an already-registered email).
+  // must click the email link first (the callback then signs them in). If it's
+  // OFF, we get a session immediately. Keep the message neutral (don't claim a
+  // new account was made — the same no-session response also occurs for an
+  // already-registered email).
   if (!data.session) {
     redirect(
       `/login?message=${encodeURIComponent(
-        "Almost there — check your inbox to confirm your email, then log in."
+        "Almost there — open the link in your inbox (check spam too) to confirm your email."
       )}`
     );
   }
@@ -90,10 +117,7 @@ export async function requestPasswordReset(formData: FormData) {
   const email = String(formData.get("email")).trim();
 
   const supabase = await createClient();
-  const h = await headers();
-  const host = h.get("host") ?? "";
-  const proto = h.get("x-forwarded-proto") ?? (host.includes("localhost") ? "http" : "https");
-  const origin = h.get("origin") ?? `${proto}://${host}`;
+  const origin = await getOrigin();
 
   await supabase.auth.resetPasswordForEmail(email, {
     redirectTo: `${origin}/auth/callback?next=/reset-password`,
@@ -102,6 +126,31 @@ export async function requestPasswordReset(formData: FormData) {
   redirect(
     `/forgot-password?message=${encodeURIComponent(
       "If that email is registered, a reset link is on its way. Check your inbox."
+    )}`
+  );
+}
+
+/**
+ * Resend the signup confirmation email — the recovery path for a lost/expired
+ * link. Same emailRedirectTo as signup so the new link behaves identically.
+ * Neutral message regardless of outcome (no account enumeration).
+ */
+export async function resendConfirmation(formData: FormData) {
+  const email = String(formData.get("email")).trim();
+
+  if (email) {
+    const supabase = await createClient();
+    const origin = await getOrigin();
+    await supabase.auth.resend({
+      type: "signup",
+      email,
+      options: { emailRedirectTo: `${origin}/auth/callback?next=/dashboard` },
+    });
+  }
+
+  redirect(
+    `/login?message=${encodeURIComponent(
+      "If that email needs confirming, a new link is on its way. Check your inbox (and spam)."
     )}`
   );
 }
