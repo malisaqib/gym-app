@@ -21,8 +21,8 @@ export default async function DashboardPage({
 }: {
   searchParams: Promise<{ tour?: string }>;
 }) {
-  // `?tour=1` (set by the onboarding finale and the Settings "replay" link)
-  // forces the feature walkthrough even if its first-visit flag is already set.
+  // `?tour=1` — set once by the onboarding finale, or via Settings "Replay tour".
+  // Regular logins land on `/dashboard` without it, so the walkthrough won't repeat.
   const { tour } = await searchParams;
   const supabase = await createClient();
   const {
@@ -103,8 +103,7 @@ export default async function DashboardPage({
       <BottomNav />
       {/* Wipe device-local coach data if a different user is on this device. */}
       <LocalDataGuard userId={user.id} />
-      {/* Skippable feature walkthrough — auto on first visit, or forced by
-          ?tour=1 (post-onboarding finale + Settings "replay"). */}
+      {/* Feature walkthrough — only when ?tour=1 (post-onboarding or Settings replay). */}
       <IntroTour lang={lang} forceTour={tour === "1"} />
     </div>
   );

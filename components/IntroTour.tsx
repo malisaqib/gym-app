@@ -19,11 +19,13 @@ import { haptic } from "@/lib/haptics";
 import type { Lang } from "@/lib/database.types";
 
 /**
- * Skippable feature walkthrough shown once after onboarding (or replayed from
- * Settings / forced via ?tour=1). A welcome frame, one card per bottom-tab that
- * explains WHAT it does and WHY it helps, then a closing "you're set" card.
- * Purely informational — no app logic. The mini tab strip mirrors the real nav
- * and highlights the tab each step describes.
+ * Skippable feature walkthrough — shown ONLY when explicitly launched:
+ *   • once after onboarding (`/dashboard?tour=1` from the onboarding finale)
+ *   • when the user taps "Replay app tour" in Settings (same param)
+ *
+ * It does NOT auto-open on every login or first dashboard visit; that was
+ * confusing returning users who hadn't dismissed the overlay yet.
+ * Purely informational. The mini tab strip mirrors the real bottom nav.
  */
 
 const SEEN_KEY = "gymCoach.hasSeenIntro";
@@ -116,14 +118,9 @@ export default function IntroTour({ lang, forceTour = false }: { lang: Lang; for
   const [step, setStep] = useState(0);
   const [open, setOpen] = useState(false);
 
-  // Open on the very first visit, OR whenever forced (post-onboarding / replay).
+  // Only open when the URL (or Settings link) passes ?tour=1 — not on every login.
   useEffect(() => {
-    try {
-      if (forceTour || !localStorage.getItem(SEEN_KEY)) setOpen(true);
-    } catch {
-      // localStorage unavailable (private mode) — still honor a forced tour.
-      if (forceTour) setOpen(true);
-    }
+    if (forceTour) setOpen(true);
   }, [forceTour]);
 
   function dismiss() {
