@@ -433,7 +433,7 @@ export default function FoodLogger({
     <motion.div variants={listContainer} initial="hidden" animate="show" className="flex flex-col gap-7">
       {/* Current-week date strip (visual only). */}
       <motion.div variants={fadeUp}>
-        <WeekStrip />
+        <WeekStrip today={today} />
       </motion.div>
 
       {/* Hero: two separate rings — calories and protein, side by side. */}

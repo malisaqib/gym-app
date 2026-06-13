@@ -42,6 +42,10 @@ export default function Onboarding({ initialLang }: { initialLang: Lang }) {
   const [eating, setEating] = useState<Record<string, string>>({}); // the "eating" multi-field step
   const [inputError, setInputError] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>("asking");
+  // Staged exit after the results: let the numbers BREATHE (~6s or button tap),
+  // then a clear "taking you to your dashboard" beat, then navigate — never an
+  // abrupt yank off the screen.
+  const [redirecting, setRedirecting] = useState(false);
   const [plan, setPlan] = useState<GoalPlan | null>(null);
   const [targetDate, setTargetDate] = useState<string | null>(null);
   const [goalWeightKg, setGoalWeightKg] = useState<number | null>(null);
@@ -135,6 +139,22 @@ export default function Onboarding({ initialLang }: { initialLang: Lang }) {
       }
     }
   }, [status]);
+
+  // Results stay readable for a comfortable beat, then the redirect stage
+  // begins automatically (the button skips straight to it).
+  useEffect(() => {
+    if (status !== "done" || redirecting) return;
+    const t = setTimeout(() => setRedirecting(true), 6000);
+    return () => clearTimeout(t);
+  }, [status, redirecting]);
+
+  // The redirect stage shows its animation briefly, THEN navigates — the user
+  // always sees where they're being taken.
+  useEffect(() => {
+    if (!redirecting) return;
+    const t = setTimeout(() => router.push("/dashboard"), 1400);
+    return () => clearTimeout(t);
+  }, [redirecting, router]);
 
   // Record an answer for the current step, then advance or submit.
   function recordAnswer(value: AnswerValue, message: string) {
@@ -319,6 +339,24 @@ export default function Onboarding({ initialLang }: { initialLang: Lang }) {
           </BotBubble>
         )}
 
+        {/* The exit beat: an explicit, animated "taking you to your dashboard"
+            message — the numbers above stay visible while it plays. */}
+        {redirecting && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex items-center gap-2 self-start rounded-card-lg border border-border bg-card px-4 py-3 text-sm text-muted-foreground"
+          >
+            <motion.span
+              aria-hidden
+              className="inline-block h-3.5 w-3.5 rounded-full border-2 border-primary border-t-transparent"
+              animate={{ rotate: 360 }}
+              transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }}
+            />
+            {tr(UI.redirecting)}
+          </motion.div>
+        )}
+
         {status === "error" && <BotBubble>{submitError ?? tr(UI.genericError)}</BotBubble>}
       </div>
 
@@ -452,8 +490,12 @@ export default function Onboarding({ initialLang }: { initialLang: Lang }) {
         )}
 
         {status === "done" && (
-          <PrimaryButton onClick={() => router.push("/dashboard")} className="w-full">
-            {tr(UI.goToDashboard)}
+          <PrimaryButton
+            onClick={() => setRedirecting(true)} // joins the staged exit (animation → navigate)
+            disabled={redirecting}
+            className="w-full"
+          >
+            {redirecting ? tr(UI.redirecting) : tr(UI.goToDashboard)}
           </PrimaryButton>
         )}
 

@@ -313,6 +313,10 @@ export const UI: Record<string, Localized> = {
     roman_urdu: "Ye ek lambi-muddat ka goal hai — agle chand hafton par focus karein, hum saath saath adjust karte rahenge.",
   },
   goToDashboard: { en: "See my dashboard", roman_urdu: "Mera dashboard dekhein" },
+  redirecting: {
+    en: "Taking you to your dashboard…",
+    roman_urdu: "Aap ko dashboard par le ja rahe hain…",
+  },
   genericError: {
     en: "Something went wrong saving your answers. Please try again.",
     roman_urdu: "Aap ke jawabat save karne mein masla hua. Dobara koshish karein.",

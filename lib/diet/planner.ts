@@ -224,7 +224,13 @@ function catalogSpec(f: CatalogFood): ItemQtySpec {
   }
   const lead = f.portion.match(/^(\d+)/);
   const count = lead ? Math.max(1, Number(lead[1])) : 1;
-  const noun = f.portion.replace(/^\d+\s*/, "").split(/[\s(]/)[0] || "";
+  let noun = f.portion.replace(/^\d+\s*/, "").split(/[\s(]/)[0] || "";
+  // Size adjectives make terrible units ("3 medium" for roti) — fall back to
+  // the food name's last word ("roti", "potato", "paratha") for the label.
+  if (/^(medium|large|small|stuffed)$/i.test(noun)) {
+    const fromName = f.name.toLowerCase().replace(/\(.*?\)/g, "").trim().split(/\s+/).at(-1) ?? "";
+    if (fromName.length >= 3) noun = fromName;
+  }
   return {
     unitMode: "count",
     servingGrams: null,

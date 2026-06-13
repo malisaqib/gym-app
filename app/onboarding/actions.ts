@@ -1,6 +1,5 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { buildGoalPlan, paceFromTimeline, targetDateFrom, type GoalPlan } from "@/lib/nutrition/goalPlan";
 import { getLocalToday } from "@/lib/date";
@@ -133,7 +132,11 @@ export async function saveOnboarding(input: OnboardingInput): Promise<SaveResult
     direction: plan.direction,
   });
 
-  // The dashboard reads the profile, so refresh its cached render.
-  revalidatePath("/dashboard");
+  // NOTE: deliberately NO revalidatePath here. Any revalidate inside a server
+  // action purges the client Router Cache and re-fetches the CURRENT route —
+  // /onboarding's gate then sees onboarded=true and its redirect("/dashboard")
+  // yanks the user off the results screen mid-read (the "glitch"). The
+  // dashboard was never visited/cached this session, so the post-results
+  // navigation fetches it fresh anyway.
   return { ok: true, plan, targetDate, goalWeightKg, guidance };
 }
