@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Zorfit logo">
+  <!-- Brand: emerald (#36A87B, the app's primary in the deep-black theme).
+       Solid fill so Instagram's circular crop stays seamless; rounded corners
+       for when it's used as a square app icon. White dumbbell, centered with
+       generous padding so nothing is cut by a circular mask. -->
+  <rect width="512" height="512" rx="112" fill="#36A87B"/>
+  <g fill="#ffffff">
+    <!-- handle / bar -->
+    <rect x="196" y="238" width="120" height="36" rx="18"/>
+    <!-- inner weights -->
+    <rect x="150" y="186" width="48" height="140" rx="22"/>
+    <rect x="314" y="186" width="48" height="140" rx="22"/>
+    <!-- outer end caps -->
+    <rect x="120" y="210" width="28" height="92" rx="14"/>
+    <rect x="364" y="210" width="28" height="92" rx="14"/>
+  </g>
+</svg>
