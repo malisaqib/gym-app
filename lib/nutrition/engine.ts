@@ -78,8 +78,12 @@ const DEFAULT_PACE_KG: Record<Goal, number> = {
   gain_muscle: 0.25, // slow lean gain (~250 kcal/day) — beginners shouldn't bulk hard
 };
 
-// Protein per kg of bodyweight per goal. Higher in a deficit to protect muscle.
-const GOAL_PROTEIN_PER_KG: Record<Goal, number> = {
+// Protein per kg of bodyweight per goal. Higher in a deficit to protect muscle
+// (within the accepted 1.6–2.2 g/kg band). Exported so goalPlan's macro split
+// uses the SAME table — one source for protein math.
+// Targets and safety caps should be reviewed by a qualified dietitian before
+// public launch.
+export const GOAL_PROTEIN_PER_KG: Record<Goal, number> = {
   lose_fat: 2.0,
   maintain: 1.6,
   gain_muscle: 1.8,

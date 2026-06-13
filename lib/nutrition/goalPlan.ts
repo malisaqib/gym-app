@@ -1,5 +1,5 @@
 import type { ActivityLevel, Goal, Sex } from "@/lib/database.types";
-import { calculateCalorieTarget } from "./engine.ts";
+import { calculateCalorieTarget, GOAL_PROTEIN_PER_KG } from "./engine.ts";
 
 /**
  * Target-weight goal planning (Phase 2).
@@ -51,7 +51,6 @@ const MAINTAIN_DEADBAND_KG = 1.0; // within this of the goal => just maintain
 const MAX_LOSS_PACE_KG = 0.75; // hard weekly loss cap (also enforced in engine)
 const MAX_LOSS_BODYWEIGHT_PCT = 0.01; // ...and never more than 1% of bodyweight/week
 const MAX_GAIN_PACE_KG = 0.5; // keep gains slow/lean
-const PROTEIN_PER_KG = 1.6; // simple, sensible (Phase 2 spec)
 const FAT_PCT_OF_CALORIES = 0.275; // ~27.5% from fat (healthy 20–35% band), rest carbs
 
 const DIRECTION_TO_GOAL: Record<GoalDirection, Goal> = {
@@ -86,14 +85,19 @@ export function recommendedPaceMagnitude(direction: GoalDirection, currentKg: nu
 
 /**
  * Split a daily calorie target into protein/carb/fat grams.
- * Protein is bodyweight-based; fat is a % of calories; carbs take the rest.
- * (This logic is mirrored in the SQL backfill in migration 0009 — keep in sync.)
+ * Protein is bodyweight-based AND direction-aware (the engine's shared table:
+ * 2.0 g/kg in a deficit to preserve muscle, 1.6 maintain, 1.8 lean gain);
+ * fat is a % of calories; carbs take the rest.
+ * Targets and safety caps should be reviewed by a qualified dietitian before
+ * public launch. (The SQL backfill in migration 0009 used the old flat 1.6 —
+ * profiles refresh to the direction-aware number on their next recompute.)
  */
 export function splitMacros(
   calorieTarget: number,
-  currentWeightKg: number
+  currentWeightKg: number,
+  goal: Goal = "maintain"
 ): { proteinG: number; carbG: number; fatG: number } {
-  const proteinG = round5(currentWeightKg * PROTEIN_PER_KG);
+  const proteinG = round5(currentWeightKg * GOAL_PROTEIN_PER_KG[goal]);
   const proteinKcal = proteinG * 4;
   const fatKcal = Math.round(calorieTarget * FAT_PCT_OF_CALORIES);
   const fatG = Math.max(0, Math.round(fatKcal / 9));
@@ -129,7 +133,7 @@ export function buildGoalPlan(input: GoalPlanInput): GoalPlan {
     weeklyPaceKg: signed,
   });
 
-  const { proteinG, carbG, fatG } = splitMacros(calorieTarget, input.currentWeightKg);
+  const { proteinG, carbG, fatG } = splitMacros(calorieTarget, input.currentWeightKg, goal);
 
   // Estimated timeline from the (capped) pace.
   const totalChangeKg =

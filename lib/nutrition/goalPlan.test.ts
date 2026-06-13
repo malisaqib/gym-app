@@ -46,7 +46,7 @@ test("loss plan (70 -> 64, recommended) matches the engine + 12-week timeline", 
   assert.equal(plan.weeklyPaceKg, -0.5);
   assert.equal(plan.paceCapped, false);
   assert.equal(plan.calorieTarget, 2100); // TDEE 2604 - 500
-  assert.equal(plan.proteinTargetG, 110); // 70 * 1.6 = 112 -> 110
+  assert.equal(plan.proteinTargetG, 140); // deficit: 70 * 2.0 = 140 (muscle-preserving)
   assert.equal(plan.weeksToGoal, 12); // 6kg / 0.5
   assert.equal(plan.totalChangeKg, 6);
 });
@@ -109,4 +109,57 @@ test("targetDateFrom adds weeks*7 days (UTC), null when maintaining", () => {
   assert.equal(targetDateFrom("2026-06-06", 12), "2026-08-29"); // +84 days
   assert.equal(targetDateFrom("2026-06-06", null), null);
   assert.equal(targetDateFrom("2026-06-06", 0), null);
+});
+
+// --- Phase 1 (diet rebuild): safety-cap behaviour pinned end-to-end ----------
+
+test("80kg→60kg in 2 months: rate capped, safe deficit above floor, honest realistic timeline", () => {
+  // Required rate would be 20kg / ~8 weeks = 2.5 kg/wk — far beyond safe.
+  const pace = paceFromTimeline("8_weeks", 80, 60);
+  assert.equal(pace, 2.5);
+
+  const plan = buildGoalPlan({
+    sex: "male",
+    age: 30,
+    heightCm: 175,
+    currentWeightKg: 80,
+    goalWeightKg: 60,
+    activityLevel: "light",
+    pace,
+  });
+  // HARD CAP: min(0.75, 1% of 80 = 0.8) → 0.75 kg/wk, and the user is told.
+  assert.equal(plan.weeklyPaceKg, -0.75);
+  assert.equal(plan.paceCapped, true);
+  // Deficit derived from the SAFE pace (−750/day), never below the male floor.
+  assert.ok(plan.calorieTarget >= 1500, `below floor: ${plan.calorieTarget}`);
+  assert.ok(plan.calorieTarget <= 2000, `not a real deficit: ${plan.calorieTarget}`);
+  // Honest realistic timeline FROM the capped pace: ceil(20 / 0.75) = 27 weeks.
+  assert.equal(plan.weeksToGoal, 27);
+  // Deficit protein leans high to preserve muscle: 80 × 2.0 = 160 g.
+  assert.equal(plan.proteinTargetG, 160);
+});
+
+test("80kg→74kg in 3 months: reasonable goal computes normally (no cap)", () => {
+  const pace = paceFromTimeline("12_weeks", 80, 74); // 6kg/12wk = 0.5 kg/wk
+  assert.equal(pace, 0.5);
+  const plan = buildGoalPlan({
+    sex: "male",
+    age: 30,
+    heightCm: 175,
+    currentWeightKg: 80,
+    goalWeightKg: 74,
+    activityLevel: "light",
+    pace,
+  });
+  assert.equal(plan.paceCapped, false);
+  assert.equal(plan.weeklyPaceKg, -0.5);
+  assert.equal(plan.weeksToGoal, 12);
+  assert.equal(plan.proteinTargetG, 160); // still a deficit → 2.0 g/kg
+});
+
+test("protein is direction-aware: 2.0 g/kg deficit, 1.6 maintain, 1.8 gain", () => {
+  const base = { sex: "male" as const, age: 30, heightCm: 175, currentWeightKg: 80, activityLevel: "light" as const, pace: "recommended" as const };
+  assert.equal(buildGoalPlan({ ...base, goalWeightKg: 70 }).proteinTargetG, 160); // 80×2.0
+  assert.equal(buildGoalPlan({ ...base, goalWeightKg: 80 }).proteinTargetG, 130); // 80×1.6 → round5
+  assert.equal(buildGoalPlan({ ...base, goalWeightKg: 88 }).proteinTargetG, 145); // 80×1.8 → round5
 });

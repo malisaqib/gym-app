@@ -71,6 +71,9 @@ type Result =
       carbTargetG: number;
       fatTargetG: number;
       targetDate: string | null;
+      // True when the requested timeline needed a faster-than-safe pace and we
+      // eased it (the returned targetDate is the SAFE, realistic one).
+      paceCapped: boolean;
     }
   | { ok: false; error: string };
 
@@ -161,5 +164,6 @@ export async function updateProfile(input: ProfileEditInput): Promise<Result> {
     carbTargetG: plan.carbTargetG,
     fatTargetG: plan.fatTargetG,
     targetDate,
+    paceCapped: plan.paceCapped,
   };
 }

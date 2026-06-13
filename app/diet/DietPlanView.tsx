@@ -91,6 +91,11 @@ const T = {
   swap: { en: "Swap", roman_urdu: "Badlein" },
   logMeal: { en: "Log meal", roman_urdu: "Meal log karein" },
   mealLogged: { en: "Added to Today ✓", roman_urdu: "Aaj mein add ho gaya ✓" },
+  paceLine: {
+    en: "Built for a safe {pace} kg/week — on track for {goal} kg{date}.",
+    roman_urdu: "Mehfooz raftaar {pace} kg/hafta ke liye bana — {goal} kg ki taraf{date}.",
+  },
+  paceBy: { en: " around {d}", roman_urdu: " takriban {d} tak" },
   remove: { en: "Remove", roman_urdu: "Hatayein" },
   report: { en: "Report issue", roman_urdu: "Issue report karein" },
   adjust: { en: "Adjust amount", roman_urdu: "Miqdar adjust karein" },
@@ -135,18 +140,42 @@ const SLOT_LABEL: Record<MealSlot, Record<Lang, string>> = {
   snack: { en: "Snack", roman_urdu: "Snack" },
 };
 
+export interface PaceInfo {
+  goalWeightKg: number;
+  weeklyPaceKg: number; // signed, already safety-capped at compute time
+  targetDate: string | null;
+}
+
+// "Built for a safe 0.75 kg/week — on track for 60 kg around 15 Dec 2026."
+function fillPaceLine(template: string, info: PaceInfo, lang: Lang): string {
+  const pace = String(Math.round(Math.abs(info.weeklyPaceKg) * 100) / 100);
+  const date = info.targetDate
+    ? T.paceBy[lang].replace(
+        "{d}",
+        new Date(`${info.targetDate}T00:00:00`).toLocaleDateString(undefined, {
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        })
+      )
+    : "";
+  return template.replace("{pace}", pace).replace("{goal}", String(info.goalWeightKg)).replace("{date}", date);
+}
+
 export default function DietPlanView({
   initialPlan,
   initialFilter,
   initialUsual,
   hasTargets,
   lang,
+  paceInfo = null,
 }: {
   initialPlan: DietPlan | null;
   initialFilter: DietFilter;
   initialUsual: UsualEating;
   hasTargets: boolean;
   lang: Lang;
+  paceInfo?: PaceInfo | null;
 }) {
   const t = (k: keyof typeof T) => T[k][lang];
 
@@ -500,6 +529,13 @@ export default function DietPlanView({
       <div className="space-y-1">
         <h1 className="font-display text-2xl font-semibold text-foreground">{t("title")}</h1>
         <p className="text-sm text-muted-foreground">{t("intro")}</p>
+        {/* Safe-pace context: the stored pace is the safety-capped one and the
+            date was computed FROM it — the honest, supportive timeline. */}
+        {paceInfo && paceInfo.weeklyPaceKg !== 0 && (
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            {fillPaceLine(t("paceLine"), paceInfo, lang)}
+          </p>
+        )}
       </div>
 
       {/* Phase 2 — build WITH the user: capture real meals to seed the plan. */}

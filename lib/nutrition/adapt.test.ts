@@ -20,7 +20,7 @@ const profile: AdaptProfile = {
 test("recomputePlan rebuilds targets from the new weight (protein scales)", () => {
   const plan = recomputePlan(profile, 68)!;
   assert.equal(plan.direction, "lose");
-  assert.equal(plan.proteinTargetG, 110); // 68 * 1.6 = 108.8 -> 110
+  assert.equal(plan.proteinTargetG, 135); // deficit: 68 * 2.0 = 136 -> 135 (round5)
   // weeks shrink as you get closer: 4kg / 0.5 = 8
   assert.equal(plan.weeksToGoal, 8);
 });

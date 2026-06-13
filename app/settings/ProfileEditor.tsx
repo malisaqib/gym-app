@@ -155,7 +155,13 @@ export default function ProfileEditor({ initial }: { initial: ProfileDetails }) 
         return;
       }
       haptic("success");
-      toast.success("Profile updated");
+      // Supportive, not alarming: the timeline was eased to a safe pace and the
+      // shown date is the realistic one.
+      if (res.paceCapped) {
+        toast.success("Saved — I set a safe pace for that goal; your date reflects it.");
+      } else {
+        toast.success("Profile updated");
+      }
       setDetails({
         ...draft,
         calorieTarget: res.calorieTarget,
