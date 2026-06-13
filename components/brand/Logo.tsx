@@ -1,9 +1,10 @@
 import { cn } from "@/lib/cn";
-import { BOLT_PATH, BRAND } from "@/lib/brand/mark";
 
 /**
- * The Zorfit mark — emerald lightning-bolt "Z" on true black. Pure SVG so it
- * stays razor-sharp at any size and matches the generated app icons in /public.
+ * The Zorfit mark — a black negative-space "Z" on an emerald squircle. Pure SVG
+ * so it stays razor-sharp at any size and always matches the brand color exactly
+ * (kept in lockstep with the generated app icons in /public). The Z is a
+ * geometric stroke, not text, so it needs no font.
  */
 export function LogoMark({
   size = 32,
@@ -23,23 +24,15 @@ export function LogoMark({
       role="img"
       aria-label={title}
     >
-      <defs>
-        <linearGradient id="zorfit-bolt" x1="0.2" y1="0" x2="0.8" y2="1">
-          <stop offset="0" stopColor={BRAND.emeraldLight} />
-          <stop offset="1" stopColor={BRAND.emeraldDark} />
-        </linearGradient>
-        <filter id="zorfit-edge" x="-8%" y="-8%" width="116%" height="116%">
-          <feDropShadow
-            dx="3"
-            dy="2"
-            stdDeviation="0.5"
-            floodColor={BRAND.amber}
-            floodOpacity="0.85"
-          />
-        </filter>
-      </defs>
-      <rect width="512" height="512" rx="114" fill={BRAND.black} />
-      <path d={BOLT_PATH} fill="url(#zorfit-bolt)" filter="url(#zorfit-edge)" />
+      <rect width="512" height="512" rx="114" fill="#2DE28E" />
+      <path
+        d="M158 172 H354 L158 340 H354"
+        fill="none"
+        stroke="#000000"
+        strokeWidth="52"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
