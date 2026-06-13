@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { login, resendConfirmation } from "@/app/auth/actions";
 import { SubmitButton } from "@/app/auth/SubmitButton";
 import { FadeIn } from "@/components/ui/FadeIn";
+import { LogoMark } from "@/components/brand/Logo";
 
 // In Next.js 15, searchParams is a Promise and must be awaited.
 export default async function LoginPage({
@@ -24,6 +25,7 @@ export default async function LoginPage({
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-12">
       <FadeIn className="flex flex-col gap-6">
       <div className="space-y-1 text-center">
+        <LogoMark size={56} className="mx-auto mb-2 rounded-[22%] shadow-soft" title="Zorfit logo" />
         <h1 className="font-display text-2xl font-semibold text-foreground">Log in</h1>
         <p className="text-sm text-muted-foreground">Welcome back.</p>
       </div>

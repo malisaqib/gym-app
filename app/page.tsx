@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { LogoMark } from "@/components/brand/Logo";
 
 // Public landing page at "/". Signed-in users skip straight to the app.
 export default async function Home() {
@@ -13,6 +14,9 @@ export default async function Home() {
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-8 px-6 py-12">
       <div className="space-y-3 text-center">
+        {/* App logo (vector). The matching raster icons in /public are generated
+            from the same mark via scripts/gen-icons.ts. */}
+        <LogoMark size={88} className="mx-auto rounded-[22%] shadow-elevated" title="Zorfit logo" />
         <h1 className="font-display text-3xl font-semibold tracking-tight text-foreground">
           Zorfit
         </h1>
