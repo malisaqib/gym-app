@@ -78,7 +78,7 @@ export default function WorkoutLogger({
   return (
     // Phase 2: Workout adopts the Apple-Fitness deep-black theme (scoped).
     <div className="fitness min-h-screen bg-background">
-      <main className="mx-auto flex min-h-screen max-w-md flex-col gap-6 px-4 pb-28 pt-8">
+      <main className="mx-auto flex min-h-screen max-w-md flex-col gap-6 px-4 pb-28 pt-[calc(2rem+env(safe-area-inset-top,0px))]">
         <div>
           <p className="stat-label">Train</p>
           <h1 className="mt-1 font-display text-[2rem] font-bold leading-tight tracking-tight text-foreground">Workout</h1>

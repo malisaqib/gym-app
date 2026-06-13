@@ -48,7 +48,7 @@ export default function CoachDashboard({ lang, name }: { lang: Lang; name: strin
 
   return (
     <>
-      <main className="mx-auto flex min-h-screen max-w-md flex-col gap-5 px-4 pb-28 pt-8">
+      <main className="mx-auto flex min-h-screen max-w-md flex-col gap-5 px-4 pb-28 pt-[calc(2rem+env(safe-area-inset-top,0px))]">
         <motion.div variants={listContainer} initial="hidden" animate="show" className="flex flex-col gap-5">
           <motion.div variants={listItem}>
             <Card className="p-5">
