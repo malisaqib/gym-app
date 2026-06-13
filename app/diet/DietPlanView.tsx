@@ -146,6 +146,15 @@ export interface PaceInfo {
   targetDate: string | null;
 }
 
+// The quantity the item is ACTUALLY scaled to ("410 g", "3 eggs") — the static
+// catalog portion label would mislead once the generator scales portions.
+// Falls back to the portion text for legacy/custom items without qty fields.
+function itemQtyLabel(item: PlanMealItem): string {
+  if (item.unitMode === "portion" && item.amount) return `${item.amount} g`;
+  if (item.unitMode === "count" && item.amount) return `${item.amount} ${item.unit || ""}`.trim();
+  return item.portion;
+}
+
 // "Built for a safe 0.75 kg/week — on track for 60 kg around 15 Dec 2026."
 function fillPaceLine(template: string, info: PaceInfo, lang: Lang): string {
   const pace = String(Math.round(Math.abs(info.weeklyPaceKg) * 100) / 100);
@@ -769,7 +778,7 @@ export default function DietPlanView({
                               >
                                 <span className="block truncate text-sm text-foreground">
                                   {item.name}
-                                  <span className="ml-1.5 text-xs text-muted-foreground">{item.portion}</span>
+                                  <span className="ml-1.5 text-xs text-muted-foreground">{itemQtyLabel(item)}</span>
                                   {item.approx && (
                                     <span className="ml-1.5 rounded-pill bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
                                       {t("estBadge")}

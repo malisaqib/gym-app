@@ -309,12 +309,21 @@ const mealPro = (picks: MealPick[]) => picks.reduce((s, p) => s + pickPro(p), 0)
 const snapMult = (m: number) => Math.round(m / MULT_STEP) * MULT_STEP;
 const clampMult = (m: number) => Math.min(MULT_MAX, Math.max(MULT_MIN, snapMult(m)));
 
-/** Largest multiplier (≥ MULT_MIN) of `f` that keeps the meal within `budget`, or null. */
-function maxAffordableMult(f: CatalogFood, calSoFar: number, budget: number): number | null {
-  if (f.calories <= 0) return 1;
-  const m = Math.floor((budget - calSoFar) / f.calories / MULT_STEP) * MULT_STEP;
-  if (m < MULT_MIN) return null;
-  return Math.min(m, MULT_MAX);
+/**
+ * Largest multiplier ≤ `desired` whose RENDERED calories (whole counts, 5g
+ * steps — count foods round UP to at least one unit) keep the meal within
+ * `budget`; null when even the smallest rendering doesn't fit. Sizing by
+ * planned multipliers instead let a 0.5× roti render as a whole roti and
+ * push a 1200-kcal day to 1305.
+ */
+function fitRenderedMult(f: CatalogFood, calSoFar: number, budget: number, desired: number): number | null {
+  if (f.calories <= 0) return Math.min(MULT_MAX, Math.max(MULT_MIN, snapMult(desired)));
+  const top = Math.min(MULT_MAX, Math.max(MULT_MIN, snapMult(desired)));
+  for (let m = top; m >= MULT_MIN - 1e-9; m -= MULT_STEP) {
+    const mult = snapMult(m);
+    if (calSoFar + toScaledItem(f, mult).calories <= budget) return mult;
+  }
+  return null;
 }
 
 function buildSimpleMeal(
@@ -327,7 +336,9 @@ function buildSimpleMeal(
   likeIds: Set<string>
 ): MealPick[] {
   const picks: MealPick[] = [];
-  const calSoFar = () => mealCal(picks);
+  // RENDERED calories so far — counts round to whole units, grams to 5g steps;
+  // sizing must see what the user will actually see.
+  const calSoFar = () => picks.reduce((s, p) => s + toScaledItem(p.food, p.mult).calories, 0);
   const has = (f: CatalogFood) => picks.some((p) => p.food.id === f.id);
   const likeBonus = (f: CatalogFood) => (likeIds.has(f.id) ? 8 : 0);
 
@@ -339,8 +350,9 @@ function buildSimpleMeal(
       .sort((a, b) => b.protein - a.protein || a.id.localeCompare(b.id))
       .slice(0, 3);
     for (const s of seeds) {
-      const m = maxAffordableMult(s, calSoFar(), budget);
-      if (m != null && !has(s)) picks.push({ food: s, mult: Math.min(1, m), isProtected: true });
+      if (has(s)) continue;
+      const m = fitRenderedMult(s, calSoFar(), budget, 1);
+      if (m != null) picks.push({ food: s, mult: m, isProtected: true });
     }
   }
 
@@ -355,8 +367,8 @@ function buildSimpleMeal(
         4
       );
       if (fruit) {
-        const m = maxAffordableMult(fruit, calSoFar(), budget);
-        if (m != null) picks.push({ food: fruit, mult: Math.min(2, m), isProtected: false });
+        const m = fitRenderedMult(fruit, calSoFar(), budget, 2);
+        if (m != null) picks.push({ food: fruit, mult: m, isProtected: false });
       }
     }
     return picks;
@@ -377,8 +389,8 @@ function buildSimpleMeal(
       const need = Math.max(0, slotProtein - mealPro(picks));
       const ideal = anchor.protein > 0 ? clampMult(need / anchor.protein) : 1;
       // Leave ~20% of the budget for the carb base.
-      const cap = maxAffordableMult(anchor, calSoFar(), budget * 0.8);
-      if (cap != null) picks.push({ food: anchor, mult: Math.min(ideal, cap), isProtected: false });
+      const m = fitRenderedMult(anchor, calSoFar(), budget * 0.8, ideal);
+      if (m != null) picks.push({ food: anchor, mult: m, isProtected: false });
     }
   }
 
@@ -395,8 +407,8 @@ function buildSimpleMeal(
     if (base) {
       const remaining = budget - calSoFar();
       const ideal = base.calories > 0 ? clampMult((remaining * 0.95) / base.calories) : 1;
-      const cap = maxAffordableMult(base, calSoFar(), budget);
-      if (cap != null) picks.push({ food: base, mult: Math.min(ideal, cap), isProtected: false });
+      const m = fitRenderedMult(base, calSoFar(), budget, ideal);
+      if (m != null) picks.push({ food: base, mult: m, isProtected: false });
     }
   }
 
@@ -410,8 +422,8 @@ function buildSimpleMeal(
       4
     );
     if (side) {
-      const m = maxAffordableMult(side, calSoFar(), budget);
-      if (m != null) picks.push({ food: side, mult: Math.min(1.5, m), isProtected: false });
+      const m = fitRenderedMult(side, calSoFar(), budget, 1.5);
+      if (m != null) picks.push({ food: side, mult: m, isProtected: false });
     }
   }
 
@@ -569,6 +581,24 @@ export function buildPlan(input: {
   const pool = input.pool ?? FOOD_CATALOG;
   const seed = input.seed ?? 1;
   const rng = mulberry32(seed);
+
+  // Degenerate guard: without a positive calorie target there is nothing to
+  // build — return an honest empty plan instead of four hollow meals with no
+  // flags (the action layer refuses earlier; this protects the pure API).
+  if (!Number.isFinite(input.calorieTarget) || input.calorieTarget <= 0) {
+    return {
+      meals: slotBudgets(0).map((s) => ({ slot: s.slot, title: s.title, items: [], calories: 0, protein: 0, budget: 0 })),
+      calorieTarget: input.calorieTarget,
+      proteinTargetG: input.proteinTargetG,
+      totalCalories: 0,
+      totalProtein: 0,
+      filter: input.filter,
+      proteinShort: input.proteinTargetG > 0,
+      caloriesShort: true,
+      seed,
+    };
+  }
+
   // Likes (a fill-time bonus) come from go-to foods AND keep foods.
   const likeText = [input.usual?.foods, input.usual?.keep].filter(Boolean).join(" ");
   const likeIds = new Set(

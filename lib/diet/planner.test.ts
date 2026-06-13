@@ -531,3 +531,78 @@ test("filterFromPreference maps veg_limited to vegetarian and merges extras", ()
   assert.deepEqual(merged.excludeTags, ["beef"]); // deduped
   assert.equal(merged.regionFocus, "desi");
 });
+
+// --- ship-readiness edge battery ---------------------------------------------
+
+test("EDGE: floor-tier target (1200/100, female floor) builds sane non-empty mains", () => {
+  for (const seed of [1, 3, 7]) {
+    const plan = buildPlan({ calorieTarget: 1200, proteinTargetG: 100, filter: openFilter, seed });
+    assert.ok(plan.totalCalories <= 1200, `over: ${plan.totalCalories}`);
+    assert.ok(plan.totalCalories >= 1200 * 0.9 || plan.caloriesShort, "silent shortfall");
+    for (const m of plan.meals) {
+      if (m.slot === "snack") continue;
+      assert.ok(m.items.length >= 1, `${m.slot} empty at 1200 kcal (seed ${seed})`);
+    }
+  }
+});
+
+test("EDGE: huge bulk target (3600/180) never exceeds and flags honestly if unreachable", () => {
+  const plan = buildPlan({ calorieTarget: 3600, proteinTargetG: 180, filter: openFilter, seed: 5 });
+  assert.ok(plan.totalCalories <= 3600, `over: ${plan.totalCalories}`);
+  assert.ok(plan.totalCalories >= 3600 * 0.95 || plan.caloriesShort, "silent shortfall on bulk");
+  assert.ok(plan.totalProtein >= 180 || plan.proteinShort, "silent protein shortfall on bulk");
+});
+
+test("EDGE: zero/invalid calorie target returns an honest empty plan (never NaN output)", () => {
+  for (const target of [0, -500, Number.NaN]) {
+    const plan = buildPlan({ calorieTarget: target, proteinTargetG: 120, filter: openFilter, seed: 1 });
+    assert.equal(plan.totalCalories, 0);
+    assert.equal(plan.caloriesShort, true);
+    assert.ok(plan.meals.every((m) => m.items.length === 0));
+  }
+});
+
+test("EDGE: vegan-ish (veg + no egg/dairy/nuts) at 1500/110 builds from plant staples only", () => {
+  const plan = buildPlan({
+    calorieTarget: 1500,
+    proteinTargetG: 110,
+    filter: { vegetarian: true, excludeTags: ["egg", "dairy", "nuts"], excludeFoods: [], regionFocus: null },
+    seed: 2,
+  });
+  assert.ok(plan.totalCalories <= 1500);
+  const foods = plan.meals.flatMap((m) => m.items.map((i) => CATALOG_BY_ID[i.id])).filter(Boolean);
+  for (const f of foods) {
+    assert.ok(f!.vegetarian, `non-veg leaked: ${f!.name}`);
+    assert.ok(!f!.tags.some((t) => ["egg", "dairy", "nuts"].includes(t)), `allergen leaked: ${f!.name}`);
+  }
+  // It still anchors protein from plant staples rather than collapsing.
+  assert.ok(plan.totalProtein >= 70 || plan.proteinShort, "plant protein collapsed silently");
+});
+
+test("EDGE: per-item ops on SCALED items keep amounts and stay within flexed budgets", () => {
+  const plan = buildPlan({ calorieTarget: 2000, proteinTargetG: 140, filter: openFilter, seed: 4 });
+  const lunch = plan.meals.find((m) => m.slot === "lunch")!;
+  const scaledIdx = lunch.items.findIndex((i) => i.unitMode === "portion" && (i.amount ?? 0) > 0);
+  assert.ok(scaledIdx >= 0, "no scaled portion item to test");
+
+  // remove → restore round-trips the scaled amount exactly.
+  const removed = removePlanItem(plan, "lunch", scaledIdx);
+  const restored = appendPlanItem(removed, "lunch", lunch.items[scaledIdx]);
+  const back = restored.meals.find((m) => m.slot === "lunch")!.items.at(-1)!;
+  assert.equal(back.amount, lunch.items[scaledIdx].amount);
+  assert.equal(back.calories, lunch.items[scaledIdx].calories);
+
+  // setPlanItemAmount recomputes totals from the scaled base.
+  const doubled = setPlanItemAmount(plan, "lunch", scaledIdx, (lunch.items[scaledIdx].amount ?? 100) * 2);
+  const item = doubled.meals.find((m) => m.slot === "lunch")!.items[scaledIdx];
+  assert.ok(Math.abs(item.calories - lunch.items[scaledIdx].calories * 2) <= 2, "amount edit didn't scale");
+});
+
+test("EDGE: swapping a scaled item keeps the meal within its flexed budget", () => {
+  const plan = buildPlan({ calorieTarget: 2000, proteinTargetG: 140, filter: openFilter, seed: 4 });
+  for (let s = 1; s <= 6; s++) {
+    const next = swapPlanItem(plan, "dinner", 0, s * 37);
+    const dinner = next.meals.find((m) => m.slot === "dinner")!;
+    assert.ok(dinner.calories <= dinner.budget * 1.15, `swap blew the meal: ${dinner.calories}/${dinner.budget}`);
+  }
+});
