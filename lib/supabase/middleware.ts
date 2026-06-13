@@ -1,5 +1,29 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { getSiteUrl } from "@/lib/site/url";
+
+/**
+ * Redirect apex or wrong host to the canonical site URL (308). Skips when
+ * NEXT_PUBLIC_SITE_URL is unset (local dev) or the host already matches.
+ */
+function canonicalHostRedirect(request: NextRequest): NextResponse | null {
+  const canonical = getSiteUrl();
+  let parsed: URL;
+  try {
+    parsed = new URL(canonical);
+  } catch {
+    return null;
+  }
+  if (!parsed.host || parsed.hostname === "localhost") return null;
+
+  const host = request.headers.get("host") ?? "";
+  if (!host || host === parsed.host) return null;
+
+  const url = request.nextUrl.clone();
+  url.protocol = parsed.protocol;
+  url.host = parsed.host;
+  return NextResponse.redirect(url, 308);
+}
 
 /**
  * Runs on every matched request (see middleware.ts).
@@ -12,6 +36,9 @@ import { NextResponse, type NextRequest } from "next/server";
  *     a protected path, redirect to /login.
  */
 export async function updateSession(request: NextRequest) {
+  const canonical = canonicalHostRedirect(request);
+  if (canonical) return canonical;
+
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(

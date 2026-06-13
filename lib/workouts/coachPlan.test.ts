@@ -366,6 +366,19 @@ test("BACK-SLOT: home/bodyweight back work is genuine equipment-free posterior �
   assert.ok(p.adjustments.some((a) => /resistance band|pull-up bar/i.test(a)), "gear nudge expected on no-equipment back days");
 });
 
+test("HOME-CARDIO: home fat-loss cardio day fills both cardio slots (not just core)", () => {
+  const p = plan({ goal: "lose_belly_fat", location: "home", hasEquipment: false, level: "beginner", daysPerWeek: 3 });
+  const cardioDay = p.days.find((d) => /cardio/i.test(d.focus) && !d.isRest);
+  assert.ok(cardioDay, "3-day fat-loss plan should include a cardio day");
+  assert.ok(cardioDay!.exercises.length >= 4, "cardio day should fill cardio + core slots, not drop to core-only");
+
+  const cardioMoves = cardioDay!.exercises.filter((e) => e.reps === "10–20 min");
+  assert.ok(cardioMoves.length >= 2, `expected 2 home cardio moves, got ${cardioMoves.map((e) => e.name).join(", ")}`);
+  for (const e of cardioMoves) {
+    assert.equal(byId.get(e.id)!.requiresMachine, false, `machine cardio at home: ${e.name}`);
+  }
+});
+
 // W3 — the split label must describe the REAL template days. The 4-day
 // intermediate muscle block is [Upper, Lower, Push, Pull]; it used to be
 // labeled "Push / Pull / Legs" just because "Push" appeared somewhere.

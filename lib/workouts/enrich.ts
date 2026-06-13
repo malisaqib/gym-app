@@ -107,6 +107,9 @@ const RE_ACCESSORY =
   /\b(flye?|lateral raise|side raise|rear delt|reverse fly|face pull|curls?|push[- ]?downs?|triceps?|skull ?crushers?|extensions?|leg curls?|leg extensions?|calf raises?|shrugs?|pull[- ]?overs?|kickbacks?|crossovers?|pec deck|raises?)\b/i;
 
 const LEG_MUSCLES = new Set(["quadriceps", "hamstrings", "glutes", "calves", "abductors", "adductors"]);
+// No-gear outdoor / in-place cardio the dataset tags with equipment:null (not "body only").
+const RE_HOME_BW_CARDIO =
+  /\b(bodyweight walking lunge|walking lunge|step[- ]?up with knee raise|trail running\/walking|march in place)\b/i;
 // A real "pull" trains the back/arms. The dataset tags many ab/leg-raise moves
 // (Flutter Kicks, Leg Pull-In, Hip Circles) as force:"pull"; those are NOT back
 // work and must never land in a back/pull slot — they're routed to core instead.
@@ -322,7 +325,10 @@ export function normalizeExercise(raw: Exercise): NormalizedExercise {
   const beginnerSafe = normalizedDifficulty === "beginner";
   // Can a no-equipment home user do it? Equipment-only gate (difficulty handled
   // separately by beginnerSafe). Pull-up/bench moves are NOT bodyweight-safe.
-  const homeBodyweightSafe = raw.equipment === "body only" && !requiresPullupBar && !requiresBench;
+  const homeBodyweightSafe =
+    !requiresPullupBar &&
+    !requiresBench &&
+    (raw.equipment === "body only" || (raw.equipment == null && (raw.category === "cardio" || RE_HOME_BW_CARDIO.test(lower))));
 
   const movementPattern = movementPatternOf(raw, lower);
   const highImpact = raw.category === "plyometrics" || RE_HIGH_IMPACT.test(lower);

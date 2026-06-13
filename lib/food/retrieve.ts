@@ -46,6 +46,7 @@ async function lexicalFoods(
         .from("foods")
         .select(FOOD_SELECT)
         .or(`name.ilike.${like},search_text.ilike.${like}`)
+        .order("verified", { ascending: false })
         .limit(Math.max(limit, 1));
       return { t, rows: error || !data ? [] : (data as Omit<RetrievedFood, "score">[]) };
     })

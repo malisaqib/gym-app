@@ -2,8 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
+import { getSiteUrl } from "@/lib/site/url";
 
 /**
  * Server Actions for auth. These run only on the server, so the anon key and
@@ -16,16 +16,6 @@ import { createClient } from "@/lib/supabase/server";
 
 // Map raw Supabase auth errors to friendly, non-technical copy. Unknown errors
 // fall back to a generic line so we never surface internal wording to users.
-// The app's public origin, for building absolute email-link redirects. `origin`
-// is usually absent on server-action POSTs, so we reconstruct it from the host
-// (https everywhere except localhost). Used by every email that links back in.
-async function getOrigin(): Promise<string> {
-  const h = await headers();
-  const host = h.get("host") ?? "";
-  const proto = h.get("x-forwarded-proto") ?? (host.includes("localhost") ? "http" : "https");
-  return h.get("origin") ?? `${proto}://${host}`;
-}
-
 function friendlyAuthError(message: string | undefined): string {
   const m = (message ?? "").toLowerCase();
   if (m.includes("invalid login credentials")) return "Email or password is incorrect.";
@@ -71,7 +61,7 @@ export async function signup(formData: FormData) {
   // Supabase falls back to the project Site URL — the link lands on "/" which
   // can't process it, so confirmation silently fails. The URL must also be in
   // Supabase → Auth → URL Configuration → Redirect URLs.
-  const origin = await getOrigin();
+  const origin = getSiteUrl();
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
@@ -117,7 +107,7 @@ export async function requestPasswordReset(formData: FormData) {
   const email = String(formData.get("email")).trim();
 
   const supabase = await createClient();
-  const origin = await getOrigin();
+  const origin = getSiteUrl();
 
   await supabase.auth.resetPasswordForEmail(email, {
     redirectTo: `${origin}/auth/callback?next=/reset-password`,
@@ -140,7 +130,7 @@ export async function resendConfirmation(formData: FormData) {
 
   if (email) {
     const supabase = await createClient();
-    const origin = await getOrigin();
+    const origin = getSiteUrl();
     await supabase.auth.resend({
       type: "signup",
       email,

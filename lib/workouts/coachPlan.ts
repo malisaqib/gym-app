@@ -532,6 +532,50 @@ function pickPosterior(pool: NormalizedExercise[], usedWeek: Set<string>, usedDa
   return notDay.find((e) => !usedWeek.has(e.id)) ?? notDay[0] ?? null;
 }
 
+// Home cardio: the dataset's cardio rows are almost all machines. These
+// bodyweight moves still raise heart rate and fill the cardio slot safely.
+const HOME_CARDIO_RE =
+  /\b(bodyweight walking lunge|step[- ]?up with knee raise|trail running\/walking|walking lunge|march in place)\b/i;
+
+function isHomeCardioCandidate(
+  e: NormalizedExercise,
+  level: Level,
+  flags: Set<CautionTag>,
+  conservative: boolean
+): boolean {
+  if (e.tier === 3) return false;
+  if (level === "beginner" && e.normalizedDifficulty !== "beginner") return false;
+  if (conservative && e.highImpact) return false;
+  if (e.cautionTags.some((c) => flags.has(c))) return false;
+  if (e.requiresPullupBar || e.requiresMachine || e.requiresCable || e.requiresBarbell || e.requiresDumbbell || e.requiresBench)
+    return false;
+
+  if (HOME_CARDIO_RE.test(e.name)) return true;
+  // Outdoor / no-gear cardio (equipment null in the dataset).
+  return e.movementPattern === "cardio" && e.rawEquipment == null;
+}
+
+function pickHomeCardio(
+  enriched: NormalizedExercise[],
+  usedWeek: Set<string>,
+  usedDay: Set<string>,
+  level: Level,
+  flags: Set<CautionTag>,
+  conservative: boolean
+): NormalizedExercise | null {
+  const cands = enriched
+    .filter((e) => isHomeCardioCandidate(e, level, flags, conservative))
+    .sort((a, b) => {
+      const aCardio = a.movementPattern === "cardio" ? 0 : 1;
+      const bCardio = b.movementPattern === "cardio" ? 0 : 1;
+      if (aCardio !== bCardio) return aCardio - bCardio;
+      if (a.tier !== b.tier) return a.tier - b.tier;
+      return a.name.localeCompare(b.name);
+    });
+  const notDay = cands.filter((e) => !usedDay.has(e.id));
+  return notDay.find((e) => !usedWeek.has(e.id)) ?? notDay[0] ?? null;
+}
+
 // 7-day layout with rests baked in for recovery.
 function weekSchedule(days: number): boolean[] {
   const T = true;
@@ -598,6 +642,10 @@ export function buildWorkoutPlan(input: WorkoutInput, enriched: NormalizedExerci
       // fall back to a genuine equipment-free posterior move rather than junk.
       if (!chosen && slot.pattern === "pull" && ctx.bodyweightOnly) {
         chosen = pickPosterior(pool, usedWeek, usedDay, input.level);
+      }
+      // Home has no treadmills/bikes; fall back to genuine bodyweight cardio.
+      if (!chosen && slot.pattern === "cardio" && slot.role === "cardio" && input.location === "home") {
+        chosen = pickHomeCardio(enriched, usedWeek, usedDay, input.level, flags, conservative);
       }
       if (!chosen) continue; // skip a slot we can't fill safely
       usedDay.add(chosen.id);
