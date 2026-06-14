@@ -16,6 +16,7 @@ export const USAGE_LIMITS = {
   coach: 50, // "what should I eat" questions
   estimate: 50, // meal estimates
   plan_generate: 40, // diet plan (re)generates
+  feedback: 10, // feedback messages emailed to the owner (anti-spam)
 } as const;
 
 export type UsageKind = keyof typeof USAGE_LIMITS;
