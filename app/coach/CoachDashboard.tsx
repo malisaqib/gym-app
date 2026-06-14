@@ -18,7 +18,7 @@ import type { Lang } from "@/lib/database.types";
  */
 
 const T = {
-  hi: { en: "Salam", roman_urdu: "Salam" },
+  hi: { en: "Hi there", roman_urdu: "Hi there" },
   welcomeLine: {
     en: "Ask what to eat next, or estimate a meal — using your calories left today.",
     roman_urdu: "Poochein ab kya khaayein, ya meal ka andaza lagayein — aaj ki baqi calories ke hisaab se.",

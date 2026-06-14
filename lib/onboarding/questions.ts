@@ -265,9 +265,9 @@ export const STEPS: Step[] = [
 export const UI: Record<string, Localized> = {
   headerTitle: { en: "Your Coach", roman_urdu: "Aap ka Coach" },
   intro: {
-    en: "Assalam-o-alaikum! I'm your coach. A few quick questions, then I'll set your daily calorie and protein targets.",
+    en: "Hi there! I'm your coach. A few quick questions, then I'll set your daily calorie and protein targets.",
     roman_urdu:
-      "Assalam-o-alaikum! Main aap ka coach hoon. Chand chhotay sawal, phir main aap ke rozana calorie aur protein targets bana dunga.",
+      "Hi there! Main aap ka coach hoon. Chand chhotay sawal, phir main aap ke rozana calorie aur protein targets bana dunga.",
   },
   next: { en: "Next", roman_urdu: "Aage" },
   send: { en: "Send", roman_urdu: "Bhejein" },
