@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildWorkoutPlan, swapPlanExercise, loadScore, type SwapDirection, type WorkoutInput, type WorkoutPlan } from "./coachPlan.ts";
+import { buildWorkoutPlan, swapPlanExercise, loadScore, resolveWorkoutGoal, type SwapDirection, type WorkoutInput, type WorkoutPlan } from "./coachPlan.ts";
 import { enrichExercises, type NormalizedExercise } from "./enrich.ts";
 import type { Exercise } from "./exerciseDb.ts";
 
@@ -483,4 +483,43 @@ test("P4: 1 training day clamps to 2; 0 falls back to 3 (never a crash)", () => 
   assert.equal(plan({ daysPerWeek: 1 }).daysPerWeek, 2);
   assert.equal(plan({ daysPerWeek: 0 }).daysPerWeek, 3);
   assert.equal(plan({ daysPerWeek: Number.NaN }).daysPerWeek, 3);
+});
+
+// --- gain-muscle goal + training style (intensity vs volume) -----------------
+
+test("relatable 'build_muscle' resolves to the gain_muscle workout goal", () => {
+  assert.equal(resolveWorkoutGoal("build_muscle", null), "gain_muscle");
+  assert.equal(resolveWorkoutGoal("skinny_bulk", null), "gain_muscle");
+});
+
+const repLo = (r: string) => Number(r.split(/[–-]/)[0]); // low end of a "4–6" range
+const lifts = (p: WorkoutPlan) => flat(p).filter((e) => e.pattern !== "cardio" && e.pattern !== "core");
+
+test("training style shifts reps + rest: intensity = lower reps / longer rest; volume = higher reps / shorter rest", () => {
+  const intensity = plan({ goal: "gain_muscle", location: "gym", hasEquipment: true, level: "intermediate", daysPerWeek: 4, trainingStyle: "intensity" });
+  const volume = plan({ goal: "gain_muscle", location: "gym", hasEquipment: true, level: "intermediate", daysPerWeek: 4, trainingStyle: "volume" });
+  assert.ok(lifts(intensity).length > 0 && lifts(volume).length > 0, "need lifts to compare");
+
+  // Every resistance move follows the chosen emphasis (covers compound + accessory schemes).
+  for (const e of lifts(intensity)) {
+    assert.ok(repLo(e.reps) <= 8, `intensity not low-rep: ${e.name} ${e.reps}`);
+    assert.ok(e.restSeconds >= 75, `intensity rest too short: ${e.name} ${e.restSeconds}`);
+  }
+  for (const e of lifts(volume)) {
+    assert.ok(repLo(e.reps) >= 12, `volume not high-rep: ${e.name} ${e.reps}`);
+    assert.ok(e.restSeconds <= 60, `volume rest too long: ${e.name} ${e.restSeconds}`);
+  }
+  // Each style surfaces a "how to train it" note; balanced doesn't.
+  assert.ok(/lower reps/i.test(intensity.styleNote ?? ""), "intensity note missing");
+  assert.ok(/higher reps/i.test(volume.styleNote ?? ""), "volume note missing");
+  assert.equal(plan({ goal: "gain_muscle", location: "gym", hasEquipment: true, level: "intermediate", daysPerWeek: 4, trainingStyle: "balanced" }).styleNote, undefined);
+});
+
+test("beginner high-intensity keeps a safe rep floor (never ultra-heavy triples)", () => {
+  const p = plan({ goal: "gain_muscle", location: "home", hasEquipment: false, level: "beginner", daysPerWeek: 3, trainingStyle: "intensity" });
+  for (const e of lifts(p)) {
+    assert.ok(repLo(e.reps) >= 5, `beginner intensity went too heavy: ${e.name} ${e.reps}`);
+  }
+  // Safety gates still hold under a style preference.
+  for (const e of flat(p)) assert.equal(e.difficulty, "beginner", e.name);
 });

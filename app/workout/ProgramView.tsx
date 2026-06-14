@@ -87,6 +87,14 @@ export default function ProgramView({
           <p className="mt-3 rounded-field bg-primary-soft px-3 py-2 text-xs leading-relaxed text-primary">{plan.bellyFatNote}</p>
         )}
 
+        {/* How to train this plan when a high-intensity / high-volume style is chosen. */}
+        {plan.styleNote && (
+          <p className="mt-3 rounded-field bg-muted px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+            <span className="font-medium text-foreground">How to train it: </span>
+            {plan.styleNote}
+          </p>
+        )}
+
         {plan.adjustments.length > 0 && (
           <ul className="mt-3 space-y-1">
             {plan.adjustments.map((note) => (

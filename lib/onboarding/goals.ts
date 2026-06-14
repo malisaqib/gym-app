@@ -52,6 +52,15 @@ export const RELATABLE_GOALS: RelatableGoalDef[] = [
     },
   },
   {
+    key: "build_muscle",
+    goal: "gain_muscle",
+    label: { en: "Build muscle / get stronger", roman_urdu: "Muscle banani / strong hona" },
+    focus: {
+      en: "building lean muscle with progressive training and enough protein",
+      roman_urdu: "progressive training aur kaafi protein se lean muscle banana",
+    },
+  },
+  {
     key: "skinny_bulk",
     goal: "gain_muscle",
     label: { en: "Skinny → healthy bulk", roman_urdu: "Skinny se healthy bulk" },

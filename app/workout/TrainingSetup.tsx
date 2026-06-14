@@ -21,7 +21,7 @@ import {
   type TrainingLocation,
   type TrainingSetup as TrainingSetupData,
 } from "@/lib/workouts/trainingSetup";
-import type { FocusArea, WorkoutGoal } from "@/lib/workouts/coachPlan";
+import type { FocusArea, TrainingStyle, WorkoutGoal } from "@/lib/workouts/coachPlan";
 import { loadTrainingSetup, saveTrainingSetup } from "./setupActions";
 
 /**
@@ -64,6 +64,19 @@ const FOCUS_OPTIONS: { value: FocusArea; label: string }[] = [
   { value: "glutes", label: "Glutes" },
   { value: "upper_body", label: "Upper body" },
 ];
+
+const STYLE_OPTIONS: { value: TrainingStyle; label: string }[] = [
+  { value: "balanced", label: "Balanced" },
+  { value: "intensity", label: "High intensity" },
+  { value: "volume", label: "High volume" },
+];
+
+// One-line explanation under the style chips — sets the right expectation.
+const STYLE_HELP: Record<TrainingStyle, string> = {
+  balanced: "Moderate reps tuned to your goal — a solid default.",
+  intensity: "Heavier weight, lower reps (≈4–8). Build strength; rest fully between sets.",
+  volume: "Lighter weight, higher reps (≈12–20). Chase the burn; keep rest short.",
+};
 
 export default function TrainingSetup({
   profileDefaults,
@@ -270,6 +283,11 @@ export default function TrainingSetup({
         <p className="mt-1 text-xs text-muted-foreground">Adds a little extra volume to that area. Defaults to full body.</p>
       </Field>
 
+      <Field label="Training style">
+        <ChipRow options={STYLE_OPTIONS} selected={draft.trainingStyle} onSelect={(v) => patch({ trainingStyle: v })} />
+        <p className="mt-1 text-xs text-muted-foreground">{STYLE_HELP[draft.trainingStyle]}</p>
+      </Field>
+
       <Field label="Any injuries or limitations? (optional)">
         <textarea
           value={draft.injuriesNote}
@@ -339,6 +357,7 @@ function SetupSummary({
       <dl className="grid grid-cols-2 gap-2 text-sm">
         {setup.goal && <SummaryItem label="Goal" value={GOAL_OPTIONS.find((g) => g.value === setup.goal)?.label ?? setup.goal} />}
         <SummaryItem label="Focus" value={FOCUS_OPTIONS.find((f) => f.value === setup.focusArea)?.label ?? "Full body"} />
+        <SummaryItem label="Style" value={STYLE_OPTIONS.find((s) => s.value === setup.trainingStyle)?.label ?? "Balanced"} />
         <SummaryItem label="Equipment" value={equipmentLabels} />
         {setup.injuriesNote && <SummaryItem label="Notes" value={setup.injuriesNote} wide />}
       </dl>

@@ -61,6 +61,7 @@ async function workoutInputFrom(supabase: Supa, userId: string, setup: TrainingS
     daysPerWeek: setup.trainingDaysPerWeek,
     injuriesNote: setup.injuriesNote,
     focusArea: setup.focusArea,
+    trainingStyle: setup.trainingStyle,
     overweight: isOverweight(p?.weight_kg, p?.height_cm),
     sex: p?.sex ?? undefined,
   };

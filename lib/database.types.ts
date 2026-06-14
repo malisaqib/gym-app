@@ -77,6 +77,7 @@ export type RelatableGoalKey =
   | "wedding_event"
   | "shirt_look"
   | "belly_fat"
+  | "build_muscle"
   | "skinny_bulk"
   | "sports"
   | "general"

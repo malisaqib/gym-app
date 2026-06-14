@@ -27,6 +27,9 @@ export type WorkoutGoal =
   | "stay_fit";
 export type FocusArea = "full_body" | "lower_body" | "glutes" | "upper_body";
 export type Level = "beginner" | "intermediate" | "advanced";
+// How the user wants to train: "intensity" = heavier weight, lower reps;
+// "volume" = lighter weight, higher reps; "balanced" = goal-tuned default.
+export type TrainingStyle = "balanced" | "intensity" | "volume";
 
 export interface WorkoutInput {
   goal: WorkoutGoal;
@@ -40,6 +43,7 @@ export interface WorkoutInput {
   overweight?: boolean; // optional conservative trigger
   lowImpactPreference?: boolean;
   sex?: "male" | "female"; // cosmetic only — NEVER drives difficulty/selection
+  trainingStyle?: TrainingStyle; // heavy/low-rep vs light/high-rep emphasis
 }
 
 export interface PlanExercise {
@@ -77,6 +81,7 @@ export interface WorkoutPlan {
   focusArea: FocusArea;
   split: string;
   summary: string;
+  styleNote?: string; // plain "how to train this" guidance when intensity/volume chosen
   progressionNote: string;
   disclaimer: string;
   bellyFatNote?: string;
@@ -126,6 +131,7 @@ export function resolveWorkoutGoal(
       return "lose_belly_fat";
     case "shirt_look":
       return "tone";
+    case "build_muscle":
     case "skinny_bulk":
       return "gain_muscle";
     case "wedding_event":
@@ -406,12 +412,31 @@ function isStaticCore(e: NormalizedExercise): boolean {
   return /\b(plank|hollow|bird ?dog|dead ?bug|hold|wall sit|side plank)\b/i.test(e.name);
 }
 
-function schemeFor(goal: WorkoutGoal, level: Level, role: Role, e: NormalizedExercise): { sets: number; reps: string; rest: number } {
+function schemeFor(
+  goal: WorkoutGoal,
+  level: Level,
+  role: Role,
+  e: NormalizedExercise,
+  trainingStyle: TrainingStyle = "balanced"
+): { sets: number; reps: string; rest: number } {
   if (role === "cardio") return { sets: 1, reps: "10–20 min", rest: 0 };
   if (role === "core") {
     return isStaticCore(e) ? { sets: 3, reps: "20–45 sec", rest: 45 } : { sets: 3, reps: "12–20", rest: 45 };
   }
   const compound = role === "compound";
+
+  // An explicit training-style preference drives the load/rep emphasis for
+  // resistance work, overriding the goal-default ranges (the user chose HOW to
+  // train). Beginners get a safety floor — heavy work stays ≥5 reps, never
+  // ultra-heavy triples, since form is the priority while they build a base.
+  if (trainingStyle === "intensity") {
+    if (level === "beginner") return compound ? { sets: 4, reps: "5–8", rest: 120 } : { sets: 3, reps: "8–10", rest: 75 };
+    return compound ? { sets: 5, reps: "4–6", rest: 150 } : { sets: 3, reps: "6–8", rest: 90 };
+  }
+  if (trainingStyle === "volume") {
+    return compound ? { sets: 3, reps: "12–15", rest: 45 } : { sets: 3, reps: "15–20", rest: 40 };
+  }
+
   if (goal === "build_strength" && level !== "beginner")
     return compound ? { sets: 5, reps: "4–6", rest: 150 } : { sets: 3, reps: "6–10", rest: 90 };
   if (goal === "gain_muscle" || goal === "gain_weight")
@@ -420,6 +445,21 @@ function schemeFor(goal: WorkoutGoal, level: Level, role: Role, e: NormalizedExe
     return compound ? { sets: 3, reps: "10–12", rest: 60 } : { sets: 3, reps: "12–15", rest: 45 };
   if (level === "beginner") return compound ? { sets: 3, reps: "8–12", rest: 60 } : { sets: 3, reps: "10–15", rest: 45 };
   return compound ? { sets: 3, reps: "8–12", rest: 75 } : { sets: 3, reps: "10–15", rest: 60 };
+}
+
+// Plain "how to train this" guidance shown when the user picks a style. Beginner
+// intensity is framed safely (challenging-but-controlled, not maximal). Balanced
+// returns undefined — no extra note needed.
+function styleNoteFor(style: TrainingStyle, level: Level): string | undefined {
+  if (style === "intensity") {
+    return level === "beginner"
+      ? "High-intensity focus: heavier weight, lower reps (about 5–8). Pick a weight that feels hard by the last 1–2 reps — but keep your form strict and don't grind to failure while you're learning. Rest fully (2 min) between sets."
+      : "High-intensity focus: heavier weight, lower reps (about 4–6 on big lifts). Load it up, leave 1–2 reps in the tank, and rest 2–2.5 min so you can hit each set hard.";
+  }
+  if (style === "volume") {
+    return "High-volume focus: lighter weight, higher reps (about 12–20). Chase a strong muscle burn with controlled tempo, keep rest short (40–60 sec), and add reps before you add weight.";
+  }
+  return undefined;
 }
 
 const PROGRESSION: Record<Level, string> = {
@@ -650,7 +690,7 @@ export function buildWorkoutPlan(input: WorkoutInput, enriched: NormalizedExerci
       if (!chosen) continue; // skip a slot we can't fill safely
       usedDay.add(chosen.id);
       usedWeek.add(chosen.id);
-      built.push(makePlanExercise(chosen, slot.role, input.goal, input.level));
+      built.push(makePlanExercise(chosen, slot.role, input.goal, input.level, input.trainingStyle ?? "balanced"));
     }
 
     // Compounds first, then everything else (stable within group).
@@ -680,6 +720,7 @@ export function buildWorkoutPlan(input: WorkoutInput, enriched: NormalizedExerci
     focusArea,
     split,
     summary,
+    styleNote: styleNoteFor(input.trainingStyle ?? "balanced", input.level),
     progressionNote: PROGRESSION[input.level],
     disclaimer: DISCLAIMER,
     bellyFatNote: input.goal === "lose_belly_fat" ? BELLY_FAT_NOTE : undefined,
@@ -692,8 +733,14 @@ function cap(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-function makePlanExercise(e: NormalizedExercise, role: Role, goal: WorkoutGoal, level: Level): PlanExercise {
-  const sc = schemeFor(goal, level, role, e);
+function makePlanExercise(
+  e: NormalizedExercise,
+  role: Role,
+  goal: WorkoutGoal,
+  level: Level,
+  trainingStyle: TrainingStyle
+): PlanExercise {
+  const sc = schemeFor(goal, level, role, e, trainingStyle);
   return {
     id: e.id,
     name: e.name,
@@ -819,5 +866,5 @@ export function swapPlanExercise(
   }
 
   if (!chosen) return null;
-  return makePlanExercise(chosen, roleForPattern(pattern), input.goal, input.level);
+  return makePlanExercise(chosen, roleForPattern(pattern), input.goal, input.level, input.trainingStyle ?? "balanced");
 }
