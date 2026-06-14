@@ -153,16 +153,28 @@ export default function FoodLogger({
   const eaten = sumMacros(items.map(itemMacros));
 
   const refreshRecentQuick = useCallback(async () => {
-    const res = await getRecentLogFoods(10);
-    if (res.ok) setRecentQuick(res.foods);
+    // Best-effort background sync — never let a failure (e.g. a stale-bundle
+    // server-action call right after a deploy) bubble up as an unhandled
+    // rejection. The existing quick-add list simply stays as-is.
+    try {
+      const res = await getRecentLogFoods(10);
+      if (res.ok) setRecentQuick(res.foods);
+    } catch {
+      /* ignore — background refresh */
+    }
   }, []);
 
   useEffect(() => {
     void refreshRecentQuick();
-    // Saved meals load once; mutations update the list locally.
-    void listSavedMeals().then((res) => {
-      if (res.ok) setSavedMeals(res.meals);
-    });
+    // Saved meals load once; mutations update the list locally. Swallow errors —
+    // this is a background load, not a user action.
+    listSavedMeals()
+      .then((res) => {
+        if (res.ok) setSavedMeals(res.meals);
+      })
+      .catch(() => {
+        /* ignore — background load */
+      });
   }, [refreshRecentQuick]);
 
   // One tap: log every item of a saved meal into today.
@@ -249,14 +261,25 @@ export default function FoodLogger({
     let cancelled = false;
     async function refresh() {
       if (inFlight.current > 0) return; // don't fight an optimistic add mid-write
-      const rows = await getFoodLogs(localDateString());
-      if (!cancelled) setItems(rows);
-      // Keep quick-add lists in sync across tabs too (a meal saved in another
-      // tab shows up here on refocus).
-      void refreshRecentQuick();
-      void listSavedMeals().then((res) => {
-        if (!cancelled && res.ok) setSavedMeals(res.meals);
-      });
+      // Best-effort: a focus/midnight resync that fails (offline, or a stale
+      // client bundle hitting a redeployed server action) must NOT crash as an
+      // unhandled rejection — keep showing what we already have.
+      try {
+        const rows = await getFoodLogs(localDateString());
+        if (!cancelled) setItems(rows);
+        // Keep quick-add lists in sync across tabs too (a meal saved in another
+        // tab shows up here on refocus).
+        void refreshRecentQuick();
+        listSavedMeals()
+          .then((res) => {
+            if (!cancelled && res.ok) setSavedMeals(res.meals);
+          })
+          .catch(() => {
+            /* ignore — background load */
+          });
+      } catch {
+        /* ignore — background resync */
+      }
     }
     // Align on mount only when the client's real day != the day we rendered for.
     if (localDateString() !== today) void refresh();
@@ -364,6 +387,16 @@ export default function FoodLogger({
   // Clear any pending quantity-save timers on unmount.
   useEffect(() => () => Object.values(timers.current).forEach(clearTimeout), []);
 
+  // Re-read the day from the DB without ever throwing (used to reconcile after a
+  // failed write). A reconcile that itself fails must not crash the handler.
+  async function reconcileItems() {
+    try {
+      setItems(await getFoodLogs(localDateString()));
+    } catch {
+      /* ignore — keep current optimistic state */
+    }
+  }
+
   // Adjust HOW MUCH was eaten: optimistic + live (itemMacros recomputes the row
   // AND the rings), persisted on a short debounce. On failure we reconcile with
   // the DB so a change is never silently dropped or left phantom.
@@ -379,11 +412,11 @@ export default function FoodLogger({
           setItems((prev) => prev.map((i) => (i.id === id ? res.item : i)));
         } else {
           surfaceError(res.error);
-          setItems(await getFoodLogs(localDateString())); // reconcile with DB truth
+          await reconcileItems(); // reconcile with DB truth
         }
       } catch {
         setError("Couldn't save the amount. Please try again.");
-        setItems(await getFoodLogs(localDateString()));
+        await reconcileItems();
       } finally {
         inFlight.current -= 1;
       }
