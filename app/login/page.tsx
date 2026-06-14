@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { login, resendConfirmation } from "@/app/auth/actions";
 import { SubmitButton } from "@/app/auth/SubmitButton";
+import { GoogleButton } from "@/app/auth/GoogleButton";
 import { FadeIn } from "@/components/ui/FadeIn";
 import { LogoMark } from "@/components/brand/Logo";
 
@@ -55,6 +56,15 @@ export default async function LoginPage({
           </button>
         </form>
       )}
+
+      {/* Fastest path first: one-tap Google. */}
+      <GoogleButton label="Continue with Google" />
+
+      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+        <span className="h-px flex-1 bg-border" />
+        or
+        <span className="h-px flex-1 bg-border" />
+      </div>
 
       {/* The form posts directly to the `login` Server Action. */}
       <form action={login} className="flex flex-col gap-4">

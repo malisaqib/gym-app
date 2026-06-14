@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { signup } from "@/app/auth/actions";
 import { SubmitButton } from "@/app/auth/SubmitButton";
+import { GoogleButton } from "@/app/auth/GoogleButton";
 import { FadeIn } from "@/components/ui/FadeIn";
 import { LogoMark } from "@/components/brand/Logo";
 
@@ -27,7 +28,7 @@ export default async function SignupPage({
       <div className="space-y-1 text-center">
         <LogoMark size={56} className="mx-auto mb-2 rounded-[22%] shadow-soft" title="Zorfit logo" />
         <h1 className="font-display text-2xl font-semibold text-foreground">Create your account</h1>
-        <p className="text-sm text-muted-foreground">Takes less than a minute.</p>
+        <p className="text-sm text-muted-foreground">Start your fitness journey — it takes less than a minute.</p>
       </div>
 
       {error && (
@@ -35,6 +36,15 @@ export default async function SignupPage({
           {error}
         </p>
       )}
+
+      {/* Fastest path first: one-tap Google. */}
+      <GoogleButton label="Sign up with Google" />
+
+      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+        <span className="h-px flex-1 bg-border" />
+        or sign up with email
+        <span className="h-px flex-1 bg-border" />
+      </div>
 
       {/* The form posts directly to the `signup` Server Action. */}
       <form action={signup} className="flex flex-col gap-4">
@@ -45,6 +55,7 @@ export default async function SignupPage({
             name="email"
             required
             autoComplete="email"
+            placeholder="you@example.com"
             className="rounded-field border border-input bg-card px-3 py-2 text-base text-foreground focus:border-ring focus:outline-none"
           />
         </label>
@@ -56,11 +67,28 @@ export default async function SignupPage({
             required
             minLength={6}
             autoComplete="new-password"
+            placeholder="At least 6 characters"
             className="rounded-field border border-input bg-card px-3 py-2 text-base text-foreground focus:border-ring focus:outline-none"
           />
         </label>
-        <SubmitButton>Sign up</SubmitButton>
+        <label className="flex flex-col gap-1 text-sm font-medium text-foreground">
+          Confirm password
+          <input
+            type="password"
+            name="confirm"
+            required
+            minLength={6}
+            autoComplete="new-password"
+            placeholder="Re-enter your password"
+            className="rounded-field border border-input bg-card px-3 py-2 text-base text-foreground focus:border-ring focus:outline-none"
+          />
+        </label>
+        <SubmitButton>Create account</SubmitButton>
       </form>
+
+      <p className="text-center text-xs text-muted-foreground">
+        By creating an account you agree to use Zorfit as a general fitness guide, not medical advice.
+      </p>
 
       <p className="text-center text-sm text-muted-foreground">
         Already have an account?{" "}

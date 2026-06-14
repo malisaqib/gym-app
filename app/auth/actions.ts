@@ -54,6 +54,17 @@ export async function login(formData: FormData) {
 export async function signup(formData: FormData) {
   const email = String(formData.get("email")).trim();
   const password = String(formData.get("password"));
+  const confirm = String(formData.get("confirm"));
+
+  // Validate BEFORE hitting Supabase so the user gets instant, specific copy
+  // (not a generic "something went wrong"). HTML validation can be bypassed, so
+  // we re-check here on the server.
+  if (password.length < 6) {
+    redirect(`/signup?error=${encodeURIComponent("Password must be at least 6 characters.")}`);
+  }
+  if (password !== confirm) {
+    redirect(`/signup?error=${encodeURIComponent("The two passwords don't match.")}`);
+  }
 
   const supabase = await createClient();
   // emailRedirectTo points the confirmation link at our callback (which
@@ -87,6 +98,30 @@ export async function signup(formData: FormData) {
 
   revalidatePath("/", "layout");
   redirect("/dashboard");
+}
+
+/**
+ * "Continue with Google" — OAuth sign-in/sign-up in one tap. Supabase builds the
+ * Google consent URL (and stashes the PKCE verifier in a cookie); we redirect the
+ * user there. Google sends them back to /auth/callback, which exchanges the code
+ * for a session. Brand-new Google users have no profile yet, so the dashboard
+ * forwards them to /onboarding automatically — same as email signups.
+ *
+ * Requires the Google provider to be enabled in Supabase (Auth → Providers).
+ */
+export async function signInWithGoogle() {
+  const supabase = await createClient();
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: { redirectTo: `${getSiteUrl()}/auth/callback?next=/dashboard` },
+  });
+
+  if (error || !data.url) {
+    redirect(`/login?error=${encodeURIComponent("Couldn't start Google sign-in. Please try again.")}`);
+  }
+
+  // data.url is Google's consent screen — leave the app to complete the flow.
+  redirect(data.url);
 }
 
 export async function signOut() {
