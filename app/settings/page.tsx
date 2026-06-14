@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Screen } from "@/components/ui/Screen";
 import { LargeTitle } from "@/components/ui/LargeTitle";
 import { SignOutButton } from "@/app/auth/SignOutButton";
-import { SupportResources } from "@/components/SupportResources";
+import { FeedbackForm } from "@/components/FeedbackForm";
 import ProfileEditor, { type ProfileDetails } from "./ProfileEditor";
 import BottomNav from "@/components/BottomNav";
 import type { Lang, Profile } from "@/lib/database.types";
@@ -74,7 +74,7 @@ export default async function SettingsPage() {
           {lang === "roman_urdu" ? "App ka tour dobara dekhein" : "Replay app tour"}
         </Link>
 
-        <SupportResources />
+        <FeedbackForm lang={lang} />
         <SignOutButton />
         <p className="text-center text-xs text-muted-foreground break-all">{user.email}</p>
       </Screen>
