@@ -62,6 +62,10 @@ const REPORT_T = {
   save: { en: "Save", roman_urdu: "Save" },
   mealItems: { en: "items", roman_urdu: "cheezein" },
   deleteMeal: { en: "Delete meal", roman_urdu: "Meal delete karein" },
+  estimateHint: {
+    en: "Some foods are estimates — calories or protein may be a little off. Tap any food to edit it, or use the flag to report it and we'll fix it.",
+    roman_urdu: "Kuch foods andaze hote hain — calories ya protein thora oopar neeche ho sakta hai. Kisi bhi food par tap kar ke edit karein, ya flag se report karein, hum theek kar dein ge.",
+  },
 } satisfies Record<string, Record<Lang, string>>;
 
 // Plain-words explanation of each trust badge (shown as a tooltip / long-press
@@ -659,6 +663,12 @@ export default function FoodLogger({
               </button>
             )}
           </div>
+        )}
+
+        {/* Quiet trust footnote — only once there are logged items, so it sits
+            right by the editable/reportable rows and never greets an empty day. */}
+        {count > 0 && (
+          <p className="px-1 pt-1 text-xs leading-relaxed text-muted-foreground">{rt("estimateHint")}</p>
         )}
       </motion.section>
 
