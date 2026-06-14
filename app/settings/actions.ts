@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { buildGoalPlan, paceFromTimeline, targetDateFrom } from "@/lib/nutrition/goalPlan";
+import { RELATABLE_GOALS } from "@/lib/onboarding/goals";
 import { getLocalToday } from "@/lib/date";
 import type {
   ActivityLevel,
@@ -30,15 +31,10 @@ const LOCATIONS: TrainingLocation[] = ["home", "gym", "both"];
 const FOODS: FoodPreference[] = ["normal_desi", "high_protein", "budget", "hostel_student", "veg_limited"];
 const LANGS: Lang[] = ["en", "roman_urdu"];
 const ACTIVITY_LEVELS: ActivityLevel[] = ["sedentary", "light", "moderate", "very", "extra"];
-const GOAL_KEYS: RelatableGoalKey[] = [
-  "wedding_event",
-  "shirt_look",
-  "belly_fat",
-  "skinny_bulk",
-  "sports",
-  "general",
-  "gym_start",
-];
+// Derived from the single source of truth so adding a goal in goals.ts can
+// never again leave this validator out of sync (the bug that rejected
+// "build_muscle" with "Some values look off").
+const GOAL_KEYS: RelatableGoalKey[] = RELATABLE_GOALS.map((g) => g.key);
 
 export interface ProfileEditInput {
   fullName: string;
