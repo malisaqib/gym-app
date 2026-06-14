@@ -19,7 +19,7 @@ import { getSiteUrl } from "@/lib/site/url";
 function friendlyAuthError(message: string | undefined): string {
   const m = (message ?? "").toLowerCase();
   if (m.includes("invalid login credentials")) return "Email or password is incorrect.";
-  if (m.includes("email not confirmed")) return "Please confirm your email first — check your inbox.";
+  if (m.includes("email not confirmed")) return "Couldn't sign in with that email. Try again or reset your password.";
   if (m.includes("already registered") || m.includes("already been registered"))
     return "That email is already registered. Try logging in.";
   if (m.includes("at least") || m.includes("password should")) return "Password must be at least 6 characters.";
@@ -37,13 +37,7 @@ export async function login(formData: FormData) {
   const { error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) {
-    const friendly = friendlyAuthError(error.message);
-    // An unconfirmed email is a recoverable dead-end — pass it back so the login
-    // page can offer a one-tap "resend confirmation".
-    if ((error.message ?? "").toLowerCase().includes("email not confirmed")) {
-      redirect(`/login?error=${encodeURIComponent(friendly)}&unconfirmed=${encodeURIComponent(email)}`);
-    }
-    redirect(`/login?error=${encodeURIComponent(friendly)}`);
+    redirect(`/login?error=${encodeURIComponent(friendlyAuthError(error.message))}`);
   }
 
   // Clear any cached render that assumed "logged out", then go to dashboard.
@@ -67,33 +61,18 @@ export async function signup(formData: FormData) {
   }
 
   const supabase = await createClient();
-  // emailRedirectTo points the confirmation link at our callback (which
-  // exchanges the code/verifies the token and signs the user in). WITHOUT this,
-  // Supabase falls back to the project Site URL — the link lands on "/" which
-  // can't process it, so confirmation silently fails. The URL must also be in
-  // Supabase → Auth → URL Configuration → Redirect URLs.
-  const origin = getSiteUrl();
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: { emailRedirectTo: `${origin}/auth/callback?next=/dashboard` },
-  });
+  // Confirm email is OFF in Supabase — signUp returns a session immediately and
+  // the user goes straight into the app (dashboard → onboarding if new).
+  const { data, error } = await supabase.auth.signUp({ email, password });
 
   if (error) {
     redirect(`/signup?error=${encodeURIComponent(friendlyAuthError(error.message))}`);
   }
 
-  // If "Confirm email" is ON in Supabase, signUp returns no session — the user
-  // must click the email link first (the callback then signs them in). If it's
-  // OFF, we get a session immediately. Keep the message neutral (don't claim a
-  // new account was made — the same no-session response also occurs for an
-  // already-registered email).
+  // No session usually means that email is already registered (Supabase won't
+  // always error loudly to avoid account enumeration).
   if (!data.session) {
-    redirect(
-      `/login?message=${encodeURIComponent(
-        "Almost there — open the link in your inbox (check spam too) to confirm your email."
-      )}`
-    );
+    redirect(`/login?error=${encodeURIComponent("That email is already registered. Try logging in.")}`);
   }
 
   revalidatePath("/", "layout");
@@ -151,31 +130,6 @@ export async function requestPasswordReset(formData: FormData) {
   redirect(
     `/forgot-password?message=${encodeURIComponent(
       "If that email is registered, a reset link is on its way. Check your inbox."
-    )}`
-  );
-}
-
-/**
- * Resend the signup confirmation email — the recovery path for a lost/expired
- * link. Same emailRedirectTo as signup so the new link behaves identically.
- * Neutral message regardless of outcome (no account enumeration).
- */
-export async function resendConfirmation(formData: FormData) {
-  const email = String(formData.get("email")).trim();
-
-  if (email) {
-    const supabase = await createClient();
-    const origin = getSiteUrl();
-    await supabase.auth.resend({
-      type: "signup",
-      email,
-      options: { emailRedirectTo: `${origin}/auth/callback?next=/dashboard` },
-    });
-  }
-
-  redirect(
-    `/login?message=${encodeURIComponent(
-      "If that email needs confirming, a new link is on its way. Check your inbox (and spam)."
     )}`
   );
 }

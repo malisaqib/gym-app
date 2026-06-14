@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { login, resendConfirmation } from "@/app/auth/actions";
+import { login } from "@/app/auth/actions";
 import { SubmitButton } from "@/app/auth/SubmitButton";
 import { GoogleButton } from "@/app/auth/GoogleButton";
 import { FadeIn } from "@/components/ui/FadeIn";
@@ -11,9 +11,9 @@ import { LogoMark } from "@/components/brand/Logo";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; message?: string; unconfirmed?: string }>;
+  searchParams: Promise<{ error?: string; message?: string }>;
 }) {
-  const { error, message, unconfirmed } = await searchParams;
+  const { error, message } = await searchParams;
 
   // Already signed in? Send them to the app instead of showing the login form.
   const supabase = await createClient();
@@ -44,19 +44,6 @@ export default async function LoginPage({
         </p>
       )}
 
-      {/* Recovery path for an unconfirmed email: one tap to resend the link. */}
-      {unconfirmed && (
-        <form action={resendConfirmation} className="flex flex-col gap-2">
-          <input type="hidden" name="email" value={unconfirmed} />
-          <button
-            type="submit"
-            className="rounded-field border border-border bg-card px-4 py-3 text-sm font-medium text-foreground transition hover:bg-muted active:scale-[0.99]"
-          >
-            Resend confirmation email
-          </button>
-        </form>
-      )}
-
       {/* Fastest path first: one-tap Google. */}
       <GoogleButton label="Continue with Google" />
 
@@ -75,7 +62,6 @@ export default async function LoginPage({
             name="email"
             required
             autoComplete="email"
-            defaultValue={unconfirmed ?? ""}
             className="rounded-field border border-input bg-card px-3 py-2 text-base text-foreground focus:border-ring focus:outline-none"
           />
         </label>
