@@ -13,9 +13,10 @@ import {
   searchCatalog,
   bestCatalogMatch,
   isKnownFood,
+  replanRemaining,
   type DietFilter,
 } from "./planner.ts";
-import { CATALOG_BY_ID, FOOD_CATALOG, type CatalogFood } from "./foodCatalog.ts";
+import { CATALOG_BY_ID, FOOD_CATALOG, type CatalogFood, type MealSlot } from "./foodCatalog.ts";
 
 const openFilter: DietFilter = { vegetarian: false, excludeTags: [], excludeFoods: [], regionFocus: null };
 
@@ -605,4 +606,85 @@ test("EDGE: swapping a scaled item keeps the meal within its flexed budget", () 
     const dinner = next.meals.find((m) => m.slot === "dinner")!;
     assert.ok(dinner.calories <= dinner.budget * 1.15, `swap blew the meal: ${dinner.calories}/${dinner.budget}`);
   }
+});
+
+// --- Feature: learn from the log (preferIds bias) ----------------------------
+
+test("preferIds pulls a food into selection that ranks too low to appear otherwise", () => {
+  // 8 interchangeable staple proteins; the one whose id sorts LAST never enters
+  // the top-N window on its own (equal score → id tiebreak), so it only appears
+  // when preferred. This isolates the bias from the normal randomisation.
+  const protein = (id: string): CatalogFood => ({
+    id,
+    name: id,
+    portion: "1 serving (~150g)",
+    calories: 300,
+    protein: 30,
+    carbs: 5,
+    fat: 15,
+    region: "desi",
+    vegetarian: true,
+    role: "protein",
+    slots: ["lunch"],
+    tags: [],
+    staple: "protein",
+  });
+  const pool: CatalogFood[] = [
+    ...["p1", "p2", "p3", "p4", "p5", "p6", "p7"].map(protein),
+    protein("zzz_pref"),
+    {
+      id: "c1", name: "carb", portion: "1 katori (~150g)", calories: 200, protein: 4, carbs: 44, fat: 1,
+      region: "desi", vegetarian: true, role: "carb", slots: ["lunch"], tags: [], staple: "carb",
+    },
+  ];
+  const has = (p: ReturnType<typeof buildPlan>) => p.meals.some((m) => m.items.some((i) => i.id === "zzz_pref"));
+
+  let withPref = 0;
+  let without = 0;
+  for (let seed = 1; seed <= 30; seed++) {
+    if (has(buildPlan({ calorieTarget: 2000, proteinTargetG: 120, filter: openFilter, seed, pool, preferIds: new Set(["zzz_pref"]) }))) withPref++;
+    if (has(buildPlan({ calorieTarget: 2000, proteinTargetG: 120, filter: openFilter, seed, pool }))) without++;
+  }
+  assert.equal(without, 0, "control: a low-ranked food must never appear unprompted");
+  assert.ok(withPref > 0, "preferIds failed to surface the preferred food");
+});
+
+// --- Feature: close the daily loop (replanRemaining) -------------------------
+
+test("replanRemaining freezes eaten meals and refits the rest to what's left", () => {
+  const plan = buildPlan({ calorieTarget: 2000, proteinTargetG: 120, filter: openFilter, seed: 1 });
+  const eaten: MealSlot[] = ["breakfast", "lunch"];
+  const eatenSet = new Set<string>(eaten);
+  const next = replanRemaining(plan, { calories: 800, proteinG: 50 }, eaten, FOOD_CATALOG, 1);
+
+  // eaten meals are byte-for-byte unchanged (frozen)
+  for (const slot of eaten) {
+    assert.deepEqual(next.meals.find((m) => m.slot === slot), plan.meals.find((m) => m.slot === slot));
+  }
+  // the un-eaten meals together never exceed the remaining calories
+  const openCal = next.meals.filter((m) => !eatenSet.has(m.slot)).reduce((s, m) => s + m.calories, 0);
+  assert.ok(openCal <= 800, `refit exceeded remaining: ${openCal}/800`);
+  // totals stay internally consistent with the meals
+  assert.equal(next.totalCalories, next.meals.reduce((s, m) => s + m.calories, 0));
+});
+
+test("replanRemaining is a no-op when there's no room or nothing left to plan", () => {
+  const plan = buildPlan({ calorieTarget: 2000, proteinTargetG: 120, filter: openFilter, seed: 1 });
+  assert.equal(replanRemaining(plan, { calories: 0, proteinG: 0 }, ["breakfast"], FOOD_CATALOG, 1), plan);
+  assert.equal(replanRemaining(plan, { calories: -100, proteinG: 0 }, [], FOOD_CATALOG, 1), plan);
+  assert.equal(
+    replanRemaining(plan, { calories: 900, proteinG: 50 }, ["breakfast", "lunch", "dinner", "snack"], FOOD_CATALOG, 1),
+    plan
+  );
+});
+
+test("replanRemaining preserves the logged record and the day targets, and is deterministic", () => {
+  const base = buildPlan({ calorieTarget: 2000, proteinTargetG: 120, filter: openFilter, seed: 1 });
+  const plan = { ...base, logged: { date: "2026-06-17", slots: ["breakfast"] as MealSlot[] } };
+  const a = replanRemaining(plan, { calories: 1200, proteinG: 80 }, ["breakfast"], FOOD_CATALOG, 5);
+  const b = replanRemaining(plan, { calories: 1200, proteinG: 80 }, ["breakfast"], FOOD_CATALOG, 5);
+  assert.deepEqual(a, b); // deterministic for a seed
+  assert.deepEqual(a.logged, plan.logged); // logged record carried through
+  assert.equal(a.calorieTarget, 2000);
+  assert.equal(a.proteinTargetG, 120);
 });

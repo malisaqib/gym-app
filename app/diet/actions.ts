@@ -16,6 +16,7 @@ import {
   setPlanItemMacros,
   searchCatalog,
   bestCatalogMatch,
+  replanRemaining,
   type DietPlan,
   type PlanMealItem,
 } from "@/lib/diet/planner";
@@ -24,10 +25,14 @@ import { estimateMeal } from "@/app/coach/actions";
 import { FOOD_CATALOG, type CatalogFood, type MealSlot } from "@/lib/diet/foodCatalog";
 import { classifyFoods, type RawFoodRow } from "@/lib/diet/foodClassify";
 import { planItemToLogRow } from "@/lib/diet/planToLog";
+import { rankLoggedFoods, type LoggedFoodRow } from "@/lib/diet/learned";
+import { itemMacros } from "@/lib/food/quantity";
+import { sumMacros } from "@/lib/food/totals";
+import { getLocalToday } from "@/lib/date";
 import { logEvent } from "@/lib/analytics";
 import { consumeUsage, USAGE_LIMIT_MESSAGE } from "@/lib/usage";
 import { reportError } from "@/lib/log";
-import type { FoodPreference, Lang } from "@/lib/database.types";
+import type { FoodLog, FoodPreference, Lang } from "@/lib/database.types";
 
 const SLOTS: MealSlot[] = ["breakfast", "lunch", "dinner", "snack"];
 
@@ -249,10 +254,14 @@ export async function generateDietPlan(input?: {
     keep: pick(ue?.keep, profile?.keep_foods),
   };
 
+  // Bias selection toward the foods the user actually logs most (learned from
+  // their food log). A soft "like" nudge on top of the typed usual-eating seed.
+  const preferIds = await learnedPreferIds(supabase, user.id, await getLocalToday());
+
   // GENERATION uses the curated staples catalog only (simple, repeatable,
   // desi-friendly plans). The full imported pool stays one tap away via
   // per-item swap / Add food / search, which DO pass getMealPool.
-  const plan = buildPlan({ calorieTarget, proteinTargetG, filter, usual, seed: randomSeed() });
+  const plan = buildPlan({ calorieTarget, proteinTargetG, filter, usual, seed: randomSeed(), preferIds });
 
   // A regenerate is an intentional full replace — no compare-and-swap, but it
   // stamps a fresh rev so per-item edits in stale tabs conflict afterwards.
@@ -285,9 +294,11 @@ export async function swapDietMeal(slot: MealSlot): Promise<PlanResult> {
     .maybeSingle();
   if (!row?.plan) return { ok: false, error: "Generate a plan first." };
 
-  // Meal re-selection is generation too → curated staples only (see above).
+  // Meal re-selection is generation too → curated staples only (see above),
+  // biased toward the user's most-logged foods.
   const prior = row.plan as DietPlan;
-  const swapped = swapMeal(prior, slot, randomSeed());
+  const preferIds = await learnedPreferIds(supabase, user.id, await getLocalToday());
+  const swapped = swapMeal(prior, slot, randomSeed(), FOOD_CATALOG, preferIds);
 
   const saved = await persistPlan(supabase, user.id, swapped, prior.rev);
   if (!saved.ok) return { ok: false, error: saved.error! };
@@ -341,6 +352,59 @@ async function persistPlan(
   return { ok: true };
 }
 
+// --- daily loop + learned foods (shared helpers) ----------------------------
+
+/** A YYYY-MM-DD date `days` before `today` (UTC math on the local-day string). */
+function daysAgoDate(today: string, days: number): string {
+  const [y, m, d] = today.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d) - days * 86_400_000).toISOString().slice(0, 10);
+}
+
+/**
+ * Today's logged macro totals — the authoritative "eaten so far", read from the
+ * SAME food_logs source as the Home dashboard (via the pure itemMacros/sumMacros
+ * helpers) so the Plan tab and Home always agree.
+ */
+async function consumedToday(
+  supabase: Supa,
+  userId: string,
+  date: string
+): Promise<{ calories: number; proteinG: number }> {
+  const { data } = await supabase
+    .from("food_logs")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("logged_on", date)
+    .returns<FoodLog[]>();
+  const t = sumMacros((data ?? []).map(itemMacros));
+  return { calories: t.calories, proteinG: t.protein_g };
+}
+
+/**
+ * Pool food ids the user logs most over the last 14 days, mapped to planner ids.
+ * A soft bias only (the planner treats them as "likes"), so it degrades to an
+ * empty set on any error — generation/swaps still work, just without the nudge.
+ */
+async function learnedPreferIds(supabase: Supa, userId: string, today: string): Promise<Set<string>> {
+  try {
+    const { data } = await supabase
+      .from("food_logs")
+      .select("matched_food_id, food_name, logged_on")
+      .eq("user_id", userId)
+      .gte("logged_on", daysAgoDate(today, 14))
+      .order("logged_on", { ascending: false })
+      .limit(600);
+    const ranked = rankLoggedFoods((data ?? []) as LoggedFoodRow[], {
+      now: new Date(`${today}T12:00:00Z`),
+      days: 14,
+      limit: 8,
+    });
+    return new Set(ranked.map((r) => r.poolId));
+  } catch {
+    return new Set();
+  }
+}
+
 /**
  * "I ate this" — log a plan meal's items into today's food log (the plan→log
  * loop). SERVER-AUTHORITATIVE: items come from the user's SAVED plan, never
@@ -372,9 +436,45 @@ export async function logPlanMeal(
     return { ok: false, error: error.message };
   }
 
+  // Mark this meal as logged TODAY so the Plan tab can show it done and FREEZE it
+  // when refitting the rest of the day. Best-effort: the food is already logged,
+  // so a concurrency conflict here must never fail the action (revalidates /diet).
+  const prevLogged = ctx.plan.logged;
+  const slots = prevLogged?.date === date ? [...new Set([...prevLogged.slots, slot])] : [slot];
+  await persistPlan(ctx.supabase, ctx.userId, { ...ctx.plan, logged: { date, slots } }, ctx.plan.rev);
+
   await logEvent(ctx.supabase, ctx.userId, "food_logged", { items: rows.length, method: "plan_meal", slot });
   revalidatePath("/dashboard");
   return { ok: true, count: rows.length };
+}
+
+/**
+ * "Fit to what's left" — rebuild only the meals the user hasn't logged yet so
+ * they fit today's REMAINING calories/protein (target − eaten, read from the
+ * food log). Meals already logged today are frozen. Deterministic + pure under
+ * the hood (`replanRemaining`); this action just gathers the live inputs.
+ */
+export async function fitRemainingDay(): Promise<PlanResult> {
+  const ctx = await planContext();
+  if (!ctx.ok) return ctx;
+
+  const today = await getLocalToday();
+  // Only a FRESH logged record (today) freezes meals; yesterday's is stale.
+  const eatenSlots = ctx.plan.logged?.date === today ? ctx.plan.logged.slots : [];
+  const consumed = await consumedToday(ctx.supabase, ctx.userId, today);
+  const remaining = {
+    calories: ctx.plan.calorieTarget - consumed.calories,
+    proteinG: ctx.plan.proteinTargetG - consumed.proteinG,
+  };
+  const preferIds = await learnedPreferIds(ctx.supabase, ctx.userId, today);
+
+  // Generation-like → curated staples only (matches generateDietPlan/swapDietMeal).
+  const next = replanRemaining(ctx.plan, remaining, eatenSlots, FOOD_CATALOG, randomSeed(), preferIds);
+  if (next === ctx.plan) {
+    return { ok: false, error: "Nothing left to adjust — you've hit today's target." };
+  }
+  const saved = await persistPlan(ctx.supabase, ctx.userId, next, ctx.plan.rev);
+  return saved.ok ? { ok: true, plan: next } : { ok: false, error: saved.error! };
 }
 
 function isRestorablePlanItem(item: PlanMealItem): item is PlanMealItem {
@@ -396,7 +496,8 @@ export async function swapDietItem(slot: MealSlot, index: number): Promise<PlanR
   const ctx = await planContext();
   if (!ctx.ok) return ctx;
   const pool = await getMealPool(ctx.supabase);
-  const next = swapPlanItem(ctx.plan, slot, index, randomSeed(), pool);
+  const preferIds = await learnedPreferIds(ctx.supabase, ctx.userId, await getLocalToday());
+  const next = swapPlanItem(ctx.plan, slot, index, randomSeed(), pool, preferIds);
   if (next === ctx.plan) return { ok: false, error: "No other option fits this slot." };
   const saved = await persistPlan(ctx.supabase, ctx.userId, next, ctx.plan.rev);
   return saved.ok ? { ok: true, plan: next } : { ok: false, error: saved.error! };

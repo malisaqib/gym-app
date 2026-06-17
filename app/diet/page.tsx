@@ -7,7 +7,10 @@ import { getDietPlan } from "./actions";
 import { filterFromPreference, mergeFilters, type DietFilter } from "@/lib/diet/planner";
 import { keywordPreferences } from "@/lib/coach/dietCoach";
 import { extractOnboardingNote } from "@/lib/onboarding/notes";
-import type { FoodPreference, Lang, OnboardingEntry } from "@/lib/database.types";
+import { getLocalToday } from "@/lib/date";
+import { itemMacros } from "@/lib/food/quantity";
+import { sumMacros } from "@/lib/food/totals";
+import type { FoodLog, FoodPreference, Lang, OnboardingEntry } from "@/lib/database.types";
 
 // The diet-plan generator screen (reached from the Eat tab). Protected.
 export default async function DietPage() {
@@ -28,6 +31,20 @@ export default async function DietPage() {
 
   const lang = (profile?.preferred_language as Lang) ?? "en";
   const plan = await getDietPlan();
+
+  // Today-aware Plan tab (the daily loop): read what's actually been eaten today
+  // from the SAME food_logs source as Home, so "eaten / remaining" agrees across
+  // tabs. `today` is the user's local day; the view freezes meals whose slot is
+  // in plan.logged.slots when plan.logged.date === today.
+  const today = await getLocalToday();
+  const { data: foodRows } = await supabase
+    .from("food_logs")
+    .select("*")
+    .eq("user_id", user.id)
+    .eq("logged_on", today)
+    .returns<FoodLog[]>();
+  const consumedTotals = sumMacros((foodRows ?? []).map(itemMacros));
+  const consumed = { calories: consumedTotals.calories, protein: consumedTotals.protein_g };
 
   // Seed the screen's filter so earlier answers carry over: a saved plan wins;
   // otherwise the food preference + the onboarding "avoid" note (parsed locally).
@@ -69,6 +86,8 @@ export default async function DietPage() {
           hasTargets={!!profile?.calorie_target}
           lang={lang}
           paceInfo={paceInfo}
+          today={today}
+          consumed={consumed}
         />
       </Screen>
       <BottomNav />

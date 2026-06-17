@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Leaf, AlertTriangle, UtensilsCrossed, RefreshCw, Flag, MoreVertical, X } from "lucide-react";
+import { Leaf, AlertTriangle, UtensilsCrossed, RefreshCw, Flag, MoreVertical, X, CheckCircle2, Sparkles } from "lucide-react";
 import { listContainer, listItem } from "@/lib/motion";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -21,6 +21,7 @@ import {
   correctDietItem,
   getDietPlan,
   logPlanMeal,
+  fitRemainingDay,
 } from "./actions";
 import { localDateString } from "@/lib/localDate";
 import { redirectIfSignedOut } from "@/lib/clientAuth";
@@ -91,6 +92,24 @@ const T = {
   swap: { en: "Swap", roman_urdu: "Badlein" },
   logMeal: { en: "Log meal", roman_urdu: "Meal log karein" },
   mealLogged: { en: "Added to Today ✓", roman_urdu: "Aaj mein add ho gaya ✓" },
+  logged: { en: "Logged", roman_urdu: "Log ho gaya" },
+  todayTitle: { en: "Today so far", roman_urdu: "Aaj ab tak" },
+  left: { en: "left", roman_urdu: "baqi" },
+  over: { en: "over", roman_urdu: "zyada" },
+  fitRemaining: { en: "Fit to what's left", roman_urdu: "Baqi pe fit karein" },
+  fitting: { en: "Adjusting…", roman_urdu: "Adjust ho raha…" },
+  fitHint: {
+    en: "Re-sizes the meals you haven't logged yet to fit your remaining calories & protein.",
+    roman_urdu: "Jo meals abhi log nahi kiye, unko bachi calories aur protein pe fit kar deta hai.",
+  },
+  hitTarget: {
+    en: "You've reached today's calories — anything more is your call.",
+    roman_urdu: "Aaj ki calories poori ho gayin — aage aap ki marzi.",
+  },
+  allLogged: {
+    en: "Every meal logged for today — nice work. 💪",
+    roman_urdu: "Aaj ke saare meals log ho gaye — shabash. 💪",
+  },
   paceLine: {
     en: "Built for a safe {pace} kg/week — on track for {goal} kg{date}.",
     roman_urdu: "Mehfooz raftaar {pace} kg/hafta ke liye bana — {goal} kg ki taraf{date}.",
@@ -111,7 +130,7 @@ const T = {
   },
   habitsOn: { en: "Focus on habits", roman_urdu: "Habits par focus" },
   habitsOff: { en: "Show numbers", roman_urdu: "Numbers dikhayein" },
-  daily: { en: "Daily total", roman_urdu: "Din ka total" },
+  daily: { en: "Your plan's total", roman_urdu: "Aap ke plan ka total" },
   cal: { en: "kcal", roman_urdu: "kcal" },
   protein: { en: "protein", roman_urdu: "protein" },
   emptyTitle: { en: "No meal plan yet", roman_urdu: "Abhi koi meal plan nahi" },
@@ -178,6 +197,8 @@ export default function DietPlanView({
   hasTargets,
   lang,
   paceInfo = null,
+  today,
+  consumed,
 }: {
   initialPlan: DietPlan | null;
   initialFilter: DietFilter;
@@ -185,6 +206,11 @@ export default function DietPlanView({
   hasTargets: boolean;
   lang: Lang;
   paceInfo?: PaceInfo | null;
+  // The daily loop: the user's local date + what they've actually eaten today
+  // (read from the food log, server-side). Drives the "Today" card and the
+  // logged-meal state. Kept as local state so logging a meal updates it live.
+  today: string;
+  consumed: { calories: number; protein: number };
 }) {
   const t = (k: keyof typeof T) => T[k][lang];
 
@@ -196,6 +222,10 @@ export default function DietPlanView({
   }
 
   const [plan, setPlan] = useState<DietPlan | null>(initialPlan);
+  // Live "eaten today" mirror — starts from the server snapshot and updates when
+  // a plan meal is logged below, so the Today card stays honest without a reload.
+  const [eaten, setEaten] = useState(consumed);
+  const [fitting, setFitting] = useState(false);
   const [usual, setUsual] = useState<UsualEating>(initialUsual);
   const [notes, setNotes] = useState("");
   const [vegetarian, setVegetarian] = useState(initialFilter.vegetarian);
@@ -231,7 +261,13 @@ export default function DietPlanView({
   // Any in-flight plan mutation. We serialize edits: concurrent writes to the one
   // saved plan row would silently overwrite each other (last-write-wins), so only
   // one generate/swap/add/remove runs at a time.
-  const mutating = busy || swapping !== null || itemBusy !== null || addBusy || undoBusy;
+  const mutating = busy || swapping !== null || itemBusy !== null || addBusy || undoBusy || fitting;
+
+  // Meals already logged into today's food log (a FRESH record only — a stale
+  // date from a previous day counts as nothing logged).
+  const loggedSlots = new Set<MealSlot>(
+    plan?.logged && plan.logged.date === today ? plan.logged.slots : []
+  );
 
   useEffect(() => {
     if (!openMenu) return;
@@ -335,6 +371,17 @@ export default function DietPlanView({
       if (res.ok) {
         haptic("success");
         toast.success(t("mealLogged"));
+        // Mirror it locally: bump today's eaten totals + mark the meal done (the
+        // server recorded both — this just avoids a reload).
+        const meal = plan?.meals.find((m) => m.slot === slot);
+        if (meal) {
+          setEaten((e) => ({ calories: e.calories + meal.calories, protein: e.protein + meal.protein }));
+        }
+        setPlan((p) => {
+          if (!p) return p;
+          const cur = p.logged?.date === today ? p.logged.slots : [];
+          return { ...p, logged: { date: today, slots: [...new Set([...cur, slot])] } };
+        });
       } else {
         surfaceActionError(res.error);
       }
@@ -343,6 +390,29 @@ export default function DietPlanView({
     } finally {
       setLoggingMeal(null);
       logMealLock.current = false;
+    }
+  }
+
+  // "Fit to what's left" — refit the un-logged meals to today's remaining
+  // calories/protein (server-authoritative; eaten meals are frozen).
+  async function fitRemaining() {
+    if (mutating) return;
+    clearRemoveUndo();
+    setOpenMenu(null);
+    setFitting(true);
+    setError(null);
+    try {
+      const res = await fitRemainingDay();
+      if (res.ok) {
+        setPlan(res.plan);
+        haptic("success");
+      } else {
+        surfaceActionError(res.error);
+      }
+    } catch {
+      toast.error("Couldn't adjust the plan. Please try again.");
+    } finally {
+      setFitting(false);
     }
   }
 
@@ -651,6 +721,26 @@ export default function DietPlanView({
 
       {plan && (
         <>
+          {/* Today so far — the daily loop: eaten vs target + "fit what's left". */}
+          {!habits && (
+            <TodayCard
+              calorieTarget={plan.calorieTarget}
+              proteinTarget={plan.proteinTargetG}
+              eaten={eaten}
+              canFit={
+                plan.calorieTarget - eaten.calories > 0 &&
+                plan.meals.some((m) => m.items.length > 0 && !loggedSlots.has(m.slot))
+              }
+              allLogged={
+                plan.meals.some((m) => m.items.length > 0) &&
+                plan.meals.filter((m) => m.items.length > 0).every((m) => loggedSlots.has(m.slot))
+              }
+              fitting={fitting}
+              onFit={fitRemaining}
+              lang={lang}
+            />
+          )}
+
           {/* Daily totals vs target (hidden in the habits-focused view) */}
           {!habits ? (
             <Card className="p-4">
@@ -693,7 +783,9 @@ export default function DietPlanView({
             <AnimatePresence initial={false}>
               {plan.meals.map((meal) => (
                 <motion.div key={meal.slot} variants={listItem} layout>
-                  <Card className="space-y-2 p-4">
+                  <Card
+                    className={`space-y-2 p-4 ${loggedSlots.has(meal.slot) ? "ring-1 ring-primary/30" : ""}`}
+                  >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <h3 className="font-display text-base font-semibold text-foreground">
@@ -706,24 +798,31 @@ export default function DietPlanView({
                         )}
                       </div>
                       <div className="flex shrink-0 items-center gap-1.5">
-                        {/* "I ate this" — log the whole meal into today (plan→log loop). */}
-                        {!habits && meal.items.length > 0 && (
-                          <button
-                            type="button"
-                            onPointerDown={() => haptic("tap")}
-                            onClick={() => logMealToToday(meal.slot)}
-                            disabled={loggingMeal !== null}
-                            className="min-h-[36px] rounded-pill bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition active:scale-[0.97] disabled:opacity-40"
-                          >
-                            {loggingMeal === meal.slot ? (
-                              "…"
-                            ) : (
-                              <span className="inline-flex items-center gap-1">
-                                <UtensilsCrossed size={13} aria-hidden /> {t("logMeal")}
-                              </span>
-                            )}
-                          </button>
-                        )}
+                        {/* "I ate this" — log the whole meal into today (plan→log loop).
+                            Once logged today it shows a done chip instead. */}
+                        {!habits &&
+                          meal.items.length > 0 &&
+                          (loggedSlots.has(meal.slot) ? (
+                            <span className="inline-flex min-h-[36px] items-center gap-1 rounded-pill bg-primary-soft px-3 py-1.5 text-xs font-semibold text-primary">
+                              <CheckCircle2 size={13} aria-hidden /> {t("logged")}
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onPointerDown={() => haptic("tap")}
+                              onClick={() => logMealToToday(meal.slot)}
+                              disabled={loggingMeal !== null}
+                              className="min-h-[36px] rounded-pill bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition active:scale-[0.97] disabled:opacity-40"
+                            >
+                              {loggingMeal === meal.slot ? (
+                                "…"
+                              ) : (
+                                <span className="inline-flex items-center gap-1">
+                                  <UtensilsCrossed size={13} aria-hidden /> {t("logMeal")}
+                                </span>
+                              )}
+                            </button>
+                          ))}
                         <button
                           type="button"
                           onPointerDown={() => haptic("tap")}
@@ -1097,6 +1196,111 @@ function TargetBar({
         <div className={`h-full rounded-pill ${bar} transition-all`} style={{ width: `${barPct}%` }} />
       </div>
       <p className="mt-0.5 text-xs text-muted-foreground tabular-nums">{rawPct}% of target</p>
+    </div>
+  );
+}
+
+// "Today so far" — the daily loop. Shows what's actually been eaten (from the
+// food log) vs target, how much is left, and a one-tap "fit the rest of the day
+// to what's left" when there are un-logged meals and calories remaining.
+function TodayCard({
+  calorieTarget,
+  proteinTarget,
+  eaten,
+  canFit,
+  allLogged,
+  fitting,
+  onFit,
+  lang,
+}: {
+  calorieTarget: number;
+  proteinTarget: number;
+  eaten: { calories: number; protein: number };
+  canFit: boolean;
+  allLogged: boolean;
+  fitting: boolean;
+  onFit: () => void;
+  lang: Lang;
+}) {
+  const t = (k: keyof typeof T) => T[k][lang];
+  const remCal = calorieTarget - eaten.calories;
+  return (
+    <Card className="space-y-3 p-4">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("todayTitle")}</p>
+        {canFit && (
+          <button
+            type="button"
+            onPointerDown={() => haptic("tap")}
+            onClick={onFit}
+            disabled={fitting}
+            className="inline-flex min-h-[36px] items-center gap-1.5 rounded-pill border border-primary/40 bg-primary-soft px-3 py-1.5 text-xs font-semibold text-primary transition active:scale-[0.97] disabled:opacity-50"
+          >
+            {fitting ? (
+              t("fitting")
+            ) : (
+              <>
+                <Sparkles size={13} aria-hidden /> {t("fitRemaining")}
+              </>
+            )}
+          </button>
+        )}
+      </div>
+      <div className="flex gap-5">
+        <RemainingStat eaten={eaten.calories} target={calorieTarget} unit={t("cal")} leftLabel={t("left")} overLabel={t("over")} />
+        <RemainingStat
+          eaten={eaten.protein}
+          target={proteinTarget}
+          unit={`g ${t("protein")}`}
+          leftLabel={t("left")}
+          overLabel={t("over")}
+        />
+      </div>
+      {allLogged ? (
+        <p className="rounded-field bg-primary-soft px-3 py-2 text-xs text-primary">{t("allLogged")}</p>
+      ) : remCal <= 0 ? (
+        <p className="rounded-field bg-muted px-3 py-2 text-xs text-warning">{t("hitTarget")}</p>
+      ) : canFit ? (
+        <p className="text-xs text-muted-foreground">{t("fitHint")}</p>
+      ) : null}
+    </Card>
+  );
+}
+
+// Eaten-vs-target with the amount LEFT (or "over"). Sibling of TargetBar, but
+// framed around what remains today rather than how full the plan is.
+function RemainingStat({
+  eaten,
+  target,
+  unit,
+  leftLabel,
+  overLabel,
+}: {
+  eaten: number;
+  target: number;
+  unit: string;
+  leftLabel: string;
+  overLabel: string;
+}) {
+  const pct = target > 0 ? Math.min(100, Math.round((eaten / target) * 100)) : 0;
+  const left = target - eaten;
+  const over = left < 0;
+  return (
+    <div className="flex-1">
+      <p className="font-display text-lg font-semibold tabular-nums text-foreground">
+        {eaten}
+        <span className="text-sm font-normal text-muted-foreground"> / {target}</span>
+        <span className="ml-1 text-xs font-normal text-muted-foreground">{unit}</span>
+      </p>
+      <div className="mt-1 h-1.5 w-full overflow-hidden rounded-pill bg-muted">
+        <div
+          className={`h-full rounded-pill ${over ? "bg-warning" : "bg-primary"} transition-all`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <p className="mt-0.5 text-xs tabular-nums text-muted-foreground">
+        {over ? `${Math.abs(left)} ${overLabel}` : `${left} ${leftLabel}`}
+      </p>
     </div>
   );
 }

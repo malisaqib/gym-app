@@ -89,6 +89,11 @@ export interface DietPlan {
   // compare-and-swap on it so a stale tab can't silently overwrite edits made
   // in another tab. Absent on plans saved before this field existed.
   rev?: number;
+  // Which meals the user has already logged into their food log TODAY (the
+  // plan→log loop). `date` is the user's LOCAL day; when it isn't today the
+  // whole record is stale and treated as "nothing logged yet" (a new day
+  // clears it). Additive — old plans simply have none.
+  logged?: { date: string; slots: MealSlot[] };
 }
 
 // The tolerance bar (±5%): a generated plan must land within 95–100% of the
@@ -583,6 +588,10 @@ export function buildPlan(input: {
   // The food pool to build from. Defaults to the curated catalog (tests); the
   // diet action passes catalog ∪ classified USDA foods for full breadth.
   pool?: CatalogFood[];
+  // Pool food ids the user actually logs a lot (learned from their food log).
+  // Treated exactly like a "like" — a fill-time bonus that biases selection
+  // toward familiar foods. Stacks with the typed "usual eating" likes.
+  preferIds?: Set<string>;
 }): DietPlan {
   const pool = input.pool ?? FOOD_CATALOG;
   const seed = input.seed ?? 1;
@@ -605,11 +614,13 @@ export function buildPlan(input: {
     };
   }
 
-  // Likes (a fill-time bonus) come from go-to foods AND keep foods.
+  // Likes (a fill-time bonus) come from go-to foods AND keep foods, PLUS the
+  // foods the user logs most (preferIds, learned from their food log).
   const likeText = [input.usual?.foods, input.usual?.keep].filter(Boolean).join(" ");
   const likeIds = new Set(
     likeText ? pool.filter((f) => mentioned(f, likeText)).map((f) => f.id) : []
   );
+  for (const id of input.preferIds ?? []) likeIds.add(id);
 
   // Whey/supplements are auto-plannable ONLY when the user's usual diet
   // mentions them (e.g. "whey shake after gym") — and stay swappable like any
@@ -674,7 +685,13 @@ export function buildPlan(input: {
 }
 
 /** Re-select a single meal (used by "swap this meal"). No usual-food seed, so it varies. */
-export function swapMeal(plan: DietPlan, slot: MealSlot, newSeed: number, pool: CatalogFood[] = FOOD_CATALOG): DietPlan {
+export function swapMeal(
+  plan: DietPlan,
+  slot: MealSlot,
+  newSeed: number,
+  pool: CatalogFood[] = FOOD_CATALOG,
+  preferIds: Set<string> = new Set()
+): DietPlan {
   const target = plan.meals.find((m) => m.slot === slot);
   if (!target) return plan;
   const meta = SLOT_META.find((x) => x.slot === slot)!;
@@ -682,7 +699,8 @@ export function swapMeal(plan: DietPlan, slot: MealSlot, newSeed: number, pool: 
   const budget = target.budget;
   const slotProtein = plan.proteinTargetG * PROTEIN_SHARE[slot];
   const cands = pool.filter((f) => f.slots.includes(slot) && allowedForAutoPlan(f, plan.filter));
-  const picks = buildSimpleMeal(budget, slotProtein, slot, cands, rng, undefined, new Set());
+  // Bias the fresh selection toward the foods the user logs most.
+  const picks = buildSimpleMeal(budget, slotProtein, slot, cands, rng, undefined, preferIds);
 
   const meal = finalizeMeal({ slot, title: meta.title, budget, cands, picks });
   const meals = plan.meals.map((m) => (m.slot === slot ? meal : m));
@@ -696,6 +714,62 @@ export function swapMeal(plan: DietPlan, slot: MealSlot, newSeed: number, pool: 
     proteinShort: totalProtein < plan.proteinTargetG,
     caloriesShort: totalCalories < plan.calorieTarget * SHORT_THRESHOLD,
   };
+}
+
+/**
+ * "Fit to what's left": rebuild ONLY the meals the user hasn't eaten yet so they
+ * fit today's REMAINING calories/protein. Eaten slots are frozen; the un-eaten
+ * slots get fresh budgets (their day-shares re-normalised to sum to the remaining
+ * calories) and are rebuilt + portion-scaled toward the remaining targets, never
+ * exceeding them (the scaler's hard cap becomes the remaining-calorie cap over
+ * this subset). Deterministic for a seed. Pure (no DB/AI).
+ *
+ * No-op when there's nothing left to plan (every meal eaten) or no room left
+ * (remaining calories ≤ 0) — the UI says "you've hit your target" instead.
+ */
+export function replanRemaining(
+  plan: DietPlan,
+  remaining: { calories: number; proteinG: number },
+  eatenSlots: MealSlot[],
+  pool: CatalogFood[] = FOOD_CATALOG,
+  seed = 1,
+  preferIds: Set<string> = new Set()
+): DietPlan {
+  const eaten = new Set(eatenSlots);
+  const remCal = Math.max(0, Math.round(remaining.calories));
+  const remPro = Math.max(0, Math.round(remaining.proteinG));
+  const openMeta = SLOT_META.filter((m) => !eaten.has(m.slot));
+  if (openMeta.length === 0 || remCal <= 0) return plan;
+
+  const rng = mulberry32(seed);
+
+  // Re-normalise the day-share % of the un-eaten slots so their new budgets sum
+  // to EXACTLY the remaining calories (last open slot absorbs rounding).
+  const pctSum = openMeta.reduce((s, m) => s + m.pct, 0) || 1;
+  let acc = 0;
+  const budgets = openMeta.map((m, i) => {
+    const cal = i === openMeta.length - 1 ? Math.max(0, remCal - acc) : Math.round(remCal * (m.pct / pctSum));
+    acc += cal;
+    return { slot: m.slot, title: m.title, cal };
+  });
+
+  // Split remaining protein across the open slots by their protein shares. If
+  // only zero-protein slots remain (e.g. just snack), every slot targets 0 and
+  // we just fill calories.
+  const proShareSum = openMeta.reduce((s, m) => s + PROTEIN_SHARE[m.slot], 0);
+
+  const built: BuiltMeal[] = budgets.map((b) => {
+    const slotProtein = proShareSum > 0 ? remPro * (PROTEIN_SHARE[b.slot] / proShareSum) : 0;
+    const cands = pool.filter((f) => f.slots.includes(b.slot) && allowedForAutoPlan(f, plan.filter));
+    const picks = buildSimpleMeal(b.cal, slotProtein, b.slot, cands, rng, undefined, preferIds);
+    return { slot: b.slot, title: b.title, budget: b.cal, cands, picks };
+  });
+
+  scaleDayToTargets(built, remCal, remPro);
+
+  const rebuilt = new Map(built.map((b) => [b.slot, finalizeMeal(b)]));
+  const meals = plan.meals.map((m) => (eaten.has(m.slot) ? m : rebuilt.get(m.slot) ?? m));
+  return recompute({ ...plan, meals });
 }
 
 /** Validate a swap target id belongs to the catalog (defensive for stored data). */
@@ -866,7 +940,8 @@ export function swapPlanItem(
   slot: MealSlot,
   index: number,
   newSeed: number,
-  pool: CatalogFood[] = FOOD_CATALOG
+  pool: CatalogFood[] = FOOD_CATALOG,
+  preferIds: Set<string> = new Set()
 ): DietPlan {
   const meal = mealAt(plan, slot);
   const item = meal?.items[index];
@@ -890,15 +965,16 @@ export function swapPlanItem(
   const finalPool = rolePool.length ? rolePool : base(() => true);
   if (finalPool.length === 0) return plan;
 
-  // Rotate WIDELY: sort by fit, then let the seed pick anywhere in the top 25
+  // Closeness to the current calories + protein density, plus a nudge toward
+  // foods the user logs a lot (preferIds). Higher is better.
+  const score = (f: CatalogFood) =>
+    -Math.abs(f.calories - item.calories) / 10 +
+    proteinDensity(f) * 40 +
+    (preferIds.has(f.id) ? 15 : 0);
+
+  // Rotate WIDELY: sort by score, then let the seed pick anywhere in the top 25
   // (not always the same best 3) — repeated swaps walk through many options.
-  const sorted = [...finalPool].sort(
-    (a, b) =>
-      -Math.abs(a.calories - item.calories) / 10 + proteinDensity(a) * 40 <
-      -Math.abs(b.calories - item.calories) / 10 + proteinDensity(b) * 40
-        ? 1
-        : -1
-  );
+  const sorted = [...finalPool].sort((a, b) => score(b) - score(a) || a.id.localeCompare(b.id));
   const pick = sorted[Math.floor(rng() * Math.min(sorted.length, 25))];
   if (!pick) return plan;
   return withMeal(plan, slot, meal.items.map((it, i) => (i === index ? toItem(pick) : it)));
