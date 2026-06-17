@@ -50,6 +50,19 @@ test("scales trusted foods by logged grams", () => {
   assert.equal(item.nutrition_source, "verified");
 });
 
+test("grounds egg whites to the verified catalog, overriding a wrong LLM estimate", () => {
+  // The model used to guess ~40 kcal / 8 g per egg white (≈double reality). A
+  // strong catalog match must override that estimate with the USDA-backed value.
+  const [item] = groundParsedFoodItems([
+    parsed({ food_name: "egg whites", quantity: 3, unit: "egg", calories: 120, protein_g: 24 }),
+  ]);
+
+  assert.equal(item.matched_food_id, "catalog:egg_white");
+  assert.equal(item.nutrition_source, "verified");
+  assert.equal(item.calories, 51); // 3 × 17, overriding the 120 estimate
+  assert.equal(item.protein_g, 11); // 3 × 3.6 → 10.8 → 11, overriding 24
+});
+
 test("leaves unknown foods unchanged", () => {
   const [item] = groundParsedFoodItems([
     parsed({ food_name: "mystery preworkout sauce", quantity: 1, unit: "serving", calories: 42 }),

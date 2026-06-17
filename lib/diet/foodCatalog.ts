@@ -82,6 +82,11 @@ export const FOOD_CATALOG: CatalogFood[] = [
   { id: "ground_beef", name: "Ground beef (cooked)", region: "western", portion: "100g", calories: 250, protein: 26, carbs: 0, fat: 15, vegetarian: false, role: "protein", slots: [L, D], tags: ["beef"] },
   { id: "greek_yogurt", name: "Greek yogurt (plain)", region: "western", portion: "1 cup (170g)", calories: 100, protein: 17, carbs: 6, fat: 1, vegetarian: true, role: "dairy", slots: [B, S], tags: ["dairy"] },
   { id: "scrambled", name: "Scrambled eggs", region: "western", portion: "2 eggs", calories: 180, protein: 12, carbs: 2, fat: 14, vegetarian: true, role: "protein", slots: [B], tags: ["egg"] },
+  // Egg white — per 1 large white (~33g). USDA FoodData Central: 17 kcal, 3.6 g
+  // protein, ~0 g carb/fat (≈52 kcal & 11 g per 100 g). Protein kept fractional
+  // (not rounded to 4) so logging several doesn't over-report — this is a
+  // protein-accuracy app. Replaces the old LLM estimate of ~40 kcal/8 g per egg.
+  { id: "egg_white", name: "Egg white", region: "global", portion: "1 egg white", calories: 17, protein: 3.6, carbs: 0, fat: 0, vegetarian: true, role: "protein", slots: [B, L, D, S], tags: ["egg"], aliases: ["egg whites", "egg white only", "egg whites only", "andey ki safedi", "anda ki safedi", "safedi", "liquid egg white", "liquid egg whites"] },
 
   // ---- western carbs ----
   { id: "oats", name: "Oatmeal", region: "western", portion: "1 cup cooked", calories: 150, protein: 5, carbs: 27, fat: 3, vegetarian: true, role: "carb", slots: [B], tags: ["oats"] },
