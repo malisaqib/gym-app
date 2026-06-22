@@ -781,6 +781,37 @@ test("hybrid: a selected food that matches the catalog is actually used (Groq dr
   assert.ok(lunch.includes("daal") || lunch.includes("rice"), `lunch ignored the selection: ${lunch.join(",")}`);
 });
 
+test("hybrid polish: one mentioned protein does not seed multiple same-category dishes", () => {
+  const plan = buildPlanFromSelection(
+    { breakfast: ["eggs", "paratha"], lunch: ["chicken", "rice"] },
+    { calorieTarget: 2100, proteinTargetG: 130, filter: openFilter, seed: 1 }
+  );
+
+  const breakfast = plan.meals.find((m) => m.slot === "breakfast")!.items;
+  const breakfastFoods = breakfast.map((i) => CATALOG_BY_ID[i.id]).filter(Boolean);
+  assert.equal(
+    breakfastFoods.filter((f) => f!.tags.includes("egg")).length,
+    1,
+    `eggs seeded too many egg dishes: ${breakfast.map((i) => i.name).join(", ")}`
+  );
+  assert.ok(
+    breakfastFoods.some((f) => f!.role === "carb"),
+    `breakfast did not preserve a carb seed: ${breakfast.map((i) => i.name).join(", ")}`
+  );
+
+  const lunch = plan.meals.find((m) => m.slot === "lunch")!.items;
+  const lunchFoods = lunch.map((i) => CATALOG_BY_ID[i.id]).filter(Boolean);
+  assert.equal(
+    lunchFoods.filter((f) => f!.tags.includes("chicken")).length,
+    1,
+    `chicken seeded too many chicken dishes: ${lunch.map((i) => i.name).join(", ")}`
+  );
+  assert.ok(
+    lunchFoods.some((f) => f!.tags.includes("rice")),
+    `lunch did not preserve the rice seed: ${lunch.map((i) => i.name).join(", ")}`
+  );
+});
+
 test("hybrid: plans use only simple curated catalog foods, never fancy ingredients", () => {
   for (const names of SELECTIONS) {
     const plan = buildPlanFromSelection(names, { calorieTarget: 2000, proteinTargetG: 120, filter: openFilter, seed: 7 });

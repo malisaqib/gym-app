@@ -353,13 +353,29 @@ function buildSimpleMeal(
   const has = (f: CatalogFood) => picks.some((p) => p.food.id === f.id);
   const likeBonus = (f: CatalogFood) => (likeIds.has(f.id) ? 8 : 0);
 
-  // 1) The user's usual foods for this slot seed the meal first (kept as-is;
-  //    the day-level scale pass may grow their portions later).
+  // 1) The user's usual foods (or the selector's picks) for this slot seed the
+  //    meal first (kept as-is; the day-level scale pass may grow them later).
+  //    One seed per food category (protein/carb/side/etc.) so a single mention
+  //    like "eggs" seeds one egg dish, not three. This keeps plans simple and
+  //    honors each distinct pick (for example, eggs + paratha).
   if (usualText) {
-    const seeds = cands
+    const matched = cands
       .filter((f) => mentioned(f, usualText))
-      .sort((a, b) => b.protein - a.protein || a.id.localeCompare(b.id))
-      .slice(0, 3);
+      .sort(
+        (a, b) =>
+          Number(!!b.staple) - Number(!!a.staple) || // simple staples before composite dishes
+          b.protein - a.protein ||
+          a.id.localeCompare(b.id)
+      );
+    const seenCategory = new Set<string>();
+    const seeds: CatalogFood[] = [];
+    for (const f of matched) {
+      const category = f.staple ?? f.role; // protein / carb / fruit / side / role
+      if (seenCategory.has(category)) continue;
+      seenCategory.add(category);
+      seeds.push(f);
+      if (seeds.length >= 3) break;
+    }
     for (const s of seeds) {
       if (has(s)) continue;
       const m = fitRenderedMult(s, calSoFar(), budget, 1);
