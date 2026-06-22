@@ -17,9 +17,14 @@ import {
   searchCatalog,
   bestCatalogMatch,
   replanRemaining,
+  buildPlanFromSelection,
   type DietPlan,
+  type DietFilter,
   type PlanMealItem,
+  type SelectedNames,
+  type UsualMeals,
 } from "@/lib/diet/planner";
+import { generateMealSelection, type MealSelectionProfile } from "@/lib/diet/mealSelection";
 import { parsePreferences, keywordPreferences } from "@/lib/coach/dietCoach";
 import { estimateMeal } from "@/app/coach/actions";
 import { FOOD_CATALOG, type CatalogFood, type MealSlot } from "@/lib/diet/foodCatalog";
@@ -32,7 +37,7 @@ import { getLocalToday } from "@/lib/date";
 import { logEvent } from "@/lib/analytics";
 import { consumeUsage, USAGE_LIMIT_MESSAGE } from "@/lib/usage";
 import { reportError } from "@/lib/log";
-import type { FoodLog, FoodPreference, Lang } from "@/lib/database.types";
+import type { FoodLog, FoodPreference, Lang, Region, Sex } from "@/lib/database.types";
 
 const SLOTS: MealSlot[] = ["breakfast", "lunch", "dinner", "snack"];
 
@@ -166,7 +171,7 @@ export async function generateDietPlan(input?: {
   const { data: profile } = await supabase
     .from("profiles")
     .select(
-      "calorie_target, protein_target_g, food_preference, preferred_language, usual_breakfast, usual_lunch, usual_dinner, usual_foods, keep_foods, disliked_foods"
+      "calorie_target, protein_target_g, food_preference, preferred_language, region, sex, usual_breakfast, usual_lunch, usual_dinner, usual_foods, keep_foods, disliked_foods"
     )
     .eq("id", user.id)
     .single<{
@@ -174,6 +179,8 @@ export async function generateDietPlan(input?: {
       protein_target_g: number | null;
       food_preference: FoodPreference | null;
       preferred_language: Lang | null;
+      region: Region | null;
+      sex: Sex | null;
       usual_breakfast: string | null;
       usual_lunch: string | null;
       usual_dinner: string | null;
@@ -258,10 +265,21 @@ export async function generateDietPlan(input?: {
   // their food log). A soft "like" nudge on top of the typed usual-eating seed.
   const preferIds = await learnedPreferIds(supabase, user.id, await getLocalToday());
 
-  // GENERATION uses the curated staples catalog only (simple, repeatable,
-  // desi-friendly plans). The full imported pool stays one tap away via
-  // per-item swap / Add food / search, which DO pass getMealPool.
-  const plan = buildPlan({ calorieTarget, proteinTargetG, filter, usual, seed: randomSeed(), preferIds });
+  // HYBRID generation (Phase 2): Groq picks the foods (region/prefs-aware), the
+  // deterministic engine grounds them in real macros and hits the targets. Stays
+  // on the curated staples catalog (simple, repeatable, desi-friendly); breadth
+  // is one tap away via per-item swap / Add food, which DO pass getMealPool.
+  // Degrades to the pure deterministic plan whenever Groq is unavailable.
+  const plan = await buildHybridPlan({
+    calorieTarget,
+    proteinTargetG,
+    filter,
+    usual,
+    preferIds,
+    region: profile?.region ?? null,
+    sex: profile?.sex ?? null,
+    foodPreference: profile?.food_preference ?? null,
+  });
 
   // A regenerate is an intentional full replace — no compare-and-swap, but it
   // stamps a fresh rev so per-item edits in stale tabs conflict afterwards.
@@ -403,6 +421,67 @@ async function learnedPreferIds(supabase: Supa, userId: string, today: string): 
   } catch {
     return new Set();
   }
+}
+
+/**
+ * HYBRID generation (Phase 2): Groq decides WHICH foods (the "what"); the
+ * deterministic engine grounds them in real catalog macros and sizes portions to
+ * hit the targets (the "how much"). Falls back to the pure deterministic plan
+ * when Groq is unavailable / returns nothing, or when its picks can't fill the
+ * day to tolerance. The numbers shown are ALWAYS the engine's, never Groq's.
+ */
+async function buildHybridPlan(args: {
+  calorieTarget: number;
+  proteinTargetG: number;
+  filter: DietFilter;
+  usual: UsualMeals;
+  preferIds: Set<string>;
+  region: Region | null;
+  sex: Sex | null;
+  foodPreference: FoodPreference | null;
+}): Promise<DietPlan> {
+  const { calorieTarget, proteinTargetG, filter, usual, preferIds } = args;
+  const deterministic = () =>
+    buildPlan({ calorieTarget, proteinTargetG, filter, usual, seed: randomSeed(), preferIds });
+
+  const usualText = [usual.breakfast, usual.lunch, usual.dinner, usual.foods, usual.keep]
+    .filter(Boolean)
+    .join(" ");
+  const mealProfile: MealSelectionProfile = {
+    calorieTarget,
+    proteinTargetG,
+    sex: args.sex,
+    region: args.region,
+    foodPreference: args.foodPreference,
+    vegetarian: filter.vegetarian,
+    excludeTags: filter.excludeTags,
+    excludeFoods: filter.excludeFoods,
+    // Protein powder is opt-in: only when the user's own usual/keep diet mentions
+    // it (mirrors the deterministic generator's whey rule).
+    allowProteinPowder: /\b(whey|protein\s*shake|protein\s*powder|supplement|shake)\b/i.test(usualText),
+    usualFoods: usual.foods ?? null,
+  };
+
+  const selection = await generateMealSelection(mealProfile);
+  if (!selection) return deterministic(); // Groq off/failed → deterministic fallback
+
+  const names: SelectedNames = {
+    breakfast: selection.breakfast.map((f) => f.name),
+    lunch: selection.lunch.map((f) => f.name),
+    dinner: selection.dinner.map((f) => f.name),
+    snack: selection.snack.map((f) => f.name),
+  };
+  const hybrid = buildPlanFromSelection(names, {
+    calorieTarget,
+    proteinTargetG,
+    filter,
+    usual,
+    seed: randomSeed(),
+    preferIds,
+  });
+  // Safety net: if Groq's foods couldn't fill the day to tolerance, prefer the
+  // pure deterministic plan (proven to hit ±5% on the full catalog).
+  return hybrid.caloriesShort ? deterministic() : hybrid;
 }
 
 /**

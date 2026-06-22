@@ -684,6 +684,61 @@ export function buildPlan(input: {
   };
 }
 
+/**
+ * Hybrid generator bridge (Phase 2): build a day from a per-slot list of food
+ * NAMES an upstream selector (Groq) chose. The names are fed into the SAME
+ * deterministic engine as buildPlan — they SEED each meal (matched to real
+ * catalog foods via `mentioned`; an avoided food can never slip in), then the
+ * math layer sizes portions to hit the targets within tolerance. Unmatched names
+ * simply don't seed and the deterministic builder fills the gap (protein + carb +
+ * side), so the plan is always complete, accurate (DB macros — never the
+ * selector's), and within the calorie cap.
+ *
+ * The user's real `usual`/`keep` foods are MERGED in (and keep stays protected),
+ * so Groq's picks never erase the comfort foods the user asked to keep.
+ * Pure + deterministic.
+ */
+export type SelectedNames = Partial<Record<MealSlot, string[]>>;
+
+export function buildPlanFromSelection(
+  names: SelectedNames,
+  input: {
+    calorieTarget: number;
+    proteinTargetG: number;
+    filter: DietFilter;
+    usual?: UsualMeals; // the user's real usual/keep — merged with the selection
+    pool?: CatalogFood[];
+    seed?: number;
+    preferIds?: Set<string>;
+  }
+): DietPlan {
+  const base = input.usual ?? {};
+  // Combine the user's existing slot text with the selector's names for that slot.
+  const merge = (existing: string | undefined, picks: string[] | undefined): string | undefined =>
+    [existing, picks?.length ? picks.join(", ") : undefined].filter(Boolean).join(", ") || undefined;
+  const allNames = (["breakfast", "lunch", "dinner", "snack"] as MealSlot[]).flatMap((s) => names[s] ?? []);
+
+  const usual: UsualMeals = {
+    breakfast: merge(base.breakfast, names.breakfast),
+    lunch: merge(base.lunch, names.lunch),
+    dinner: merge(base.dinner, names.dinner),
+    // Snacks are fruit by design (buildPlan ignores a "usual" snack); every name
+    // also goes into `foods` so the fill-time like-bonus leans toward them.
+    foods: merge(base.foods, allNames),
+    keep: base.keep, // preserved + protected (never swapped out)
+  };
+
+  return buildPlan({
+    calorieTarget: input.calorieTarget,
+    proteinTargetG: input.proteinTargetG,
+    filter: input.filter,
+    usual,
+    pool: input.pool,
+    seed: input.seed,
+    preferIds: input.preferIds,
+  });
+}
+
 /** Re-select a single meal (used by "swap this meal"). No usual-food seed, so it varies. */
 export function swapMeal(
   plan: DietPlan,
