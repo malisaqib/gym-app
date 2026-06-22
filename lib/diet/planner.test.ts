@@ -601,6 +601,15 @@ test("EDGE: per-item ops on SCALED items keep amounts and stay within flexed bud
   assert.ok(Math.abs(item.calories - lunch.items[scaledIdx].calories * 2) <= 2, "amount edit didn't scale");
 });
 
+test("EDGE: automatic scaler respects per-food realistic max amounts", () => {
+  const yogurt = { ...CATALOG_BY_ID.greek_yogurt, slots: ["breakfast", "snack"] as MealSlot[] };
+  const plan = buildPlan({ calorieTarget: 2400, proteinTargetG: 180, filter: openFilter, seed: 3, pool: [yogurt] });
+  const yogurts = plan.meals.flatMap((m) => m.items).filter((i) => i.id === "greek_yogurt");
+
+  assert.ok(yogurts.length > 0, "expected Greek yogurt to be selected");
+  assert.ok(yogurts.every((i) => (i.amount ?? 0) <= 340), `oversized yogurt: ${yogurts.map((i) => i.amount).join(", ")}`);
+});
+
 test("EDGE: swapping a scaled item keeps the meal within its flexed budget", () => {
   const plan = buildPlan({ calorieTarget: 2000, proteinTargetG: 140, filter: openFilter, seed: 4 });
   for (let s = 1; s <= 6; s++) {

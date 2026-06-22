@@ -559,10 +559,11 @@ function slotBudgets(calorieTarget: number): { slot: MealSlot; title: string; ca
  */
 function toScaledItem(f: CatalogFood, mult: number): PlanMealItem {
   const s = catalogSpec(f);
-  const amount =
+  const rawAmount =
     s.unitMode === "count"
       ? Math.max(1, Math.floor(s.amount * mult))
       : Math.max(5, Math.floor((s.amount * mult) / 5) * 5);
+  const amount = f.maxAmount && f.maxAmount > 0 ? Math.min(rawAmount, f.maxAmount) : rawAmount;
   return {
     id: f.id,
     name: f.name,

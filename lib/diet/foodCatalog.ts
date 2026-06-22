@@ -30,6 +30,7 @@ export interface CatalogFood {
   slots: MealSlot[];
   tags: string[]; // for preference filtering, e.g. ["beef"], ["egg","dairy"]
   aliases?: string[]; // extra search terms incl. Roman Urdu (e.g. "nehari", "aam")
+  maxAmount?: number; // automatic planner cap in live units: grams for portions, count for count foods
   /**
    * Staple classification for SIMPLE plan generation (diet rebuild): protein
    * anchors, carb bases, fruit snacks and plain sides. Foods without a staple
@@ -80,7 +81,7 @@ export const FOOD_CATALOG: CatalogFood[] = [
   { id: "tuna", name: "Canned tuna", region: "western", portion: "1 can (142g)", calories: 130, protein: 30, carbs: 0, fat: 1, vegetarian: false, role: "protein", slots: [L, D, S], tags: ["fish"] },
   { id: "salmon", name: "Salmon", region: "western", portion: "100g", calories: 206, protein: 22, carbs: 0, fat: 13, vegetarian: false, role: "protein", slots: [L, D], tags: ["fish"] },
   { id: "ground_beef", name: "Ground beef (cooked)", region: "western", portion: "100g", calories: 250, protein: 26, carbs: 0, fat: 15, vegetarian: false, role: "protein", slots: [L, D], tags: ["beef"] },
-  { id: "greek_yogurt", name: "Greek yogurt (plain)", region: "western", portion: "1 cup (170g)", calories: 100, protein: 17, carbs: 6, fat: 1, vegetarian: true, role: "dairy", slots: [B, S], tags: ["dairy"] },
+  { id: "greek_yogurt", name: "Greek yogurt (plain)", region: "western", portion: "1 cup (170g)", calories: 100, protein: 17, carbs: 6, fat: 1, vegetarian: true, role: "dairy", slots: [B, S], tags: ["dairy"], maxAmount: 340 },
   { id: "scrambled", name: "Scrambled eggs", region: "western", portion: "2 eggs", calories: 180, protein: 12, carbs: 2, fat: 14, vegetarian: true, role: "protein", slots: [B], tags: ["egg"] },
   // Egg white — per 1 large white (~33g). USDA FoodData Central: 17 kcal, 3.6 g
   // protein, ~0 g carb/fat (≈52 kcal & 11 g per 100 g). Protein kept fractional
