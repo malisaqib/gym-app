@@ -108,6 +108,73 @@ const SLOT_META: { slot: MealSlot; title: string; pct: number }[] = [
   { slot: "snack", title: "Snack", pct: 0.1 },
 ];
 
+const SLOT_SET = new Set<MealSlot>(SLOT_META.map((m) => m.slot));
+
+const positiveNumber = (value: unknown): number | null => {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
+
+const safeNumber = (value: unknown): number => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+};
+
+/**
+ * Saved plans are JSON blobs and older versions may be missing additive fields
+ * like calorie/protein targets, budgets, rev, or logged state. Normalize on load
+ * so the UI and mutation actions never operate on partial target data.
+ */
+export function normalizeDietPlan(
+  raw: unknown,
+  targets: { calorieTarget?: number | null; proteinTargetG?: number | null } = {}
+): DietPlan | null {
+  if (!raw || typeof raw !== "object") return null;
+  const input = raw as Partial<DietPlan>;
+  if (!Array.isArray(input.meals)) return null;
+
+  const calorieTarget = positiveNumber(input.calorieTarget) ?? positiveNumber(targets.calorieTarget) ?? 0;
+  const proteinTargetG = positiveNumber(input.proteinTargetG) ?? positiveNumber(targets.proteinTargetG) ?? 0;
+  const budgets = new Map(slotBudgets(calorieTarget).map((m) => [m.slot, m.cal]));
+  const meals: PlanMeal[] = input.meals.flatMap((rawMeal) => {
+    if (!rawMeal || !SLOT_SET.has((rawMeal as PlanMeal).slot)) return [];
+    const meal = rawMeal as Partial<PlanMeal> & { slot: MealSlot };
+    const items = Array.isArray(meal.items) ? (meal.items as PlanMealItem[]) : [];
+    const calories = items.length ? items.reduce((s, i) => s + safeNumber(i.calories), 0) : safeNumber(meal.calories);
+    const protein = items.length ? items.reduce((s, i) => s + safeNumber(i.protein), 0) : safeNumber(meal.protein);
+    return [
+      {
+        slot: meal.slot,
+        title: typeof meal.title === "string" && meal.title.trim() ? meal.title : SLOT_META.find((m) => m.slot === meal.slot)!.title,
+        items,
+        calories,
+        protein,
+        budget: positiveNumber(meal.budget) ?? budgets.get(meal.slot) ?? 0,
+      },
+    ];
+  });
+
+  const totalCalories = meals.reduce((s, m) => s + m.calories, 0);
+  const totalProtein = meals.reduce((s, m) => s + m.protein, 0);
+  const logged =
+    input.logged && typeof input.logged.date === "string" && Array.isArray(input.logged.slots)
+      ? { date: input.logged.date, slots: input.logged.slots.filter((s): s is MealSlot => SLOT_SET.has(s)) }
+      : undefined;
+
+  return {
+    meals,
+    calorieTarget,
+    proteinTargetG,
+    totalCalories,
+    totalProtein,
+    filter: input.filter ?? { vegetarian: false, excludeTags: [], excludeFoods: [], regionFocus: null },
+    proteinShort: totalProtein < proteinTargetG,
+    caloriesShort: totalCalories < calorieTarget * SHORT_THRESHOLD,
+    seed: safeNumber(input.seed) || 1,
+    rev: typeof input.rev === "number" ? input.rev : undefined,
+    logged,
+  };
+}
 
 // --- preferences ------------------------------------------------------------
 

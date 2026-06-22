@@ -18,6 +18,7 @@ import {
   bestCatalogMatch,
   replanRemaining,
   buildPlanFromSelection,
+  normalizeDietPlan,
   type DietPlan,
   type DietFilter,
   type PlanMealItem,
@@ -122,6 +123,21 @@ const splitTerms = (s: string | null | undefined) =>
     .map((t) => t.trim())
     .filter((t) => t.length >= 3);
 
+async function loadSavedPlan(supabase: Supa, userId: string): Promise<DietPlan | null> {
+  const [{ data: row }, { data: profile }] = await Promise.all([
+    supabase.from("meal_plans").select("plan").eq("user_id", userId).maybeSingle(),
+    supabase
+      .from("profiles")
+      .select("calorie_target, protein_target_g")
+      .eq("id", userId)
+      .maybeSingle<{ calorie_target: number | null; protein_target_g: number | null }>(),
+  ]);
+  return normalizeDietPlan(row?.plan, {
+    calorieTarget: profile?.calorie_target ?? null,
+    proteinTargetG: profile?.protein_target_g ?? null,
+  });
+}
+
 /** Load the user's saved plan (or null). */
 export async function getDietPlan(): Promise<DietPlan | null> {
   const supabase = await createClient();
@@ -130,8 +146,7 @@ export async function getDietPlan(): Promise<DietPlan | null> {
   } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const { data } = await supabase.from("meal_plans").select("plan").eq("user_id", user.id).maybeSingle();
-  return (data?.plan as DietPlan) ?? null;
+  return loadSavedPlan(supabase, user.id);
 }
 
 /**
@@ -223,12 +238,7 @@ export async function generateDietPlan(input?: {
     );
   } else {
     // Bare regenerate: keep the existing plan's prefs, else profile + dislikes.
-    const { data: existing } = await supabase
-      .from("meal_plans")
-      .select("plan")
-      .eq("user_id", user.id)
-      .maybeSingle();
-    const prior = (existing?.plan as DietPlan | undefined)?.filter;
+    const prior = (await loadSavedPlan(supabase, user.id))?.filter;
     filter = prior ? mergeFilters(prior, dislikes) : mergeFilters(base, dislikes);
   }
 
@@ -305,16 +315,11 @@ export async function swapDietMeal(slot: MealSlot): Promise<PlanResult> {
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Not signed in." };
 
-  const { data: row } = await supabase
-    .from("meal_plans")
-    .select("plan")
-    .eq("user_id", user.id)
-    .maybeSingle();
-  if (!row?.plan) return { ok: false, error: "Generate a plan first." };
+  const prior = await loadSavedPlan(supabase, user.id);
+  if (!prior) return { ok: false, error: "Generate a plan first." };
 
   // Meal re-selection is generation too → curated staples only (see above),
   // biased toward the user's most-logged foods.
-  const prior = row.plan as DietPlan;
   const preferIds = await learnedPreferIds(supabase, user.id, await getLocalToday());
   const swapped = swapMeal(prior, slot, randomSeed(), FOOD_CATALOG, preferIds);
 
@@ -340,9 +345,9 @@ async function planContext(): Promise<
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Not signed in." };
-  const { data } = await supabase.from("meal_plans").select("plan").eq("user_id", user.id).maybeSingle();
-  if (!data?.plan) return { ok: false, error: "Generate a plan first." };
-  return { ok: true, supabase, userId: user.id, plan: data.plan as DietPlan };
+  const plan = await loadSavedPlan(supabase, user.id);
+  if (!plan) return { ok: false, error: "Generate a plan first." };
+  return { ok: true, supabase, userId: user.id, plan };
 }
 
 /**

@@ -15,6 +15,7 @@ import {
   isKnownFood,
   replanRemaining,
   buildPlanFromSelection,
+  normalizeDietPlan,
   type DietFilter,
   type SelectedNames,
 } from "./planner.ts";
@@ -26,6 +27,31 @@ test("buildPlan returns the four meal slots in order", () => {
   const plan = buildPlan({ calorieTarget: 2100, proteinTargetG: 110, filter: openFilter, seed: 1 });
   assert.deepEqual(plan.meals.map((m) => m.slot), ["breakfast", "lunch", "dinner", "snack"]);
   assert.ok(plan.meals.every((m) => m.items.length > 0));
+});
+
+test("normalizeDietPlan backfills missing targets on old saved plans", () => {
+  const plan = normalizeDietPlan(
+    {
+      meals: [
+        {
+          slot: "breakfast",
+          title: "Breakfast",
+          items: [{ id: "egg", name: "Egg", portion: "1 egg", calories: 80, protein: 6, carbs: 1, fat: 5 }],
+        },
+      ],
+      filter: openFilter,
+    },
+    { calorieTarget: 2000, proteinTargetG: 120 }
+  );
+
+  assert.ok(plan);
+  assert.equal(plan.calorieTarget, 2000);
+  assert.equal(plan.proteinTargetG, 120);
+  assert.equal(plan.totalCalories, 80);
+  assert.equal(plan.totalProtein, 6);
+  assert.equal(plan.meals[0].budget, 500);
+  assert.equal(plan.caloriesShort, true);
+  assert.equal(plan.proteinShort, true);
 });
 
 test("fits the calorie budget — never exceeds it; within ±5% or honestly flagged", () => {
