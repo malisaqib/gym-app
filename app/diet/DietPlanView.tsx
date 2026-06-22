@@ -25,6 +25,7 @@ import {
 } from "./actions";
 import { localDateString } from "@/lib/localDate";
 import { redirectIfSignedOut } from "@/lib/clientAuth";
+import { displayNameForQuantity } from "@/lib/food/displayName";
 import UsualEatingCard, { type UsualEating } from "./UsualEatingCard";
 import AddFoodPanel from "./AddFoodPanel";
 import ReportFoodSheet from "@/components/ReportFoodSheet";
@@ -876,7 +877,7 @@ export default function DietPlanView({
                                 }`}
                               >
                                 <span className="block truncate text-sm text-foreground">
-                                  {item.name}
+                                  {displayNameForQuantity(item.name)}
                                   <span className="ml-1.5 text-xs text-muted-foreground">{itemQtyLabel(item)}</span>
                                   {item.approx && (
                                     <span className="ml-1.5 rounded-pill bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">

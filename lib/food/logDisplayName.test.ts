@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { displayNameForLoggedFood } from "./logDisplayName.ts";
+import { displayNameForQuantity } from "./displayName.ts";
 
 const item = (food_name: string) => ({
   food_name,
@@ -34,4 +35,12 @@ test("long sentences fall back to the parsed food name", () => {
     displayNameForLoggedFood("after gym I had a large homemade coffee shake with ice", item("Coffee shake"), 1),
     "Coffee shake"
   );
+});
+
+test("quantity-rendered rows do not duplicate counts in the food name", () => {
+  assert.equal(displayNameForQuantity("2 roti"), "roti");
+  assert.equal(displayNameForQuantity("1 boiled egg"), "boiled egg");
+  assert.equal(displayNameForQuantity("2 eggs (boiled/fried)"), "eggs (boiled/fried)");
+  assert.equal(displayNameForQuantity("Omelette (2 eggs)"), "Omelette");
+  assert.equal(displayNameForQuantity("one glass milk"), "milk");
 });

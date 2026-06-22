@@ -7,6 +7,7 @@ import type { FoodLog, Lang, ReportContext, ReportType } from "@/lib/database.ty
 import { listContainer, listItem, fadeUp } from "@/lib/motion";
 import { sumMacros } from "@/lib/food/totals";
 import { itemMacros } from "@/lib/food/quantity";
+import { displayNameForQuantity } from "@/lib/food/displayName";
 import { localDateString } from "@/lib/localDate";
 import { redirectIfSignedOut } from "@/lib/clientAuth";
 import {
@@ -847,7 +848,7 @@ function FoodItemRow({
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-foreground">
-            {item.food_name}
+            {displayNameForQuantity(item.food_name)}
             <span className="font-normal text-muted-foreground"> · {qtyLabel}</span>
           </p>
           <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">

@@ -85,8 +85,33 @@ test("plan→log: countable items keep their unit and count", () => {
     unit: "medium",
   };
   const row = planItemToLogRow(roti);
+  assert.equal(row.food_name, "roti");
   assert.equal(row.unit_mode, "count");
   assert.equal(row.quantity, 2);
   assert.equal(row.unit, "medium");
   assert.equal(row.calories, 220);
+});
+
+test("plan-to-log: scaled countable names do not disagree with amount", () => {
+  const roti: PlanMealItem = {
+    id: "roti2",
+    name: "2 roti",
+    portion: "2 medium",
+    calories: 110,
+    protein: 3,
+    carbs: 22,
+    fat: 2,
+    unitMode: "count",
+    baseCalories: 110,
+    baseProtein: 3,
+    baseCarbs: 22,
+    baseFat: 2,
+    amount: 1,
+    servingGrams: null,
+    unit: "roti",
+  };
+  const row = planItemToLogRow(roti);
+  assert.equal(row.food_name, "roti");
+  assert.equal(row.quantity, 1);
+  assert.equal(row.unit, "roti");
 });

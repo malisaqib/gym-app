@@ -1,5 +1,6 @@
 import { planItemSpec, type PlanMealItem } from "./planner.ts";
 import { totalsFor, MAX_AMOUNT_GRAMS, MAX_AMOUNT_UNITS } from "../food/quantity.ts";
+import { displayNameForQuantity } from "../food/displayName.ts";
 import type { NutritionSource } from "../database.types.ts";
 
 /**
@@ -53,7 +54,7 @@ export function planItemToLogRow(item: PlanMealItem): PlanLogRow {
 
   return {
     raw_text: item.name,
-    food_name: item.name,
+    food_name: displayNameForQuantity(item.name),
     // Display convention matches search-logging: portion foods show their
     // friendly portion label; countable foods show "<n> <unit>".
     quantity: s.unitMode === "count" ? amount : 1,
