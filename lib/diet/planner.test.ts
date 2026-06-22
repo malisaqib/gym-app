@@ -14,7 +14,9 @@ import {
   bestCatalogMatch,
   isKnownFood,
   replanRemaining,
+  buildPlanFromSelection,
   type DietFilter,
+  type SelectedNames,
 } from "./planner.ts";
 import { CATALOG_BY_ID, FOOD_CATALOG, type CatalogFood, type MealSlot } from "./foodCatalog.ts";
 
@@ -687,4 +689,103 @@ test("replanRemaining preserves the logged record and the day targets, and is de
   assert.deepEqual(a.logged, plan.logged); // logged record carried through
   assert.equal(a.calorieTarget, 2000);
   assert.equal(a.proteinTargetG, 120);
+});
+
+// --- Hybrid generator (Phase 2/3): Groq picks the foods, the deterministic ----
+// engine grounds them. These prove the math CONTRACT holds no matter what the
+// selector hands over — including sparse, empty, or fancy/unmatched garbage.
+
+// Representative selections, from clean to adversarial.
+const SELECTIONS: SelectedNames[] = [
+  { breakfast: ["eggs", "paratha"], lunch: ["chicken", "rice"], dinner: ["beef", "roti"], snack: ["banana"] },
+  { breakfast: ["oats", "milk"], lunch: ["daal", "rice"], dinner: ["chicken", "naan"], snack: ["apple"] },
+  { lunch: ["chicken"] }, // sparse — one slot, one food
+  {}, // empty — the pure deterministic fallback path
+  { breakfast: ["truffle risotto foam"], dinner: ["foie gras terrine"], snack: ["gold leaf"] }, // unmatched garbage
+];
+
+test("hybrid: hits ±5% (or honestly flags) and never exceeds, for ANY Groq selection", () => {
+  for (const names of SELECTIONS) {
+    for (const seed of [1, 5]) {
+      const plan = buildPlanFromSelection(names, { calorieTarget: 2100, proteinTargetG: 130, filter: openFilter, seed });
+      const label = JSON.stringify(names);
+      assert.ok(plan.totalCalories <= 2100, `over budget: ${plan.totalCalories} for ${label}`);
+      assert.ok(
+        plan.totalCalories >= 2100 * 0.95 || plan.caloriesShort,
+        `silent shortfall: ${plan.totalCalories}/2100 for ${label}`
+      );
+      assert.ok(plan.totalProtein >= 130 || plan.proteinShort, `silent protein shortfall for ${label}`);
+      // a COMPLETE plan: the deterministic builder fills every main meal even
+      // when the selection seeded nothing for it.
+      for (const m of plan.meals) {
+        if (m.slot === "snack") continue;
+        assert.ok(m.items.length >= 1, `${m.slot} empty for ${label}`);
+      }
+    }
+  }
+});
+
+test("hybrid: vegetarian filter holds even when the selection names meat", () => {
+  const vf: DietFilter = { vegetarian: true, excludeTags: [], excludeFoods: [], regionFocus: null };
+  const plan = buildPlanFromSelection(
+    { breakfast: ["eggs"], lunch: ["chicken", "rice"], dinner: ["beef", "roti"], snack: ["apple"] },
+    { calorieTarget: 2000, proteinTargetG: 110, filter: vf, seed: 3 }
+  );
+  for (const m of plan.meals) {
+    for (const i of m.items) {
+      assert.equal(CATALOG_BY_ID[i.id]?.vegetarian, true, `${i.name} is not vegetarian`);
+    }
+  }
+});
+
+test("hybrid: avoid tags hold even when the selection names an avoided food", () => {
+  const f: DietFilter = { vegetarian: false, excludeTags: ["beef"], excludeFoods: [], regionFocus: null };
+  const plan = buildPlanFromSelection(
+    { lunch: ["beef", "rice"], dinner: ["beef karahi", "roti"] },
+    { calorieTarget: 2100, proteinTargetG: 120, filter: f, seed: 4 }
+  );
+  const ids = plan.meals.flatMap((m) => m.items.map((i) => i.id));
+  assert.ok(ids.every((id) => !CATALOG_BY_ID[id]?.tags.includes("beef")), `beef leaked: ${ids.join(",")}`);
+});
+
+test("hybrid: an all-unmatched (fancy) selection still yields a complete plan from catalog foods", () => {
+  const plan = buildPlanFromSelection(
+    { breakfast: ["truffle omelette foam"], lunch: ["wagyu carpaccio"], dinner: ["foie gras terrine"] },
+    { calorieTarget: 2000, proteinTargetG: 120, filter: openFilter, seed: 6 }
+  );
+  for (const m of plan.meals) {
+    if (m.slot === "snack") continue;
+    assert.ok(m.items.length >= 1, `${m.slot} empty`);
+  }
+  // nothing fancy leaks in — every item is a real curated catalog food.
+  for (const i of plan.meals.flatMap((m) => m.items)) {
+    assert.ok(CATALOG_BY_ID[i.id], `non-catalog food leaked: ${i.name}`);
+  }
+  assert.ok(plan.totalCalories <= 2000);
+});
+
+test("hybrid: an empty selection is identical to the pure deterministic plan (the fallback)", () => {
+  const a = buildPlanFromSelection({}, { calorieTarget: 2000, proteinTargetG: 120, filter: openFilter, seed: 9 });
+  const b = buildPlan({ calorieTarget: 2000, proteinTargetG: 120, filter: openFilter, seed: 9 });
+  assert.deepEqual(a, b);
+});
+
+test("hybrid: a selected food that matches the catalog is actually used (Groq drives the 'what')", () => {
+  const plan = buildPlanFromSelection(
+    { breakfast: ["oats"], lunch: ["daal", "rice"], dinner: ["chicken", "roti"], snack: ["banana"] },
+    { calorieTarget: 2100, proteinTargetG: 120, filter: openFilter, seed: 2 }
+  );
+  const bfast = plan.meals.find((m) => m.slot === "breakfast")!.items.map((i) => i.id);
+  assert.ok(bfast.includes("oats"), `selected oats not used in breakfast: ${bfast.join(",")}`);
+  const lunch = plan.meals.find((m) => m.slot === "lunch")!.items.map((i) => i.id);
+  assert.ok(lunch.includes("daal") || lunch.includes("rice"), `lunch ignored the selection: ${lunch.join(",")}`);
+});
+
+test("hybrid: plans use only simple curated catalog foods, never fancy ingredients", () => {
+  for (const names of SELECTIONS) {
+    const plan = buildPlanFromSelection(names, { calorieTarget: 2000, proteinTargetG: 120, filter: openFilter, seed: 7 });
+    const items = plan.meals.flatMap((m) => m.items);
+    for (const i of items) assert.ok(CATALOG_BY_ID[i.id], `non-catalog food in plan: ${i.name}`);
+    assert.ok(new Set(items.map((i) => i.name)).size <= 14, "plan grew too fancy (too many distinct dishes)");
+  }
 });
