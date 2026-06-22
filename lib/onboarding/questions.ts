@@ -4,12 +4,14 @@ import type {
   FoodPreference,
   Lang,
   OnboardingEntry,
+  Region,
   RelatableGoalKey,
   Sex,
   Timeline,
   TrainingLocation,
 } from "@/lib/database.types";
 import { RELATABLE_GOALS } from "@/lib/onboarding/goals";
+import { REGIONS, REGION_LABELS } from "@/lib/region";
 
 /**
  * Phase 3 — Onboarding content & shape.
@@ -208,6 +210,17 @@ export const STEPS: Step[] = [
     ],
   },
   {
+    // Region (migration 0023) — steers the LLM's food SUGGESTIONS toward
+    // cuisine-appropriate options. Never affects the calorie math.
+    key: "region",
+    kind: "select",
+    prompt: {
+      en: "Where are you based? (so I suggest foods that fit your region)",
+      roman_urdu: "Aap kahan rehte hain? (taake main aap ke ilaqe ke mutabiq khana suggest karun)",
+    },
+    options: REGIONS.map((r) => ({ value: r, label: REGION_LABELS[r] })),
+  },
+  {
     key: "foodPreference",
     kind: "choice",
     prompt: {
@@ -340,6 +353,7 @@ export interface OnboardingInput {
   trainingLocation: TrainingLocation;
   trainingDays: number;
   experience: Experience;
+  region: Region; // home region — cuisine hint for the LLM only
   foodPreference: FoodPreference;
   // Usual eating (all optional; "" when skipped).
   usualBreakfast: string;

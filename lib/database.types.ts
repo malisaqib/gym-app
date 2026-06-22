@@ -90,6 +90,15 @@ export type FoodPreference =
   | "budget"
   | "hostel_student"
   | "veg_limited";
+// Home region — steers the LLM's food SUGGESTIONS toward cuisine-appropriate
+// options. Never affects calorie math or the RAG pipeline. (migration 0023)
+export type Region =
+  | "pakistan"
+  | "india"
+  | "middle_east"
+  | "us_canada"
+  | "uk_europe"
+  | "other";
 
 // One answered onboarding step: the structured value we keep AND the original
 // message the user gave (button label tapped or text typed), plus the language.
@@ -125,6 +134,7 @@ export interface Profile {
   timeline: Timeline | null;
   training_location: TrainingLocation | null;
   food_preference: FoodPreference | null;
+  region: Region | null; // home region for cuisine-appropriate LLM suggestions (migration 0023)
   // Usual eating (migration 0011) — all additive / nullable, optional.
   usual_breakfast: string | null;
   usual_lunch: string | null;

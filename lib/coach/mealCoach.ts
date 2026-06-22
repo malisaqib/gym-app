@@ -1,6 +1,7 @@
 import { retrieveFoods, type RetrievedFood } from "@/lib/food/retrieve";
 import { aiConfigError, aiHttpError } from "@/lib/ai/errors";
-import type { Lang } from "@/lib/database.types";
+import { regionCuisineHint } from "@/lib/region";
+import type { Lang, Region } from "@/lib/database.types";
 
 /**
  * Phase 9 — "What should I eat next?" meal coach.
@@ -42,6 +43,7 @@ function buildSystemPrompt(
     remainingProtein: number | null;
     lang: Lang;
     focus?: string | null;
+    region?: Region | null;
   },
   candidates: RetrievedFood[]
 ): string {
@@ -51,6 +53,13 @@ function buildSystemPrompt(
   // health focus upstream (buildCoachFocus) — never appearance wording.
   const focusLine = input.focus?.trim()
     ? `\n\nWHAT THEY'RE WORKING TOWARD: ${input.focus.trim()}\nGently keep your suggestion and coach_note aligned with this — but stay practical, and never mention body shape or appearance.`
+    : "";
+
+  // Region steer (cuisine hint ONLY — never changes the nutrition numbers, which
+  // still come from the retrieved DB rows below). Empty for "Other"/unset.
+  const hint = regionCuisineHint(input.region);
+  const regionLine = hint
+    ? `\n\nThe user is based in a ${hint} region — prefer suggestions from that cuisine that they can realistically get locally, while still respecting the options they mention and any avoid/veg constraints.`
     : "";
 
   const context = input.hasTargets
@@ -66,7 +75,7 @@ function buildSystemPrompt(
 
   return `You are a friendly fitness coach for BOTH Western and South Asian users. The user tells you what food options they have, and you recommend the single best thing to eat next.
 
-CONTEXT: ${context}${focusLine}
+CONTEXT: ${context}${focusLine}${regionLine}
 
 REFERENCE (retrieved from our database for rough nutrition — use these numbers when an option matches; otherwise use your own knowledge):
 ${formatCandidates(candidates)}
@@ -94,6 +103,7 @@ export async function suggestMealCoach(input: {
   remainingProtein: number | null;
   lang: Lang;
   focus?: string | null;
+  region?: Region | null;
 }): Promise<MealSuggestion> {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) throw aiConfigError();

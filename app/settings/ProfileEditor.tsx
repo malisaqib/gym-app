@@ -11,11 +11,13 @@ import type {
   Experience,
   FoodPreference,
   Lang,
+  Region,
   RelatableGoalKey,
   Sex,
   Timeline,
   TrainingLocation,
 } from "@/lib/database.types";
+import { REGIONS, REGION_LABELS } from "@/lib/region";
 import { updateProfile, type ProfileEditInput } from "./actions";
 
 /**
@@ -29,6 +31,7 @@ export interface ProfileDetails {
   timeline: Timeline;
   trainingLocation: TrainingLocation;
   foodPreference: FoodPreference;
+  region: Region | null; // null until an older account sets it
   sex: Sex;
   age: number;
   heightCm: number;
@@ -73,6 +76,10 @@ const FOOD_OPTS: { value: FoodPreference; label: string }[] = [
   { value: "hostel_student", label: "Hostel / student" },
   { value: "veg_limited", label: "Veg / little meat" },
 ];
+const REGION_OPTS: { value: Region; label: string }[] = REGIONS.map((r) => ({
+  value: r,
+  label: REGION_LABELS[r].en,
+}));
 const TIME_OPTS: { value: Timeline; label: string }[] = [
   { value: "no_deadline", label: "No deadline" },
   { value: "4_weeks", label: "4 weeks" },
@@ -140,6 +147,7 @@ export default function ProfileEditor({ initial }: { initial: ProfileDetails }) 
       activityLevel: draft.activityLevel,
       trainingDays: draft.trainingDays,
       experience: draft.experience,
+      region: draft.region,
       preferredLanguage: draft.preferredLanguage,
       usualBreakfast: draft.usualBreakfast,
       usualLunch: draft.usualLunch,
@@ -293,6 +301,15 @@ export default function ProfileEditor({ initial }: { initial: ProfileDetails }) 
 
       <Field label="Food style">
         <Chips options={FOOD_OPTS} selected={draft.foodPreference} onSelect={(v) => patch({ foodPreference: v })} />
+      </Field>
+
+      {/* Region — only steers the LLM's food suggestions, not the calorie math. */}
+      <Field label="Region (for food suggestions)">
+        <Chips
+          options={REGION_OPTS}
+          selected={draft.region ?? ("" as Region)}
+          onSelect={(v) => patch({ region: v })}
+        />
       </Field>
 
       <Field label="Timeline">

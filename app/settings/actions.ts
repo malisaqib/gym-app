@@ -4,12 +4,14 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { buildGoalPlan, paceFromTimeline, targetDateFrom } from "@/lib/nutrition/goalPlan";
 import { RELATABLE_GOALS } from "@/lib/onboarding/goals";
+import { isRegion } from "@/lib/region";
 import { getLocalToday } from "@/lib/date";
 import type {
   ActivityLevel,
   Experience,
   FoodPreference,
   Lang,
+  Region,
   RelatableGoalKey,
   Sex,
   Timeline,
@@ -50,6 +52,7 @@ export interface ProfileEditInput {
   activityLevel: ActivityLevel;
   trainingDays: number;
   experience: Experience;
+  region: Region | null; // null = not set yet (older accounts before region existed)
   preferredLanguage: Lang;
   // Usual eating (Phase 2) — optional free text.
   usualBreakfast: string;
@@ -95,6 +98,7 @@ export async function updateProfile(input: ProfileEditInput): Promise<Result> {
     LANGS.includes(input.preferredLanguage) &&
     GOAL_KEYS.includes(input.relatableGoal) &&
     ACTIVITY_LEVELS.includes(input.activityLevel) &&
+    (input.region === null || isRegion(input.region)) &&
     Number.isFinite(age) && age >= 13 && age <= 99 &&
     Number.isFinite(heightCm) && heightCm >= 120 && heightCm <= 230 &&
     Number.isFinite(weightKg) && weightKg >= 30 && weightKg <= 250 &&
@@ -135,6 +139,7 @@ export async function updateProfile(input: ProfileEditInput): Promise<Result> {
       target_date: targetDate,
       training_days: trainingDays,
       experience: input.experience,
+      region: input.region,
       calorie_target: plan.calorieTarget,
       protein_target_g: plan.proteinTargetG,
       carb_target_g: plan.carbTargetG,

@@ -42,9 +42,9 @@ export async function suggestMeal(input: {
   // Load targets (may be null if somehow not onboarded).
   const { data: profile } = await supabase
     .from("profiles")
-    .select("calorie_target, protein_target_g, preferred_language")
+    .select("calorie_target, protein_target_g, preferred_language, region")
     .eq("id", user.id)
-    .single<Pick<Profile, "calorie_target" | "protein_target_g" | "preferred_language">>();
+    .single<Pick<Profile, "calorie_target" | "protein_target_g" | "preferred_language" | "region">>();
 
   const lang: Lang = profile?.preferred_language ?? "en";
   const hasTargets = !!profile?.calorie_target;
@@ -77,6 +77,7 @@ export async function suggestMeal(input: {
       remainingProtein,
       lang,
       focus: input.focus ?? null,
+      region: profile?.region ?? null,
     });
     await logEvent(supabase, user.id, "coach_asked", { hasTargets });
     return { ok: true, suggestion, remainingCalories, remainingProtein };

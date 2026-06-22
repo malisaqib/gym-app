@@ -5,6 +5,7 @@ import { buildGoalPlan, paceFromTimeline, targetDateFrom, type GoalPlan } from "
 import { getLocalToday } from "@/lib/date";
 import type { OnboardingInput } from "@/lib/onboarding/questions";
 import { buildPlanGuidance, type PlanGuidance } from "@/lib/onboarding/goals";
+import { isRegion } from "@/lib/region";
 import { logEvent } from "@/lib/analytics";
 import type { ActivityLevel, Experience, Sex } from "@/lib/database.types";
 
@@ -48,6 +49,7 @@ export async function saveOnboarding(input: OnboardingInput): Promise<SaveResult
     SEXES.includes(input.sex) &&
     EXPERIENCES.includes(input.experience) &&
     ACTIVITY_LEVELS.includes(input.activityLevel) &&
+    isRegion(input.region) &&
     Number.isFinite(age) && age >= 13 && age <= 99 &&
     Number.isFinite(heightCm) && heightCm >= 120 && heightCm <= 230 &&
     Number.isFinite(weightKg) && weightKg >= 30 && weightKg <= 250 &&
@@ -103,6 +105,7 @@ export async function saveOnboarding(input: OnboardingInput): Promise<SaveResult
       target_date: targetDate,
       training_days: trainingDays,
       experience: input.experience,
+      region: input.region,
       calorie_target: plan.calorieTarget,
       protein_target_g: plan.proteinTargetG,
       carb_target_g: plan.carbTargetG,
