@@ -97,6 +97,19 @@ const TAG_RULES: { tag: string; re: RegExp }[] = [
   { tag: "nuts", re: /\b(almonds?|peanuts?|cashews?|walnuts?|pistachios?|pecans?|hazelnuts?|nuts?)\b/i },
 ];
 
+// Imported USDA rows are broad logging data. The planner pool is narrower:
+// beginner-safe, common foods only. Keep exact/obscure rows searchable for logs,
+// but do not let specialty produce become generic diet-plan suggestions.
+const OBSCURE_IMPORTED_PRODUCE =
+  /\b(straw|enoki|shiitake|maitake|morel|chanterelle|wood ear|cloud ear|truffle|bamboo shoots?|hearts of palm|cactus|nopales?|seaweed|kelp|dulse|burdock|fiddlehead|taro leaves?|cassava leaves?|chayote shoots?)\b/i;
+
+function importedPlannerRejectReason(raw: RawFoodRow, role: FoodRole): string | null {
+  if (raw.source === "curated") return null;
+  const lower = raw.name.toLowerCase();
+  if ((role === "veg" || role === "fruit") && OBSCURE_IMPORTED_PRODUCE.test(lower)) return "obscure_produce";
+  return null;
+}
+
 // Realistic single-serving grams per role (USDA macros are per 100g).
 const SERVING_G: Record<FoodRole, number> = {
   protein: 150,
@@ -173,6 +186,8 @@ export function classifyFoodDetailed(raw: RawFoodRow): ClassifyResult {
   // 2) Role first: low-calorie vegetables can be legitimate plan accessories.
   const role = ROLE_RULES.find((r) => r.re.test(lower))?.role;
   if (!role) return { status: "excluded", reason: "no_role" };
+  const importedReject = importedPlannerRejectReason(raw, role);
+  if (importedReject) return { status: "excluded", reason: importedReject };
 
   const baseG = raw.portion_grams && raw.portion_grams > 0 ? raw.portion_grams : 100;
   const per100 = (n: number) => (n / baseG) * 100;

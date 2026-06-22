@@ -180,6 +180,15 @@ test("common low-calorie cooked vegetables are kept", () => {
   assert.equal(squash.role, "veg");
 });
 
+test("imported specialty produce stays loggable but is excluded from beginner planner pool", () => {
+  assert.equal(
+    classifyFood(usda("Mushrooms, straw, canned, drained solids", { kcal: 32, p: 3.8, c: 4.6, f: 0.7 })),
+    null
+  );
+  const common = classifyFood(usda("Mushrooms, white, cooked, boiled, drained, without salt", { kcal: 28, p: 2.2, c: 5.3, f: 0.5 }))!;
+  assert.equal(common.role, "veg");
+});
+
 test("mustard greens are kept but mustard condiment is excluded", () => {
   assert.equal(classifyFood(usda("Mustard, prepared, yellow", { kcal: 66, p: 4, c: 6, f: 4 })), null);
   const greens = classifyFood(usda("Mustard spinach, cooked, boiled, drained, without salt", { kcal: 22, p: 2.1, c: 3.9, f: 0.2 }))!;

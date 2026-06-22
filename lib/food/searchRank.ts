@@ -106,12 +106,46 @@ function startsWithTokens(words: string[], tokens: string[]): boolean {
   return tokens.every((token, index) => wordMatches(words[index], token));
 }
 
-function formAdjustment(food: RankableFood, lexical: number): number {
+const OBSCURE_IMPORTED_TERMS = [
+  "straw",
+  "enoki",
+  "shiitake",
+  "maitake",
+  "morel",
+  "chanterelle",
+  "wood ear",
+  "cloud ear",
+  "truffle",
+  "bamboo shoot",
+  "bamboo shoots",
+  "hearts of palm",
+  "cactus",
+  "nopales",
+  "seaweed",
+  "kelp",
+  "dulse",
+  "burdock",
+  "fiddlehead",
+  "taro leaves",
+  "cassava leaves",
+  "chayote shoots",
+];
+
+function hasSpecificObscureQuery(query: string, term: string): boolean {
+  const queryWords = wordsOf(query);
+  return wordsOf(term).every((word) => hasToken(queryWords, word));
+}
+
+function formAdjustment(query: string, food: RankableFood, lexical: number): number {
   if (lexical <= 0) return 0;
   const name = normalizeFoodText(food.name);
   let score = 0;
   if (/\b(raw|cooked|boiled|roasted|plain|fresh)\b/.test(name)) score += 8;
   if (/\b(beverages?|juice|smoothie|nectar|dried|sweetened|syrup|babyfood|powder|isolate)\b/.test(name)) score -= 25;
+  if (qualityForFoodSource(food.source) === "imported") {
+    const obscureTerm = OBSCURE_IMPORTED_TERMS.find((term) => hasSpecificObscureQuery(food.name, term));
+    if (obscureTerm && !hasSpecificObscureQuery(query, obscureTerm)) score -= 40;
+  }
   return score;
 }
 
@@ -152,7 +186,7 @@ function sourceBoost(food: RankableFood, lexical: number): number {
 export function foodSearchScore(query: string, food: RankableFood): number {
   const lexical = tokenScore(query, food);
   const dbScore = Number(food.score ?? 0) * 10;
-  return lexical + sourceBoost(food, lexical) + formAdjustment(food, lexical) + dbScore;
+  return lexical + sourceBoost(food, lexical) + formAdjustment(query, food, lexical) + dbScore;
 }
 
 export function rankFoodsForSearch<T extends RankableFood>(query: string, foods: readonly T[]): T[] {

@@ -26,6 +26,22 @@ test("an exact imported match can beat an unrelated curated row", () => {
   assert.equal(ranked[0].name, "Soba noodles, cooked");
 });
 
+test("obscure imported foods rank below common imported foods for broad searches", () => {
+  const ranked = rankFoodsForSearch("mushrooms", [
+    { name: "Mushrooms, straw, canned, drained solids", aliases: [], source: "usda_sr", score: 0.9 },
+    { name: "Mushrooms, white, cooked, boiled, drained, without salt", aliases: [], source: "usda_sr", score: 0.2 },
+  ]);
+  assert.equal(ranked[0].name, "Mushrooms, white, cooked, boiled, drained, without salt");
+});
+
+test("specific searches can still find obscure imported foods", () => {
+  const ranked = rankFoodsForSearch("straw mushrooms", [
+    { name: "Mushrooms, white, cooked, boiled, drained, without salt", aliases: [], source: "usda_sr", score: 0.9 },
+    { name: "Mushrooms, straw, canned, drained solids", aliases: [], source: "usda_sr", score: 0.2 },
+  ]);
+  assert.equal(ranked[0].name, "Mushrooms, straw, canned, drained solids");
+});
+
 test("short food words do not match inside unrelated longer words", () => {
   const ranked = rankFoodsForSearch("roti", [
     { name: "Chicken, rotisserie", aliases: [], source: "usda_sr", score: 0.8 },
