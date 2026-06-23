@@ -386,7 +386,7 @@ function withValidation(plan: DietPlan, pool: CatalogFood[] = FOOD_CATALOG): Die
 // Derive a quantity spec from a catalog food's friendly portion: "~250g"/"100g"
 // → portion (per gram); "2 roti"/"1 piece" → count (per unit). Lets the user
 // adjust grams or units on the plan, recomputing macros from this base.
-function catalogSpec(f: CatalogFood): ItemQtySpec {
+function catalogSpec(f: Pick<CatalogFood, "name" | "portion" | "calories" | "protein" | "carbs" | "fat">): ItemQtySpec {
   const grams = f.portion.match(/(\d+)\s*g\b/);
   if (grams) {
     const g = Number(grams[1]);
@@ -1095,6 +1095,16 @@ export function planItemSpec(item: PlanMealItem): ItemQtySpec {
   }
   const cat = CATALOG_BY_ID[item.id];
   if (cat) return catalogSpec(cat);
+  if (item.portion && item.portion !== "as entered") {
+    return catalogSpec({
+      name: item.name,
+      portion: item.portion,
+      calories: item.calories,
+      protein: item.protein,
+      carbs: item.carbs,
+      fat: item.fat,
+    });
+  }
   // Custom/approx item with no catalog grounding — treat its macros as one unit.
   return {
     unitMode: "count",

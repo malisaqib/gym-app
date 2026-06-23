@@ -66,6 +66,24 @@ test("plan→log: db (USDA/FNDDS) items log as imported; approx items as estimat
   assert.equal(c.calories, 250);
 });
 
+test("plan-to-log: legacy db portion text logs with the real gram amount", () => {
+  const legacy: PlanMealItem = {
+    id: "db:legacy-daal",
+    name: "Daal, cooked",
+    portion: "1 serving (~200g)",
+    calories: 150,
+    protein: 9,
+    carbs: 22,
+    fat: 3,
+  };
+  const row = planItemToLogRow(legacy);
+  assert.equal(row.unit_mode, "portion");
+  assert.equal(row.amount, 200);
+  assert.equal(row.serving_grams, 200);
+  assert.equal(row.calories, 150);
+  assert.equal(row.protein_g, 9);
+});
+
 test("plan→log: countable items keep their unit and count", () => {
   const roti: PlanMealItem = {
     id: "roti2",

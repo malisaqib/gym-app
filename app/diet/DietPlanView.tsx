@@ -172,8 +172,9 @@ export interface PaceInfo {
 // catalog portion label would mislead once the generator scales portions.
 // Falls back to the portion text for legacy/custom items without qty fields.
 function itemQtyLabel(item: PlanMealItem): string {
-  if (item.unitMode === "portion" && item.amount) return `${item.amount} g`;
-  if (item.unitMode === "count" && item.amount) return `${item.amount} ${item.unit || ""}`.trim();
+  const spec = planItemSpec(item);
+  if (spec.unitMode === "portion") return `${spec.amount} g`;
+  if (spec.unitMode === "count") return `${spec.amount} ${spec.unit || ""}`.trim();
   return item.portion;
 }
 

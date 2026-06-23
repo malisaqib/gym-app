@@ -11,6 +11,7 @@ import {
   appendPlanItem,
   swapPlanItem,
   setPlanItemAmount,
+  planItemSpec,
   searchCatalog,
   bestCatalogMatch,
   isKnownFood,
@@ -434,6 +435,34 @@ test("plan items carry a quantity spec; setPlanItemAmount recomputes item + tota
   assert.equal(after.calories, Math.round((item0.baseCalories ?? 0) * Math.round(a2)));
   // day total stays consistent with the meals
   assert.equal(next.totalCalories, next.meals.reduce((s, m) => s + m.calories, 0));
+});
+
+test("planItemSpec derives legacy non-catalog quantities from portion text", () => {
+  const grams = planItemSpec({
+    id: "db:legacy-daal",
+    name: "Daal, cooked",
+    portion: "1 serving (~200g)",
+    calories: 150,
+    protein: 9,
+    carbs: 22,
+    fat: 3,
+  });
+  assert.equal(grams.unitMode, "portion");
+  assert.equal(grams.amount, 200);
+  assert.equal(grams.servingGrams, 200);
+
+  const count = planItemSpec({
+    id: "db:legacy-roti",
+    name: "2 roti",
+    portion: "2 medium",
+    calories: 220,
+    protein: 6,
+    carbs: 44,
+    fat: 4,
+  });
+  assert.equal(count.unitMode, "count");
+  assert.equal(count.amount, 2);
+  assert.equal(count.unit, "roti");
 });
 
 test("searchCatalog matches by name/tag and respects the filter", () => {
