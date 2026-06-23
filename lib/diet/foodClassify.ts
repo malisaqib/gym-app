@@ -107,8 +107,9 @@ function isObscureImportedProduce(name: string, role: FoodRole): boolean {
   return (role === "veg" || role === "fruit") && OBSCURE_IMPORTED_PRODUCE.test(name.toLowerCase());
 }
 
-export function isUnsafeImportedPlannerFood(food: Pick<CatalogFood, "id" | "name" | "role">): boolean {
-  return food.id.startsWith("db:") && isObscureImportedProduce(food.name, food.role);
+export function isUnsafeImportedPlannerFood(food: Pick<CatalogFood, "id" | "name"> & Partial<Pick<CatalogFood, "role">>): boolean {
+  if (!food.id.startsWith("db:")) return false;
+  return food.role ? isObscureImportedProduce(food.name, food.role) : OBSCURE_IMPORTED_PRODUCE.test(food.name.toLowerCase());
 }
 
 function importedPlannerRejectReason(raw: RawFoodRow, role: FoodRole): string | null {

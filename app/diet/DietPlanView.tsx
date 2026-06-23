@@ -31,10 +31,12 @@ import AddFoodPanel from "./AddFoodPanel";
 import ReportFoodSheet from "@/components/ReportFoodSheet";
 import QuantityControl, { type QtySpec } from "@/components/QuantityControl";
 import {
+  CALORIE_SHORT_THRESHOLD,
   insertPlanItem,
   planItemSpec,
   setPlanItemAmount,
   setPlanItemMacros,
+  validateDietPlan,
   type DietPlan,
   type DietFilter,
   type PlanMealItem,
@@ -1068,7 +1070,7 @@ export default function DietPlanView({
 }
 
 // Optimistic remove that mirrors the server's recompute, so totals update with
-// no flicker before the authoritative response arrives (0.85 = SHORT_THRESHOLD).
+// no flicker before the authoritative response arrives.
 function localRemove(plan: DietPlan, slot: MealSlot, index: number): DietPlan {
   const meals = plan.meals.map((m) => {
     if (m.slot !== slot) return m;
@@ -1082,14 +1084,15 @@ function localRemove(plan: DietPlan, slot: MealSlot, index: number): DietPlan {
   });
   const totalCalories = meals.reduce((s, m) => s + m.calories, 0);
   const totalProtein = meals.reduce((s, m) => s + m.protein, 0);
-  return {
+  const next = {
     ...plan,
     meals,
     totalCalories,
     totalProtein,
     proteinShort: totalProtein < plan.proteinTargetG,
-    caloriesShort: totalCalories < plan.calorieTarget * 0.85,
+    caloriesShort: totalCalories < plan.calorieTarget * CALORIE_SHORT_THRESHOLD,
   };
+  return { ...next, validation: validateDietPlan(next) };
 }
 
 // Expanded per-item editor on the Plan tab: quantity + exact calories/protein

@@ -76,6 +76,32 @@ export interface PlanMeal {
   budget: number; // this meal's calorie budget (so the UI can show fit)
 }
 
+export type DietPlanValidationIssueCode =
+  | "invalid_target"
+  | "calories_over_target"
+  | "calories_short"
+  | "protein_short"
+  | "unsafe_food"
+  | "portion_too_large";
+
+export interface DietPlanValidationIssue {
+  code: DietPlanValidationIssueCode;
+  message: string;
+  slot?: MealSlot;
+  foodId?: string;
+  foodName?: string;
+  amount?: number;
+  maxAmount?: number;
+}
+
+export interface DietPlanValidation {
+  ok: boolean;
+  targetOk: boolean;
+  portionsOk: boolean;
+  foodsOk: boolean;
+  issues: DietPlanValidationIssue[];
+}
+
 export interface DietPlan {
   meals: PlanMeal[];
   calorieTarget: number;
@@ -95,12 +121,16 @@ export interface DietPlan {
   // whole record is stale and treated as "nothing logged yet" (a new day
   // clears it). Additive — old plans simply have none.
   logged?: { date: string; slots: MealSlot[] };
+  // Final contract check for generated/saved plans: target fit, realistic
+  // portions, and safe planner foods. Additive for older saved JSON.
+  validation?: DietPlanValidation;
 }
 
 // The tolerance bar (±5%): a generated plan must land within 95–100% of the
 // calorie target. Below 95% (after the day-level top-up pass) the plan is
 // honestly flagged as the closest fit possible under the user's restrictions.
-const SHORT_THRESHOLD = 0.95;
+export const CALORIE_SHORT_THRESHOLD = 0.95;
+const SHORT_THRESHOLD = CALORIE_SHORT_THRESHOLD;
 
 const SLOT_META: { slot: MealSlot; title: string; pct: number }[] = [
   { slot: "breakfast", title: "Breakfast", pct: 0.25 },
@@ -162,7 +192,7 @@ export function normalizeDietPlan(
       ? { date: input.logged.date, slots: input.logged.slots.filter((s): s is MealSlot => SLOT_SET.has(s)) }
       : undefined;
 
-  return {
+  return withValidation({
     meals,
     calorieTarget,
     proteinTargetG,
@@ -174,7 +204,7 @@ export function normalizeDietPlan(
     seed: safeNumber(input.seed) || 1,
     rev: typeof input.rev === "number" ? input.rev : undefined,
     logged,
-  };
+  });
 }
 
 // --- preferences ------------------------------------------------------------
@@ -276,6 +306,81 @@ function allowedForAutoPlan(food: CatalogFood, filter: DietFilter): boolean {
   if (food.tags.includes("supplement")) return false;
   if (food.role === "drink" && (food.tags.includes("sweet") || /\bshake\b/i.test(food.name))) return false;
   return true;
+}
+
+function foodForPlanItem(item: PlanMealItem, pool: CatalogFood[]): CatalogFood | undefined {
+  return pool.find((f) => f.id === item.id) ?? CATALOG_BY_ID[item.id];
+}
+
+export function validateDietPlan(plan: DietPlan, pool: CatalogFood[] = FOOD_CATALOG): DietPlanValidation {
+  const issues: DietPlanValidationIssue[] = [];
+
+  if (!Number.isFinite(plan.calorieTarget) || plan.calorieTarget <= 0) {
+    issues.push({ code: "invalid_target", message: "Plan is missing a valid calorie target." });
+  } else {
+    if (plan.totalCalories > plan.calorieTarget) {
+      issues.push({
+        code: "calories_over_target",
+        message: "Plan calories exceed the daily target.",
+        amount: plan.totalCalories,
+        maxAmount: plan.calorieTarget,
+      });
+    }
+    if (plan.totalCalories < plan.calorieTarget * SHORT_THRESHOLD) {
+      issues.push({
+        code: "calories_short",
+        message: "Plan calories are below the target tolerance.",
+        amount: plan.totalCalories,
+        maxAmount: Math.round(plan.calorieTarget * SHORT_THRESHOLD),
+      });
+    }
+  }
+
+  if (plan.proteinTargetG > 0 && plan.totalProtein < plan.proteinTargetG) {
+    issues.push({
+      code: "protein_short",
+      message: "Plan protein is below the daily target.",
+      amount: plan.totalProtein,
+      maxAmount: plan.proteinTargetG,
+    });
+  }
+
+  for (const meal of plan.meals) {
+    for (const item of meal.items) {
+      const food = foodForPlanItem(item, pool);
+      if (isUnsafeImportedPlannerFood(food ?? item) || (food && !allowed(food, plan.filter))) {
+        issues.push({
+          code: "unsafe_food",
+          message: "Plan contains a food that is not allowed for planner use.",
+          slot: meal.slot,
+          foodId: item.id,
+          foodName: item.name,
+        });
+      }
+      if (food?.maxAmount && item.amount != null && item.amount > food.maxAmount) {
+        issues.push({
+          code: "portion_too_large",
+          message: "Plan contains a portion above the food's realistic planner cap.",
+          slot: meal.slot,
+          foodId: item.id,
+          foodName: item.name,
+          amount: item.amount,
+          maxAmount: food.maxAmount,
+        });
+      }
+    }
+  }
+
+  const targetOk = !issues.some((i) =>
+    i.code === "invalid_target" || i.code === "calories_over_target" || i.code === "calories_short" || i.code === "protein_short"
+  );
+  const portionsOk = !issues.some((i) => i.code === "portion_too_large");
+  const foodsOk = !issues.some((i) => i.code === "unsafe_food");
+  return { ok: targetOk && portionsOk && foodsOk, targetOk, portionsOk, foodsOk, issues };
+}
+
+function withValidation(plan: DietPlan, pool: CatalogFood[] = FOOD_CATALOG): DietPlan {
+  return { ...plan, validation: validateDietPlan(plan, pool) };
 }
 
 // Derive a quantity spec from a catalog food's friendly portion: "~250g"/"100g"
@@ -687,7 +792,7 @@ export function buildPlan(input: {
   // build — return an honest empty plan instead of four hollow meals with no
   // flags (the action layer refuses earlier; this protects the pure API).
   if (!Number.isFinite(input.calorieTarget) || input.calorieTarget <= 0) {
-    return {
+    return withValidation({
       meals: slotBudgets(0).map((s) => ({ slot: s.slot, title: s.title, items: [], calories: 0, protein: 0, budget: 0 })),
       calorieTarget: input.calorieTarget,
       proteinTargetG: input.proteinTargetG,
@@ -697,7 +802,7 @@ export function buildPlan(input: {
       proteinShort: input.proteinTargetG > 0,
       caloriesShort: true,
       seed,
-    };
+    }, pool);
   }
 
   // Likes (a fill-time bonus) come from go-to foods AND keep foods, PLUS the
@@ -757,7 +862,7 @@ export function buildPlan(input: {
   const meals = built.map(finalizeMeal);
   const totalCalories = meals.reduce((s, m) => s + m.calories, 0);
   const totalProtein = meals.reduce((s, m) => s + m.protein, 0);
-  return {
+  return withValidation({
     meals,
     calorieTarget: input.calorieTarget,
     proteinTargetG: input.proteinTargetG,
@@ -767,7 +872,7 @@ export function buildPlan(input: {
     proteinShort: totalProtein < input.proteinTargetG,
     caloriesShort: totalCalories < input.calorieTarget * SHORT_THRESHOLD,
     seed,
-  };
+  }, pool);
 }
 
 /**
@@ -847,14 +952,14 @@ export function swapMeal(
   const meals = plan.meals.map((m) => (m.slot === slot ? meal : m));
   const totalCalories = meals.reduce((s, m) => s + m.calories, 0);
   const totalProtein = meals.reduce((s, m) => s + m.protein, 0);
-  return {
+  return withValidation({
     ...plan,
     meals,
     totalCalories,
     totalProtein,
     proteinShort: totalProtein < plan.proteinTargetG,
     caloriesShort: totalCalories < plan.calorieTarget * SHORT_THRESHOLD,
-  };
+  }, pool);
 }
 
 /**
@@ -910,7 +1015,7 @@ export function replanRemaining(
 
   const rebuilt = new Map(built.map((b) => [b.slot, finalizeMeal(b)]));
   const meals = plan.meals.map((m) => (eaten.has(m.slot) ? m : rebuilt.get(m.slot) ?? m));
-  return recompute({ ...plan, meals });
+  return recompute({ ...plan, meals }, pool);
 }
 
 /** Validate a swap target id belongs to the catalog (defensive for stored data). */
@@ -923,7 +1028,7 @@ export function isKnownFood(id: string): boolean {
 // choice) — totals/flags are recomputed honestly so the UI can surface it.
 
 /** Recompute every meal's + the day's totals/flags from the current items. */
-function recompute(plan: DietPlan): DietPlan {
+function recompute(plan: DietPlan, pool: CatalogFood[] = FOOD_CATALOG): DietPlan {
   const meals = plan.meals.map((m) => ({
     ...m,
     calories: sumItemsCal(m.items),
@@ -931,21 +1036,21 @@ function recompute(plan: DietPlan): DietPlan {
   }));
   const totalCalories = meals.reduce((s, m) => s + m.calories, 0);
   const totalProtein = meals.reduce((s, m) => s + m.protein, 0);
-  return {
+  return withValidation({
     ...plan,
     meals,
     totalCalories,
     totalProtein,
     proteinShort: totalProtein < plan.proteinTargetG,
     caloriesShort: totalCalories < plan.calorieTarget * SHORT_THRESHOLD,
-  };
+  }, pool);
 }
 
 const sumItemsCal = (items: PlanMealItem[]) => items.reduce((s, i) => s + i.calories, 0);
 const sumItemsPro = (items: PlanMealItem[]) => items.reduce((s, i) => s + i.protein, 0);
 const mealAt = (plan: DietPlan, slot: MealSlot) => plan.meals.find((m) => m.slot === slot);
-const withMeal = (plan: DietPlan, slot: MealSlot, items: PlanMealItem[]): DietPlan =>
-  recompute({ ...plan, meals: plan.meals.map((m) => (m.slot === slot ? { ...m, items } : m)) });
+const withMeal = (plan: DietPlan, slot: MealSlot, items: PlanMealItem[], pool: CatalogFood[] = FOOD_CATALOG): DietPlan =>
+  recompute({ ...plan, meals: plan.meals.map((m) => (m.slot === slot ? { ...m, items } : m)) }, pool);
 
 /** Remove one item (by index) from a meal. */
 export function removePlanItem(plan: DietPlan, slot: MealSlot, index: number): DietPlan {
@@ -971,7 +1076,7 @@ export function addPlanItem(plan: DietPlan, slot: MealSlot, foodId: string, pool
   const food = pool.find((f) => f.id === foodId) ?? CATALOG_BY_ID[foodId];
   const meal = mealAt(plan, slot);
   if (!food || !meal || !allowed(food, plan.filter)) return plan;
-  return withMeal(plan, slot, [...meal.items, toItem(food)]);
+  return withMeal(plan, slot, [...meal.items, toItem(food)], pool);
 }
 
 /** Resolve a quantity spec for any plan item: stored fields → catalog → custom. */
@@ -1118,7 +1223,7 @@ export function swapPlanItem(
   const sorted = [...finalPool].sort((a, b) => score(b) - score(a) || a.id.localeCompare(b.id));
   const pick = sorted[Math.floor(rng() * Math.min(sorted.length, 25))];
   if (!pick) return plan;
-  return withMeal(plan, slot, meal.items.map((it, i) => (i === index ? toItem(pick) : it)));
+  return withMeal(plan, slot, meal.items.map((it, i) => (i === index ? toItem(pick) : it)), pool);
 }
 
 /** Deterministic pool search for the "add food" picker (respects the filter). */

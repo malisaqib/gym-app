@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   buildPlan,
+  CALORIE_SHORT_THRESHOLD,
   swapMeal,
   filterFromPreference,
   mergeFilters,
@@ -16,8 +17,10 @@ import {
   replanRemaining,
   buildPlanFromSelection,
   normalizeDietPlan,
+  validateDietPlan,
   type DietPlan,
   type DietFilter,
+  type PlanMealItem,
   type SelectedNames,
 } from "./planner.ts";
 import { CATALOG_BY_ID, FOOD_CATALOG, type CatalogFood, type MealSlot } from "./foodCatalog.ts";
@@ -505,6 +508,49 @@ test("planner contract: unsafe imported DB foods never enter add/search/swap/hyb
     { calorieTarget: 2000, proteinTargetG: 120, filter: openFilter, seed: 2, pool }
   );
   assert.ok(!hybrid.meals.flatMap((m) => m.items).some((i) => i.id === unsafe.id));
+});
+
+test("final validator checks targets, safe foods, and realistic portions", () => {
+  const plan = buildPlan({ calorieTarget: 2100, proteinTargetG: 120, filter: openFilter, seed: 1 });
+  assert.equal(plan.validation?.foodsOk, true);
+  assert.equal(plan.validation?.portionsOk, true);
+  assert.equal(plan.validation?.targetOk, plan.totalCalories >= 2100 * CALORIE_SHORT_THRESHOLD && plan.totalProtein >= 120);
+
+  const overTarget = appendPlanItem(plan, "snack", {
+    id: "custom-over",
+    name: "Large custom dessert",
+    portion: "1 plate",
+    calories: 1200,
+    protein: 5,
+    carbs: 160,
+    fat: 45,
+    approx: true,
+  });
+  assert.ok(overTarget.validation?.issues.some((i) => i.code === "calories_over_target"));
+
+  const withEggs = addPlanItem(plan, "breakfast", "eggs2");
+  const eggIndex = withEggs.meals.find((m) => m.slot === "breakfast")!.items.findIndex((i) => i.id === "eggs2");
+  const oversized = setPlanItemAmount(withEggs, "breakfast", eggIndex, 10);
+  assert.equal(oversized.validation?.portionsOk, false);
+  assert.ok(oversized.validation?.issues.some((i) => i.code === "portion_too_large" && i.foodId === "eggs2"));
+
+  const unsafeItem: PlanMealItem = {
+    id: "db:straw-mushrooms",
+    name: "Mushrooms, straw, canned",
+    portion: "~120g",
+    calories: 38,
+    protein: 5,
+    carbs: 6,
+    fat: 1,
+  };
+  const unsafe = appendPlanItem(plan, "lunch", unsafeItem);
+  assert.equal(unsafe.validation?.foodsOk, false);
+  assert.ok(unsafe.validation?.issues.some((i) => i.code === "unsafe_food" && i.foodId === unsafeItem.id));
+
+  const silentShort = validateDietPlan({ ...plan, totalCalories: Math.round(plan.calorieTarget * 0.8), totalProtein: 10 });
+  assert.equal(silentShort.targetOk, false);
+  assert.ok(silentShort.issues.some((i) => i.code === "calories_short"));
+  assert.ok(silentShort.issues.some((i) => i.code === "protein_short"));
 });
 
 // SIMPLE-plan contract (diet rebuild): a few staple foods done right and
