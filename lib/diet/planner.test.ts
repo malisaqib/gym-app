@@ -651,12 +651,25 @@ test("EDGE: per-item ops on SCALED items keep amounts and stay within flexed bud
 });
 
 test("EDGE: automatic scaler respects per-food realistic max amounts", () => {
-  const yogurt = { ...CATALOG_BY_ID.greek_yogurt, slots: ["breakfast", "snack"] as MealSlot[] };
-  const plan = buildPlan({ calorieTarget: 2400, proteinTargetG: 180, filter: openFilter, seed: 3, pool: [yogurt] });
-  const yogurts = plan.meals.flatMap((m) => m.items).filter((i) => i.id === "greek_yogurt");
+  const cases: Array<{ id: keyof typeof CATALOG_BY_ID; max: number; slots: MealSlot[] }> = [
+    { id: "greek_yogurt", max: 340, slots: ["breakfast", "snack"] },
+    { id: "eggs2", max: 4, slots: ["breakfast", "snack"] },
+    { id: "roti2", max: 4, slots: ["breakfast", "lunch", "dinner"] },
+    { id: "chicken_breast", max: 250, slots: ["lunch", "dinner"] },
+    { id: "rice", max: 300, slots: ["lunch", "dinner"] },
+  ];
 
-  assert.ok(yogurts.length > 0, "expected Greek yogurt to be selected");
-  assert.ok(yogurts.every((i) => (i.amount ?? 0) <= 340), `oversized yogurt: ${yogurts.map((i) => i.amount).join(", ")}`);
+  for (const testCase of cases) {
+    const food = { ...CATALOG_BY_ID[testCase.id], slots: testCase.slots };
+    const plan = buildPlan({ calorieTarget: 3600, proteinTargetG: 220, filter: openFilter, seed: 3, pool: [food] });
+    const items = plan.meals.flatMap((m) => m.items).filter((i) => i.id === testCase.id);
+
+    assert.ok(items.length > 0, `expected ${testCase.id} to be selected`);
+    assert.ok(
+      items.every((i) => (i.amount ?? 0) <= testCase.max),
+      `oversized ${testCase.id}: ${items.map((i) => i.amount).join(", ")}`
+    );
+  }
 });
 
 test("EDGE: swapping a scaled item keeps the meal within its flexed budget", () => {
