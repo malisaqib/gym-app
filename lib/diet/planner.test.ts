@@ -16,6 +16,7 @@ import {
   replanRemaining,
   buildPlanFromSelection,
   normalizeDietPlan,
+  type DietPlan,
   type DietFilter,
   type SelectedNames,
 } from "./planner.ts";
@@ -448,6 +449,62 @@ test("aliases (incl. Roman Urdu) match free text and search (Phase 4)", () => {
   assert.equal(bestCatalogMatch("nehari please", openFilter, "dinner")?.id, "nihari");
   assert.ok(searchCatalog("aam", openFilter, "snack").some((f) => f.id === "mango"));
   assert.ok(searchCatalog("panir", openFilter, "lunch").some((f) => f.id === "paneer"));
+});
+
+test("planner contract: unsafe imported DB foods never enter add/search/swap/hybrid paths", () => {
+  const unsafe: CatalogFood = {
+    id: "db:straw-mushrooms",
+    name: "Mushrooms, straw, canned",
+    region: "global",
+    portion: "~120g",
+    calories: 38,
+    protein: 5,
+    carbs: 6,
+    fat: 1,
+    vegetarian: true,
+    role: "veg",
+    slots: ["lunch", "dinner"],
+    tags: ["veg"],
+  };
+  const pool = [unsafe, ...FOOD_CATALOG];
+  const base = buildPlan({ calorieTarget: 2000, proteinTargetG: 120, filter: openFilter, seed: 1 });
+
+  assert.deepEqual(searchCatalog("straw", openFilter, "lunch", pool), []);
+  assert.equal(bestCatalogMatch("straw mushrooms", openFilter, "lunch", pool), null);
+  assert.deepEqual(addPlanItem(base, "lunch", unsafe.id, pool), base);
+
+  const swapBase: DietPlan = {
+    ...base,
+    meals: base.meals.map((m) =>
+      m.slot === "lunch"
+        ? {
+            ...m,
+            budget: 500,
+            items: [
+              {
+                id: "salad",
+                name: "Green salad",
+                portion: "1 bowl",
+                calories: 30,
+                protein: 2,
+                carbs: 6,
+                fat: 0,
+              },
+            ],
+            calories: 30,
+            protein: 2,
+          }
+        : m
+    ),
+  };
+  const swapped = swapPlanItem(swapBase, "lunch", 0, 1, [CATALOG_BY_ID.salad, unsafe]);
+  assert.ok(!swapped.meals.flatMap((m) => m.items).some((i) => i.id === unsafe.id));
+
+  const hybrid = buildPlanFromSelection(
+    { lunch: ["straw mushrooms"] },
+    { calorieTarget: 2000, proteinTargetG: 120, filter: openFilter, seed: 2, pool }
+  );
+  assert.ok(!hybrid.meals.flatMap((m) => m.items).some((i) => i.id === unsafe.id));
 });
 
 // SIMPLE-plan contract (diet rebuild): a few staple foods done right and

@@ -1,5 +1,6 @@
 import type { FoodPreference } from "@/lib/database.types";
 import { FOOD_CATALOG, CATALOG_BY_ID, type CatalogFood, type MealSlot } from "./foodCatalog.ts";
+import { isUnsafeImportedPlannerFood } from "./foodClassify.ts";
 
 /**
  * Deterministic diet-plan generator (Phase 3 rebuild).
@@ -261,6 +262,7 @@ function mentioned(food: CatalogFood, text: string): boolean {
 }
 
 function allowed(food: CatalogFood, filter: DietFilter): boolean {
+  if (isUnsafeImportedPlannerFood(food)) return false;
   // Veg drops only meat/fish (food.vegetarian = lacto-ovo). Egg/dairy/nuts are
   // NOT dropped by the veg toggle — they're avoided individually via excludeTags.
   if (filter.vegetarian && !food.vegetarian) return false;

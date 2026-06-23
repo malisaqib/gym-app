@@ -103,10 +103,17 @@ const TAG_RULES: { tag: string; re: RegExp }[] = [
 const OBSCURE_IMPORTED_PRODUCE =
   /\b(straw|enoki|shiitake|maitake|morel|chanterelle|wood ear|cloud ear|truffle|bamboo shoots?|hearts of palm|cactus|nopales?|seaweed|kelp|dulse|burdock|fiddlehead|taro leaves?|cassava leaves?|chayote shoots?)\b/i;
 
+function isObscureImportedProduce(name: string, role: FoodRole): boolean {
+  return (role === "veg" || role === "fruit") && OBSCURE_IMPORTED_PRODUCE.test(name.toLowerCase());
+}
+
+export function isUnsafeImportedPlannerFood(food: Pick<CatalogFood, "id" | "name" | "role">): boolean {
+  return food.id.startsWith("db:") && isObscureImportedProduce(food.name, food.role);
+}
+
 function importedPlannerRejectReason(raw: RawFoodRow, role: FoodRole): string | null {
   if (raw.source === "curated") return null;
-  const lower = raw.name.toLowerCase();
-  if ((role === "veg" || role === "fruit") && OBSCURE_IMPORTED_PRODUCE.test(lower)) return "obscure_produce";
+  if (isObscureImportedProduce(raw.name, role)) return "obscure_produce";
   return null;
 }
 
