@@ -7,6 +7,7 @@ import {
   filterFromPreference,
   mergeFilters,
   removePlanItem,
+  insertPlanItem,
   addPlanItem,
   appendPlanItem,
   swapPlanItem,
@@ -769,12 +770,15 @@ test("EDGE: per-item ops on SCALED items keep amounts and stay within flexed bud
   const scaledIdx = lunch.items.findIndex((i) => i.unitMode === "portion" && (i.amount ?? 0) > 0);
   assert.ok(scaledIdx >= 0, "no scaled portion item to test");
 
-  // remove → restore round-trips the scaled amount exactly.
+  // Remove -> undo restores the exact item, position, meal totals, and day totals.
   const removed = removePlanItem(plan, "lunch", scaledIdx);
-  const restored = appendPlanItem(removed, "lunch", lunch.items[scaledIdx]);
-  const back = restored.meals.find((m) => m.slot === "lunch")!.items.at(-1)!;
-  assert.equal(back.amount, lunch.items[scaledIdx].amount);
-  assert.equal(back.calories, lunch.items[scaledIdx].calories);
+  const restored = insertPlanItem(removed, "lunch", scaledIdx, lunch.items[scaledIdx]);
+  const restoredLunch = restored.meals.find((m) => m.slot === "lunch")!;
+  assert.deepEqual(restoredLunch.items, lunch.items);
+  assert.equal(restoredLunch.calories, lunch.calories);
+  assert.equal(restoredLunch.protein, lunch.protein);
+  assert.equal(restored.totalCalories, plan.totalCalories);
+  assert.equal(restored.totalProtein, plan.totalProtein);
 
   // setPlanItemAmount recomputes totals from the scaled base.
   const doubled = setPlanItemAmount(plan, "lunch", scaledIdx, (lunch.items[scaledIdx].amount ?? 100) * 2);
