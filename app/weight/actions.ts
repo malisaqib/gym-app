@@ -64,6 +64,9 @@ async function recomputeTargetsForUser(supabase: SupabaseServer, userId: string)
 
   // Screens that read targets — refresh their cached renders.
   revalidatePath("/dashboard");
+  revalidatePath("/diet");
+  revalidatePath("/coach");
+  revalidatePath("/settings");
   revalidatePath("/weight");
 }
 

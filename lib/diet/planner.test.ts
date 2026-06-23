@@ -54,6 +54,29 @@ test("normalizeDietPlan backfills missing targets on old saved plans", () => {
   assert.equal(plan.proteinShort, true);
 });
 
+test("normalizeDietPlan prefers current profile targets over stale saved plan targets", () => {
+  const plan = normalizeDietPlan(
+    {
+      meals: [
+        {
+          slot: "lunch",
+          title: "Lunch",
+          items: [{ id: "rice", name: "Rice", portion: "1 cup", calories: 200, protein: 4, carbs: 44, fat: 1 }],
+        },
+      ],
+      calorieTarget: 1800,
+      proteinTargetG: 100,
+      filter: openFilter,
+    },
+    { calorieTarget: 2200, proteinTargetG: 140 }
+  );
+
+  assert.ok(plan);
+  assert.equal(plan.calorieTarget, 2200);
+  assert.equal(plan.proteinTargetG, 140);
+  assert.equal(plan.meals[0].budget, 770);
+});
+
 test("fits the calorie budget — never exceeds it; within ±5% or honestly flagged", () => {
   const plan = buildPlan({ calorieTarget: 2100, proteinTargetG: 130, filter: openFilter, seed: 1 });
   // HARD constraint: total must never blow past the target.

@@ -133,8 +133,8 @@ export function normalizeDietPlan(
   const input = raw as Partial<DietPlan>;
   if (!Array.isArray(input.meals)) return null;
 
-  const calorieTarget = positiveNumber(input.calorieTarget) ?? positiveNumber(targets.calorieTarget) ?? 0;
-  const proteinTargetG = positiveNumber(input.proteinTargetG) ?? positiveNumber(targets.proteinTargetG) ?? 0;
+  const calorieTarget = positiveNumber(targets.calorieTarget) ?? positiveNumber(input.calorieTarget) ?? 0;
+  const proteinTargetG = positiveNumber(targets.proteinTargetG) ?? positiveNumber(input.proteinTargetG) ?? 0;
   const budgets = new Map(slotBudgets(calorieTarget).map((m) => [m.slot, m.cal]));
   const meals: PlanMeal[] = input.meals.flatMap((rawMeal) => {
     if (!rawMeal || !SLOT_SET.has((rawMeal as PlanMeal).slot)) return [];

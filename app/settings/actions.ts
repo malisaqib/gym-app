@@ -157,6 +157,9 @@ export async function updateProfile(input: ProfileEditInput): Promise<Result> {
 
   // Other screens read these — refresh their cached renders.
   revalidatePath("/dashboard");
+  revalidatePath("/diet");
+  revalidatePath("/coach");
+  revalidatePath("/weight");
   revalidatePath("/settings");
   return {
     ok: true,
