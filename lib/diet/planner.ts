@@ -1,4 +1,5 @@
 import type { FoodPreference } from "@/lib/database.types";
+import { explicitProteinPowderOptIn } from "./proteinPowder.ts";
 import { FOOD_CATALOG, CATALOG_BY_ID, type CatalogFood, type MealSlot } from "./foodCatalog.ts";
 import { isUnsafeImportedPlannerFood } from "./foodClassify.ts";
 import {
@@ -312,6 +313,10 @@ function allowed(food: CatalogFood, filter: DietFilter): boolean {
   return true;
 }
 
+export function isDietPlanFoodAllowed(food: CatalogFood, filter: DietFilter): boolean {
+  return allowed(food, filter);
+}
+
 function allowedForAutoPlan(food: CatalogFood, filter: DietFilter): boolean {
   if (!allowed(food, filter)) return false;
   if (food.tags.includes("supplement")) return false;
@@ -584,6 +589,7 @@ function buildSimpleMeal(
   cands: CatalogFood[],
   filter: DietFilter,
   rng: () => number,
+  selectedIds: string[] | undefined,
   usualText: string | undefined,
   likeIds: Set<string>
 ): MealPick[] {
@@ -593,6 +599,22 @@ function buildSimpleMeal(
   const calSoFar = () => picks.reduce((s, p) => s + toScaledItem(p.food, p.mult).calories, 0);
   const has = (f: CatalogFood) => picks.some((p) => p.food.id === f.id);
   const likeBonus = (f: CatalogFood) => (likeIds.has(f.id) ? 8 : 0);
+
+  // Exact upstream selections (Groq candidate ids) seed by id only. This path
+  // never fuzzy-matches model output back onto a different catalog food.
+  if (selectedIds?.length) {
+    const selected = selectedIds
+      .map((id) => cands.find((food) => food.id === id))
+      .filter((food): food is CatalogFood => food != null);
+    const seenCategory = new Set(picks.map((pick) => pick.food.staple ?? pick.food.role));
+    for (const food of selected) {
+      const category = food.staple ?? food.role;
+      if (seenCategory.has(category) || has(food)) continue;
+      seenCategory.add(category);
+      const mult = fitRenderedMult(food, calSoFar(), budget, 1);
+      if (mult != null) picks.push({ food, mult, isProtected: false });
+    }
+  }
 
   // 1) The user's usual foods (or the selector's picks) for this slot seed the
   //    meal first (kept as-is; the day-level scale pass may grow them later).
@@ -843,13 +865,14 @@ export function buildPlan(input: {
   filter: DietFilter;
   usual?: UsualMeals;
   seed?: number;
-  // The food pool to build from. Defaults to the curated catalog (tests); the
-  // diet action passes catalog ∪ classified USDA foods for full breadth.
+  // The food pool to build from. Diet Plan callers pass the curated pool.
   pool?: CatalogFood[];
   // Pool food ids the user actually logs a lot (learned from their food log).
   // Treated exactly like a "like" — a fill-time bonus that biases selection
   // toward familiar foods. Stacks with the typed "usual eating" likes.
   preferIds?: Set<string>;
+  selectedIds?: Partial<Record<MealSlot, string[]>>;
+  allowProteinPowder?: boolean;
 }): DietPlan {
   const pool = input.pool ?? FOOD_CATALOG;
   const seed = input.seed ?? 1;
@@ -892,6 +915,8 @@ export function buildPlan(input: {
   ]
     .filter(Boolean)
     .join(" ");
+  const allowProteinPowder =
+    input.allowProteinPowder ?? explicitProteinPowderOptIn(usualAll);
 
   const built: BuiltMeal[] = slotBudgets(input.calorieTarget).map((s) => {
     const slotProtein = input.proteinTargetG * PROTEIN_SHARE[s.slot];
@@ -899,13 +924,27 @@ export function buildPlan(input: {
       (f) =>
         f.slots.includes(s.slot) &&
         (allowedForAutoPlan(f, input.filter) ||
-          (f.tags.includes("supplement") && allowed(f, input.filter) && !!usualAll && mentioned(f, usualAll)))
+          (f.tags.includes("supplement") &&
+            allowed(f, input.filter) &&
+            allowProteinPowder &&
+            !!usualAll &&
+            mentioned(f, usualAll)))
     );
     // Seed from this slot's usual meal PLUS any "keep" foods (keep applies to
     // every slot the food fits).
     const usualText =
       [usualForSlot(input.usual, s.slot), input.usual?.keep].filter(Boolean).join(" ") || undefined;
-    const picks = buildSimpleMeal(s.cal, slotProtein, s.slot, cands, input.filter, rng, usualText, likeIds);
+    const picks = buildSimpleMeal(
+      s.cal,
+      slotProtein,
+      s.slot,
+      cands,
+      input.filter,
+      rng,
+      input.selectedIds?.[s.slot],
+      usualText,
+      likeIds
+    );
     return { slot: s.slot, title: s.title, budget: s.cal, cands, picks };
   });
 
@@ -943,8 +982,8 @@ export function buildPlan(input: {
 }
 
 /**
- * Hybrid generator bridge (Phase 2): build a day from a per-slot list of food
- * NAMES an upstream selector (Groq) chose. The names are fed into the SAME
+ * Legacy name-selection bridge: build a day from a per-slot list of food names.
+ * The names are fed into the SAME
  * deterministic engine as buildPlan — they SEED each meal (matched to real
  * catalog foods via `mentioned`; an avoided food can never slip in), then the
  * math layer sizes portions to hit the targets within tolerance. Unmatched names
@@ -957,6 +996,27 @@ export function buildPlan(input: {
  * Pure + deterministic.
  */
 export type SelectedNames = Partial<Record<MealSlot, string[]>>;
+export type SelectedIds = Partial<Record<MealSlot, string[]>>;
+
+/** Build from already-validated catalog ids without fuzzy name matching. */
+export function buildPlanFromSelectionIds(
+  ids: SelectedIds,
+  input: {
+    calorieTarget: number;
+    proteinTargetG: number;
+    filter: DietFilter;
+    usual?: UsualMeals;
+    pool?: CatalogFood[];
+    seed?: number;
+    preferIds?: Set<string>;
+    allowProteinPowder?: boolean;
+  }
+): DietPlan {
+  return buildPlan({
+    ...input,
+    selectedIds: ids,
+  });
+}
 
 export function buildPlanFromSelection(
   names: SelectedNames,
@@ -1013,7 +1073,7 @@ export function swapMeal(
   const slotProtein = plan.proteinTargetG * PROTEIN_SHARE[slot];
   const cands = pool.filter((f) => f.slots.includes(slot) && allowedForAutoPlan(f, plan.filter));
   // Bias the fresh selection toward the foods the user logs most.
-  const picks = buildSimpleMeal(budget, slotProtein, slot, cands, plan.filter, rng, undefined, preferIds);
+  const picks = buildSimpleMeal(budget, slotProtein, slot, cands, plan.filter, rng, undefined, undefined, preferIds);
 
   const meal = finalizeMeal({ slot, title: meta.title, budget, cands, picks });
   const meals = plan.meals.map((m) => (m.slot === slot ? meal : m));
@@ -1074,7 +1134,7 @@ export function replanRemaining(
   const built: BuiltMeal[] = budgets.map((b) => {
     const slotProtein = proShareSum > 0 ? remPro * (PROTEIN_SHARE[b.slot] / proShareSum) : 0;
     const cands = pool.filter((f) => f.slots.includes(b.slot) && allowedForAutoPlan(f, plan.filter));
-    const picks = buildSimpleMeal(b.cal, slotProtein, b.slot, cands, plan.filter, rng, undefined, preferIds);
+    const picks = buildSimpleMeal(b.cal, slotProtein, b.slot, cands, plan.filter, rng, undefined, undefined, preferIds);
     return { slot: b.slot, title: b.title, budget: b.cal, cands, picks };
   });
 

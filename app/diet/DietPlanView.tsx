@@ -127,7 +127,6 @@ const T = {
   undo: { en: "Undo", roman_urdu: "Undo" },
   addFood: { en: "Add food", roman_urdu: "Food add karein" },
   estBadge: { en: "≈ est", roman_urdu: "≈ andaza" },
-  addedEst: { en: "Added as an estimate.", roman_urdu: "Andaze ke tor par add ho gaya." },
   overNote: {
     en: "A little over today — totally fine. Remove or swap an item to ease it back, your call.",
     roman_urdu: "Aaj thora over — bilkul theek. Koi item hata ya badal kar kam kar sakte hain, aap ki marzi.",
@@ -548,7 +547,6 @@ export default function DietPlanView({
         setPlan(res.plan);
         setAddOpen(null);
         haptic("success");
-        if (res.approx) toast.success(t("addedEst"));
       } else surfaceActionError(res.error);
     } catch {
       toast.error("Couldn't add that — please try again.");

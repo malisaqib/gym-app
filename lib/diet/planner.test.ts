@@ -19,6 +19,7 @@ import {
   isKnownFood,
   replanRemaining,
   buildPlanFromSelection,
+  buildPlanFromSelectionIds,
   normalizeDietPlan,
   validateDietPlan,
   type DietPlan,
@@ -587,6 +588,29 @@ test("central Diet Plan pool isolates every plan flow from broad USDA foods", ()
   assert.ok(refit.meals.flatMap((meal) => meal.items).every((item) => DIET_PLAN_FOOD_IDS.has(item.id)));
 });
 
+test("candidate-id selection seeds the exact catalog food without fuzzy substitution", () => {
+  const plan = buildPlanFromSelectionIds(
+    { lunch: ["chicken_breast", "brown_rice"] },
+    {
+      calorieTarget: 2100,
+      proteinTargetG: 120,
+      filter: { ...openFilter, regionFocus: "western" },
+      seed: 4,
+      pool: DIET_PLAN_POOL,
+    }
+  );
+  const lunchIds = plan.meals.find((meal) => meal.slot === "lunch")?.items.map((item) => item.id);
+  assert.ok(lunchIds?.includes("chicken_breast"));
+  assert.ok(lunchIds?.includes("brown_rice"));
+});
+
+test("typed Diet Plan matching fails closed for an unmatched estimate request", () => {
+  assert.equal(
+    bestCatalogMatch("turkey avocado magazine bowl", openFilter, "lunch", DIET_PLAN_POOL),
+    null
+  );
+});
+
 test("final validator checks targets, safe foods, and realistic portions", () => {
   const plan = buildPlan({ calorieTarget: 2100, proteinTargetG: 120, filter: openFilter, seed: 1 });
   assert.equal(plan.validation?.foodsOk, true);
@@ -758,6 +782,31 @@ test("whey never auto-planned by default; included (and swappable) when the usua
   assert.ok(
     !without.meals.some((m) => m.items.some((i) => i.id === "whey")),
     "whey appeared without opt-in"
+  );
+
+  const genericShake = buildPlan({
+    calorieTarget: 2200,
+    proteinTargetG: 160,
+    filter: openFilter,
+    usual: { keep: "banana shake" },
+    seed: 1,
+  });
+  assert.ok(
+    !genericShake.meals.some((meal) => meal.items.some((item) => item.id === "whey")),
+    "generic shake text incorrectly enabled whey"
+  );
+
+  const explicitlyDisabled = buildPlan({
+    calorieTarget: 2200,
+    proteinTargetG: 160,
+    filter: openFilter,
+    usual: { keep: "whey protein shake" },
+    allowProteinPowder: false,
+    seed: 1,
+  });
+  assert.ok(
+    !explicitlyDisabled.meals.some((meal) => meal.items.some((item) => item.id === "whey")),
+    "explicitly disabled protein powder was included"
   );
 
   const withWhey = buildPlan({

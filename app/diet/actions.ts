@@ -11,23 +11,25 @@ import {
   removePlanItem,
   insertPlanItem,
   addPlanItem,
-  appendPlanItem,
   setPlanItemAmount,
   setPlanItemMacros,
   searchCatalog,
   bestCatalogMatch,
   replanRemaining,
-  buildPlanFromSelection,
+  buildPlanFromSelectionIds,
   normalizeDietPlan,
   type DietPlan,
   type DietFilter,
   type PlanMealItem,
-  type SelectedNames,
+  type SelectedIds,
   type UsualMeals,
 } from "@/lib/diet/planner";
 import { generateMealSelection, type MealSelectionProfile } from "@/lib/diet/mealSelection";
+import {
+  buildMealCandidateLists,
+  explicitProteinPowderOptIn,
+} from "@/lib/diet/mealCandidates";
 import { parsePreferences, keywordPreferences } from "@/lib/coach/dietCoach";
-import { estimateMeal } from "@/app/coach/actions";
 import type { MealSlot } from "@/lib/diet/foodCatalog";
 import { DIET_PLAN_POOL } from "@/lib/diet/planPool";
 import { planItemToLogRow } from "@/lib/diet/planToLog";
@@ -38,7 +40,16 @@ import { getLocalToday } from "@/lib/date";
 import { logEvent } from "@/lib/analytics";
 import { consumeUsage, USAGE_LIMIT_MESSAGE } from "@/lib/usage";
 import { reportError } from "@/lib/log";
-import type { FoodLog, FoodPreference, Lang, Region, Sex } from "@/lib/database.types";
+import type {
+  ActivityLevel,
+  FoodLog,
+  FoodPreference,
+  Goal,
+  Lang,
+  Region,
+  Sex,
+  TrainingLocation,
+} from "@/lib/database.types";
 
 const SLOTS: MealSlot[] = ["breakfast", "lunch", "dinner", "snack"];
 
@@ -53,7 +64,7 @@ export interface FoodOption {
   protein: number;
 }
 type SearchResult = { ok: true; foods: FoodOption[] } | { ok: false; error: string };
-type AddResult = { ok: true; plan: DietPlan; approx?: boolean } | { ok: false; error: string };
+type AddResult = { ok: true; plan: DietPlan } | { ok: false; error: string };
 
 const randomSeed = () => Math.floor(Math.random() * 1_000_000_000);
 
@@ -127,12 +138,16 @@ export async function generateDietPlan(input?: {
   const { data: profile } = await supabase
     .from("profiles")
     .select(
-      "calorie_target, protein_target_g, food_preference, preferred_language, region, sex, usual_breakfast, usual_lunch, usual_dinner, usual_foods, keep_foods, disliked_foods"
+      "calorie_target, protein_target_g, weight_kg, goal, activity_level, training_location, food_preference, preferred_language, region, sex, usual_breakfast, usual_lunch, usual_dinner, usual_foods, keep_foods, disliked_foods"
     )
     .eq("id", user.id)
     .single<{
       calorie_target: number | null;
       protein_target_g: number | null;
+      weight_kg: number | null;
+      goal: Goal | null;
+      activity_level: ActivityLevel | null;
+      training_location: TrainingLocation | null;
       food_preference: FoodPreference | null;
       preferred_language: Lang | null;
       region: Region | null;
@@ -235,6 +250,10 @@ export async function generateDietPlan(input?: {
     preferIds,
     region: profile?.region ?? null,
     sex: profile?.sex ?? null,
+    weightKg: profile?.weight_kg ?? null,
+    goal: profile?.goal ?? null,
+    activityLevel: profile?.activity_level ?? null,
+    trainingLocation: profile?.training_location ?? null,
     foodPreference: profile?.food_preference ?? null,
   });
 
@@ -390,9 +409,17 @@ async function buildHybridPlan(args: {
   preferIds: Set<string>;
   region: Region | null;
   sex: Sex | null;
+  weightKg: number | null;
+  goal: Goal | null;
+  activityLevel: ActivityLevel | null;
+  trainingLocation: TrainingLocation | null;
   foodPreference: FoodPreference | null;
 }): Promise<DietPlan> {
   const { calorieTarget, proteinTargetG, filter, usual, preferIds } = args;
+  const usualText = [usual.breakfast, usual.lunch, usual.dinner, usual.foods, usual.keep]
+    .filter(Boolean)
+    .join(" ");
+  const allowProteinPowder = explicitProteinPowderOptIn(usualText);
   const deterministic = () =>
     buildPlan({
       calorieTarget,
@@ -402,36 +429,43 @@ async function buildHybridPlan(args: {
       seed: randomSeed(),
       preferIds,
       pool: DIET_PLAN_POOL,
+      allowProteinPowder,
     });
 
-  const usualText = [usual.breakfast, usual.lunch, usual.dinner, usual.foods, usual.keep]
-    .filter(Boolean)
-    .join(" ");
+  const candidates = buildMealCandidateLists({
+    filter,
+    region: args.region,
+    foodPreference: args.foodPreference,
+    allowProteinPowder,
+  });
   const mealProfile: MealSelectionProfile = {
     calorieTarget,
     proteinTargetG,
+    weightKg: args.weightKg,
+    goal: args.goal,
     sex: args.sex,
     region: args.region,
     foodPreference: args.foodPreference,
+    activityLevel: args.activityLevel,
+    trainingLocation: args.trainingLocation,
     vegetarian: filter.vegetarian,
     excludeTags: filter.excludeTags,
     excludeFoods: filter.excludeFoods,
-    // Protein powder is opt-in: only when the user's own usual/keep diet mentions
-    // it (mirrors the deterministic generator's whey rule).
-    allowProteinPowder: /\b(whey|protein\s*shake|protein\s*powder|supplement|shake)\b/i.test(usualText),
-    usualFoods: usual.foods ?? null,
+    allowProteinPowder,
+    usualMeals: usual,
+    candidates,
   };
 
   const selection = await generateMealSelection(mealProfile);
   if (!selection) return deterministic(); // Groq off/failed → deterministic fallback
 
-  const names: SelectedNames = {
-    breakfast: selection.breakfast.map((f) => f.name),
-    lunch: selection.lunch.map((f) => f.name),
-    dinner: selection.dinner.map((f) => f.name),
-    snack: selection.snack.map((f) => f.name),
+  const ids: SelectedIds = {
+    breakfast: selection.breakfast.map((food) => food.id),
+    lunch: selection.lunch.map((food) => food.id),
+    dinner: selection.dinner.map((food) => food.id),
+    snack: selection.snack.map((food) => food.id),
   };
-  const hybrid = buildPlanFromSelection(names, {
+  const hybrid = buildPlanFromSelectionIds(ids, {
     calorieTarget,
     proteinTargetG,
     filter,
@@ -439,10 +473,11 @@ async function buildHybridPlan(args: {
     seed: randomSeed(),
     preferIds,
     pool: DIET_PLAN_POOL,
+    allowProteinPowder,
   });
   // Safety net: if Groq's foods couldn't fill the day to tolerance, prefer the
   // pure deterministic plan (proven to hit ±5% on the full catalog).
-  return hybrid.caloriesShort ? deterministic() : hybrid;
+  return hybrid.caloriesShort || hybrid.proteinShort ? deterministic() : hybrid;
 }
 
 /**
@@ -620,11 +655,7 @@ export async function searchDietFoods(slot: MealSlot, query: string): Promise<Se
   return { ok: true, foods };
 }
 
-/**
- * Add a free-TYPED food. Deterministic catalog match first (grounded macros);
- * if none, fall back to the RAG/AI estimator (read-only reuse) and flag the item
- * as approximate. Returns `approx` so the UI can label it honestly.
- */
+/** Add typed input only when it resolves to a curated Diet Plan food. */
 export async function addCustomDietItem(slot: MealSlot, text: string): Promise<AddResult> {
   if (!SLOTS.includes(slot)) return { ok: false, error: "Unknown meal." };
   const q = text.trim();
@@ -633,28 +664,13 @@ export async function addCustomDietItem(slot: MealSlot, text: string): Promise<A
   if (!ctx.ok) return ctx;
 
   const match = bestCatalogMatch(q, ctx.plan.filter, slot, DIET_PLAN_POOL);
-  let next: DietPlan;
-  let approx = false;
-  if (match) {
-    next = addPlanItem(ctx.plan, slot, match.id, DIET_PLAN_POOL);
-  } else {
-    const est = await estimateMeal(q);
-    if (!est.ok) {
-      return { ok: false, error: "Couldn't find or estimate that — try simpler words, or pick from the list." };
-    }
-    const item: PlanMealItem = {
-      id: `custom-${Date.now()}`,
-      name: q.slice(0, 60),
-      portion: "as entered",
-      calories: Math.round(est.calories),
-      protein: Math.round(est.protein),
-      carbs: Math.round(est.items.reduce((s, i) => s + i.carbs_g, 0)),
-      fat: Math.round(est.items.reduce((s, i) => s + i.fat_g, 0)),
-      approx: true,
+  if (!match) {
+    return {
+      ok: false,
+      error: "That food is not available in Diet Plans yet. Pick a listed food or report it as missing.",
     };
-    next = appendPlanItem(ctx.plan, slot, item);
-    approx = true;
   }
+  const next = addPlanItem(ctx.plan, slot, match.id, DIET_PLAN_POOL);
   const saved = await persistPlan(ctx.supabase, ctx.userId, next, ctx.plan.rev);
-  return saved.ok ? { ok: true, plan: next, approx } : { ok: false, error: saved.error! };
+  return saved.ok ? { ok: true, plan: next } : { ok: false, error: saved.error! };
 }

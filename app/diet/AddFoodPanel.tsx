@@ -9,7 +9,7 @@ import type { Lang } from "@/lib/database.types";
 /**
  * Per-meal "add a food" control (Phase 3). Search the dataset (deterministic,
  * filter-aware) OR type a food in free text. Typed input is matched to the
- * dataset server-side; if there's no match it's added as a flagged estimate.
+ * curated Diet Plan catalog server-side and rejected when no safe match exists.
  * Busy state is owned by the parent (it runs the add + closes the panel).
  */
 
@@ -17,8 +17,8 @@ const T = {
   placeholder: { en: "Search or type a food…", roman_urdu: "Food dhoondein ya likhein…" },
   searching: { en: "Searching…", roman_urdu: "Dhoond rahe hain…" },
   addTyped: { en: "Add", roman_urdu: "Add karein" },
-  asTyped: { en: "as typed", roman_urdu: "jaisa likha" },
-  noResults: { en: "No dataset match — you can still add it as typed.", roman_urdu: "Dataset mein nahi mila — phir bhi add kar sakte hain." },
+  asTyped: { en: "from Diet Plan foods", roman_urdu: "Diet Plan foods se" },
+  noResults: { en: "No Diet Plan match. Try another name or report it as missing.", roman_urdu: "Diet Plan mein match nahi mila. Doosra naam try karein ya missing report karein." },
   reportMissing: { en: "Report it as missing", roman_urdu: "Missing report karein" },
   cancel: { en: "Cancel", roman_urdu: "Cancel" },
 } satisfies Record<string, Record<Lang, string>>;

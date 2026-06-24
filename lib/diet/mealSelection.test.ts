@@ -1,52 +1,185 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseMealSelection, type MealSelection } from "./mealSelection.ts";
+import {
+  buildMealSelectionPrompt,
+  parseMealSelection,
+  type MealSelectionProfile,
+} from "./mealSelection.ts";
+import {
+  buildMealCandidateLists,
+  explicitProteinPowderOptIn,
+} from "./mealCandidates.ts";
+import { filterFromPreference, type DietFilter } from "./planner.ts";
 
-test("parseMealSelection accepts a well-formed selection", () => {
-  const sel = parseMealSelection({
-    breakfast: [{ name: "eggs", portion: "3" }, { name: "paratha", portion: "1" }],
-    lunch: [{ name: "chicken", portion: "1 piece" }, { name: "rice", portion: "1 cup" }],
-    dinner: [{ name: "beef", portion: "1 cup" }, { name: "roti", portion: "2" }],
-    snack: [{ name: "banana", portion: "1" }],
+const openFilter: DietFilter = {
+  vegetarian: false,
+  excludeTags: [],
+  excludeFoods: [],
+  regionFocus: "western",
+};
+
+function profile(overrides: Partial<MealSelectionProfile> = {}): MealSelectionProfile {
+  const base = {
+    calorieTarget: 2100,
+    proteinTargetG: 130,
+    weightKg: 75,
+    goal: "maintain" as const,
+    sex: "male" as const,
+    region: "us_canada" as const,
+    foodPreference: "high_protein" as const,
+    activityLevel: "light" as const,
+    trainingLocation: "gym" as const,
+    vegetarian: false,
+    excludeTags: [],
+    excludeFoods: [],
+    allowProteinPowder: false,
+    usualMeals: { breakfast: "eggs and oats", foods: "chicken and yogurt" },
+  };
+  const merged = { ...base, ...overrides };
+  return {
+    ...merged,
+    candidates:
+      overrides.candidates ??
+      buildMealCandidateLists({
+        filter: {
+          ...openFilter,
+          vegetarian: merged.vegetarian,
+          excludeTags: merged.excludeTags,
+          excludeFoods: merged.excludeFoods,
+        },
+        region: merged.region,
+        foodPreference: merged.foodPreference,
+        allowProteinPowder: merged.allowProteinPowder,
+      }),
+  };
+}
+
+test("prompt exposes explicit candidate ids and forbids nutrition output", () => {
+  const prompt = buildMealSelectionPrompt(profile());
+  assert.match(prompt, /"id":"chicken_breast"/);
+  assert.match(prompt, /Return ids only/);
+  assert.match(prompt, /Never calculate or return calories/);
+});
+
+test("valid candidate ids are accepted", () => {
+  const p = profile();
+  const selection = parseMealSelection(
+    {
+      breakfast: [{ id: "scrambled" }, { id: "oats" }],
+      lunch: [{ id: "chicken_breast" }, { id: "brown_rice" }],
+      dinner: [{ id: "salmon" }, { id: "baked_potato" }],
+      snack: [{ id: "banana" }],
+    },
+    p.candidates
+  );
+  assert.equal(selection?.lunch[0].id, "chicken_breast");
+});
+
+test("unknown ids and free-form names are rejected", () => {
+  const candidates = profile().candidates;
+  assert.equal(
+    parseMealSelection(
+      { breakfast: [{ id: "not-a-food" }], lunch: [], dinner: [], snack: [] },
+      candidates
+    ),
+    null
+  );
+  assert.equal(
+    parseMealSelection(
+      { breakfast: [{ name: "eggs" }], lunch: [], dinner: [], snack: [] },
+      candidates
+    ),
+    null
+  );
+});
+
+test("wrong-slot, duplicate, and extra-key responses are rejected", () => {
+  const candidates = profile().candidates;
+  assert.equal(
+    parseMealSelection(
+      { breakfast: [{ id: "salmon" }], lunch: [], dinner: [], snack: [] },
+      candidates
+    ),
+    null
+  );
+  assert.equal(
+    parseMealSelection(
+      { breakfast: [{ id: "oats" }, { id: "oats" }], lunch: [], dinner: [], snack: [] },
+      candidates
+    ),
+    null
+  );
+  assert.equal(
+    parseMealSelection(
+      { breakfast: [{ id: "oats", name: "Oatmeal" }], lunch: [], dinner: [], snack: [] },
+      candidates
+    ),
+    null
+  );
+});
+
+test("avoided foods and meat are absent from their filtered candidate lists", () => {
+  const avoided = profile({
+    excludeTags: ["beef"],
+    excludeFoods: ["salmon"],
   });
-  assert.ok(sel);
-  assert.deepEqual((sel as MealSelection).snack, [{ name: "banana", portion: "1" }]);
-  assert.equal((sel as MealSelection).breakfast[0].name, "eggs");
+  assert.ok(avoided.candidates.dinner.every((food) => !["ground_beef", "salmon"].includes(food.id)));
+
+  const vegetarian = profile({ vegetarian: true });
+  assert.ok(vegetarian.candidates.lunch.every((food) => food.vegetarian));
+  assert.ok(!vegetarian.candidates.lunch.some((food) => food.id === "chicken_breast"));
 });
 
-test("parseMealSelection coerces bare-string foods to {name}", () => {
-  const sel = parseMealSelection({ breakfast: ["oats", "  milk  "], lunch: [], dinner: [], snack: [] });
-  assert.deepEqual(sel?.breakfast, [{ name: "oats" }, { name: "milk" }]); // trimmed, no portion
+test("whey is candidate-gated by explicit protein powder preference", () => {
+  const disabled = profile({ allowProteinPowder: false });
+  const enabled = profile({ allowProteinPowder: true });
+  assert.ok(!disabled.candidates.breakfast.some((food) => food.id === "whey"));
+  assert.ok(enabled.candidates.breakfast.some((food) => food.id === "whey"));
 });
 
-test("parseMealSelection drops invalid entries and nameless objects", () => {
-  const sel = parseMealSelection({
-    breakfast: [{ name: "" }, { portion: "2" }, 42, null, { name: "eggs" }],
-    lunch: [],
-    dinner: [],
-    snack: [],
+test("protein powder opt-in requires explicit powder language", () => {
+  assert.equal(explicitProteinPowderOptIn("I usually have a banana shake"), false);
+  assert.equal(explicitProteinPowderOptIn("I use whey after training"), true);
+  assert.equal(explicitProteinPowderOptIn("Keep my protein powder"), true);
+  assert.equal(explicitProteinPowderOptIn("A protein shake is fine"), true);
+});
+
+test("regional candidate lists keep western and desi automatic choices distinct", () => {
+  const usa = profile({ region: "us_canada" });
+  assert.ok(usa.candidates.lunch.some((food) => food.id === "chicken_breast"));
+  assert.ok(!usa.candidates.lunch.some((food) => food.region === "desi"));
+
+  const pakistan = profile({ region: "pakistan" });
+  assert.ok(pakistan.candidates.lunch.some((food) => food.id === "roti2"));
+  assert.ok(!pakistan.candidates.lunch.some((food) => food.region === "western"));
+});
+
+test("non-veg can receive meat while current veg_limited semantics remain strict", () => {
+  const nonVeg = profile();
+  assert.ok(nonVeg.candidates.lunch.some((food) => !food.vegetarian));
+
+  // The stored value combines two meanings. Preserve the existing strict
+  // interpretation until onboarding splits vegetarian from flexitarian.
+  const limitedFilter = filterFromPreference("veg_limited");
+  const limited = buildMealCandidateLists({
+    filter: limitedFilter,
+    region: "pakistan",
+    foodPreference: "veg_limited",
+    allowProteinPowder: false,
   });
-  assert.deepEqual(sel?.breakfast, [{ name: "eggs" }]);
+  assert.equal(limitedFilter.vegetarian, true);
+  assert.ok(limited.lunch.every((food) => food.vegetarian));
 });
 
-test("parseMealSelection caps each slot to keep plans simple", () => {
-  const many = Array.from({ length: 10 }, (_, i) => ({ name: `food${i}` }));
-  const sel = parseMealSelection({ breakfast: many, lunch: [], dinner: [], snack: [] });
-  assert.equal(sel?.breakfast.length, 4); // MAX_PER_SLOT
-});
-
-test("parseMealSelection ignores unknown keys and missing slots default to []", () => {
-  const sel = parseMealSelection({ lunch: [{ name: "daal" }], nonsense: [{ name: "x" }] });
-  assert.ok(sel);
-  assert.deepEqual(sel?.breakfast, []);
-  assert.deepEqual(sel?.dinner, []);
-  assert.deepEqual(sel?.lunch, [{ name: "daal" }]);
-});
-
-test("parseMealSelection returns null when nothing usable came back", () => {
-  assert.equal(parseMealSelection(null), null);
-  assert.equal(parseMealSelection("not an object"), null);
-  assert.equal(parseMealSelection({}), null);
-  assert.equal(parseMealSelection({ breakfast: [], lunch: [], dinner: [], snack: [] }), null);
-  assert.equal(parseMealSelection({ breakfast: [{ portion: "no name" }] }), null);
+test("malformed JSON shapes return null for deterministic fallback", () => {
+  const candidates = profile().candidates;
+  assert.equal(parseMealSelection(null, candidates), null);
+  assert.equal(parseMealSelection({}, candidates), null);
+  assert.equal(
+    parseMealSelection(
+      { breakfast: [], lunch: [], dinner: [], snack: [], commentary: "done" },
+      candidates
+    ),
+    null
+  );
 });
