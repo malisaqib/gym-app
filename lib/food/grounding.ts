@@ -24,6 +24,11 @@ interface Match {
 }
 
 const MATCH_THRESHOLD = 70;
+// A missing-nutrition LLM item (0 kcal / 0g) may adopt a match's DB macros, but
+// ONLY when the match is at least moderately strong. Below this, a weak/uncertain
+// match must NOT be promoted to verified/imported on a possibly-wrong food —
+// keep it an estimate. (Strong matches >= 90 always apply, see below.)
+const MISSING_NUTRITION_MIN_SCORE = 80;
 const AMBIGUOUS_SINGLE_WORDS = new Set(["shake", "drink", "curry", "salan", "sabzi", "snack"]);
 
 const TRUSTED_CATALOG: GroundingFood[] = FOOD_CATALOG.map((food) => ({
@@ -173,9 +178,11 @@ export function groundParsedFoodItems(
     const match = direct ?? rawFallback;
     if (!match) return item;
 
-    // Strong catalog matches should be the macro source. This also repairs the
-    // model's occasional "0 kcal / 0g protein" output for known foods.
-    if (hasMissingNutrition(item) || match.score >= 90) {
+    // Strong catalog matches (>= 90) are the macro source. A missing-nutrition
+    // item (0 kcal / 0g) also adopts the match's DB macros — but only when the
+    // match is at least moderately strong (>= MISSING_NUTRITION_MIN_SCORE), so a
+    // weak match is never promoted to verified/imported on a possibly-wrong food.
+    if (match.score >= 90 || (hasMissingNutrition(item) && match.score >= MISSING_NUTRITION_MIN_SCORE)) {
       return applyFood(item, match);
     }
     return item;
