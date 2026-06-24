@@ -35,6 +35,11 @@ export const MAX_AMOUNT_UNITS = 100;
 // Correction ceilings (match the LLM-output clamps in the parser).
 const MAX_CORRECTED_CALORIES = 5000;
 const MAX_CORRECTED_MACRO_G = 1000;
+// Safety ceiling for an UNMATCHED estimate with NO known weight (a count unit
+// like "item"/"piece"): the 9 kcal/g rule can't apply, so cap one such item at a
+// realistic single-item max instead of the broad 5000 clamp. Matched DB foods,
+// and items with a known gram/plate/bowl/serving amount, are NOT capped here.
+const MAX_ESTIMATED_COUNT_CALORIES = 1500;
 
 // Serving words → grams in ONE serving. Used to turn a "1 plate" / "1 katori"
 // parse into a per-gram portion food so any gram amount computes exactly.
@@ -118,6 +123,9 @@ interface MacroQuantityItem {
   protein_g: number;
   carbs_g: number;
   fat_g: number;
+  // Present on grounded ParsedFoodItems. Absent/null = an UNMATCHED estimate,
+  // which sanitizeParsedMacros caps more tightly when there's no known weight.
+  matched_food_id?: string | null;
 }
 
 /**
@@ -225,15 +233,23 @@ export function sanitizeParsedMacros<T extends MacroQuantityItem>(item: T): T {
   carbs_g = clean(carbs_g);
   fat_g = clean(fat_g);
 
+  // Per-item calorie ceiling. With a known weight, cap at 9 kcal/g (pure fat is
+  // the densest food). With NO known weight, a MATCHED DB food is trusted as-is,
+  // but an UNMATCHED estimate (a count unit like "item"/"piece") is capped at a
+  // safe single-item max — otherwise one bad LLM guess could log a 5000-kcal
+  // "item". Items with a gram/plate/bowl/serving amount keep the weight ceiling.
   const grams = gramsOf(item.quantity, item.unit);
-  if (grams != null && grams > 0) {
-    calories = Math.min(calories, Math.round(grams * 9));
-  }
+  let ceiling: number | null = null;
+  if (grams != null && grams > 0) ceiling = Math.round(grams * 9);
+  else if (!item.matched_food_id) ceiling = MAX_ESTIMATED_COUNT_CALORIES;
+  if (ceiling != null) calories = Math.min(calories, ceiling);
 
   // Zero calories but real macros → derive calories from the macros (Atwater),
-  // instead of showing a "0 kcal, 20g protein" contradiction.
+  // instead of showing a "0 kcal, 20g protein" contradiction. Re-apply the
+  // ceiling afterwards so a derived value can't exceed the cap either.
   const macroKcal = protein_g * 4 + carbs_g * 4 + fat_g * 9;
   if (calories === 0 && macroKcal > 10) calories = Math.round(macroKcal);
+  if (ceiling != null) calories = Math.min(calories, ceiling);
 
   // Macro-vs-energy consistency (slack covers honest rounding).
   const slack = Math.max(15, calories * 0.05);
@@ -378,17 +394,51 @@ export function correctedMacroPatch(
  * Quantity spec for logging a FOOD ROW from the database (search-tap logging).
  * A gram-anchored row (portion_grams > 0) becomes a per-gram portion — this is
  * where "165 kcal per 100g → base 1.65/g" happens, so any grams scale exactly.
- * A row with no gram anchor logs as ONE serving (count mode) — a serving is
- * NEVER treated as one gram.
+ * A row with no gram anchor uses a clear leading count when present ("2 eggs",
+ * "2 medium" + name "2 roti"); otherwise it remains one countable serving.
  */
+const COUNT_WORDS: Record<string, number> = {
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+};
+
+const NON_UNIT_WORDS = new Set(["small", "medium", "large", "stuffed"]);
+
+function leadingCount(text: string | null | undefined): number | null {
+  const first = text?.trim().toLowerCase().match(/^(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b/)?.[1];
+  if (!first) return null;
+  const count = /^\d+$/.test(first) ? Number(first) : COUNT_WORDS[first];
+  return Number.isFinite(count) && count > 0 ? Math.min(count, MAX_AMOUNT_UNITS) : null;
+}
+
+function countUnit(text: string | null | undefined): string {
+  const match = text
+    ?.trim()
+    .toLowerCase()
+    .match(/^(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+([a-z]+)/);
+  const unit = match?.[1] ?? "";
+  return NON_UNIT_WORDS.has(unit) ? "" : unit;
+}
+
 export function specFromFoodRow(food: {
+  name?: string | null;
+  portion?: string | null;
   portion_grams: number | null;
+  serving_grams?: number | null;
   calories: number;
   protein_g: number;
   carbs_g: number;
   fat_g: number;
 }): QuantitySpec {
-  const grams = Number(food.portion_grams);
+  const grams = Number(food.portion_grams ?? food.serving_grams);
   if (Number.isFinite(grams) && grams > 0) {
     return {
       unit_mode: "portion",
@@ -401,19 +451,34 @@ export function specFromFoodRow(food: {
       base_fat_g: Number(food.fat_g) / grams,
     };
   }
+
+  const amount = leadingCount(food.portion) ?? leadingCount(food.name) ?? 1;
+  const unit = countUnit(food.portion) || countUnit(food.name) || "serving";
   return {
     unit_mode: "count",
-    unit: "serving",
-    amount: 1,
+    unit,
+    amount,
     serving_grams: null,
-    base_calories: Number(food.calories),
-    base_protein_g: Number(food.protein_g),
-    base_carbs_g: Number(food.carbs_g),
-    base_fat_g: Number(food.fat_g),
+    base_calories: Number(food.calories) / amount,
+    base_protein_g: Number(food.protein_g) / amount,
+    base_carbs_g: Number(food.carbs_g) / amount,
+    base_fat_g: Number(food.fat_g) / amount,
   };
 }
 
-/** Rounded totals for a spec/amount — used when writing the synced cache columns. */
+/** Storage fields for search-tap logging, derived from the same live spec. */
+export function logQuantityForFoodRow(
+  food: Parameters<typeof specFromFoodRow>[0]
+): QuantitySpec & { quantity: number; logged_unit: string } {
+  const spec = specFromFoodRow(food);
+  return {
+    ...spec,
+    quantity: spec.unit_mode === "count" ? spec.amount : 1,
+    logged_unit: spec.unit_mode === "count" ? spec.unit : food.portion ?? spec.unit,
+  };
+}
+
+/** Rounded totals for a spec/amount, used by every food-log write path. */
 export function totalsFor(spec: {
   base_calories: number;
   base_protein_g: number;

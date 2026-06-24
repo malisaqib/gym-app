@@ -10,6 +10,7 @@ import {
   correctedMacroPatch,
   sanitizeParsedMacros,
   specFromFoodRow,
+  logQuantityForFoodRow,
   MAX_AMOUNT_GRAMS,
   MAX_AMOUNT_UNITS,
 } from "./quantity.ts";
@@ -268,15 +269,153 @@ test("sanitizeParsedMacros: impossible protein/energy is clamped; plausible food
   assert.equal(sanitizeParsedMacros(lassi), lassi);
 });
 
-test("specFromFoodRow: per-100g row scales to any grams; no gram anchor → ONE serving (never 1g)", () => {
-  const chicken = specFromFoodRow({ portion_grams: 100, calories: 165, protein_g: 31, carbs_g: 0, fat_g: 3.6 });
+test("sanitizeParsedMacros: an unmatched count-unit estimate is capped at the single-item max", () => {
+  // No grams (unit "item"), no matched_food_id → 9 kcal/g can't apply, so cap at 1500.
+  const big = sanitizeParsedMacros({
+    food_name: "imaginary xyz curry", quantity: 1, unit: "item",
+    calories: 4000, protein_g: 30, carbs_g: 50, fat_g: 20,
+  });
+  assert.equal(big.calories, 1500);
+  // Atwater consistency still holds against the capped calories.
+  assert.ok(big.protein_g * 4 <= big.calories + Math.max(15, big.calories * 0.05));
+
+  // A 0-kcal unmatched count item whose macros imply > 1500 kcal is also capped.
+  const derived = sanitizeParsedMacros({
+    food_name: "mystery plate", quantity: 1, unit: "item",
+    calories: 0, protein_g: 400, carbs_g: 0, fat_g: 0, // Atwater → 1600
+  });
+  assert.equal(derived.calories, 1500);
+});
+
+test("sanitizeParsedMacros: known grams/plate estimates keep the gram-based ceiling, not the count cap", () => {
+  // "1 plate" = 350 g → ceiling 3150 (NOT the 1500 count cap), even unmatched.
+  const plate = sanitizeParsedMacros({
+    food_name: "huge biryani", quantity: 1, unit: "plate",
+    calories: 5000, protein_g: 40, carbs_g: 60, fat_g: 30,
+  });
+  assert.equal(plate.calories, 3150); // 350 g × 9, the existing weight ceiling
+
+  // grams stays gram-based: 100 g caps at 900, untouched by the count cap.
+  const grams = sanitizeParsedMacros({
+    food_name: "dense unknown", quantity: 100, unit: "g",
+    calories: 4000, protein_g: 20, carbs_g: 20, fat_g: 30,
+  });
+  assert.equal(grams.calories, 900);
+});
+
+test("sanitizeParsedMacros: matched DB foods are never touched by the count cap", () => {
+  // A matched count-unit food keeps its (DB-derived) macros, even above 1500.
+  const matched = {
+    food_name: "platter", quantity: 1, unit: "item",
+    calories: 4000, protein_g: 30, carbs_g: 50, fat_g: 20,
+    matched_food_id: "db:00000000-0000-0000-0000-000000000001",
+  };
+  assert.equal(sanitizeParsedMacros(matched), matched); // unchanged (same object)
+});
+
+test("specFromFoodRow: gram rows stay gram-based; leading counts become per-unit specs", () => {
+  const chicken = specFromFoodRow({
+    name: "Chicken breast",
+    portion: "100g",
+    portion_grams: 100,
+    calories: 165,
+    protein_g: 31,
+    carbs_g: 0,
+    fat_g: 3.6,
+  });
   assert.equal(chicken.unit_mode, "portion");
   assert.equal(chicken.amount, 100);
   // 50g = exactly half via base × amount.
   assert.equal(Math.round(chicken.base_calories * 50), 83);
   assert.equal(Math.round(chicken.base_protein_g * 50 * 10) / 10, 15.5);
+  const loggedChicken = logQuantityForFoodRow({
+    name: "Chicken breast",
+    portion: "100g",
+    portion_grams: 100,
+    calories: 165,
+    protein_g: 31,
+    carbs_g: 0,
+    fat_g: 3.6,
+  });
+  assert.equal(loggedChicken.quantity, 1);
+  assert.equal(loggedChicken.amount, 100);
+  assert.equal(loggedChicken.logged_unit, "100g");
 
-  const noAnchor = specFromFoodRow({ portion_grams: null, calories: 250, protein_g: 12, carbs_g: 30, fat_g: 9 });
+  const servingOnly = specFromFoodRow({
+    name: "Cooked rice",
+    portion: "1 serving",
+    portion_grams: null,
+    serving_grams: 150,
+    calories: 195,
+    protein_g: 4,
+    carbs_g: 42,
+    fat_g: 1,
+  });
+  assert.equal(servingOnly.unit_mode, "portion");
+  assert.equal(servingOnly.amount, 150);
+  assert.equal(servingOnly.serving_grams, 150);
+
+  const eggs = specFromFoodRow({
+    name: "2 eggs (boiled/fried)",
+    portion: "2 eggs",
+    portion_grams: null,
+    calories: 160,
+    protein_g: 12,
+    carbs_g: 2,
+    fat_g: 11,
+  });
+  assert.equal(eggs.unit_mode, "count");
+  assert.equal(eggs.amount, 2);
+  assert.equal(eggs.unit, "eggs");
+  assert.equal(eggs.base_calories, 80);
+  assert.equal(totalsFor(eggs).calories, 160);
+  const loggedEggs = logQuantityForFoodRow({
+    name: "2 eggs (boiled/fried)",
+    portion: "2 eggs",
+    portion_grams: null,
+    calories: 160,
+    protein_g: 12,
+    carbs_g: 2,
+    fat_g: 11,
+  });
+  assert.equal(loggedEggs.quantity, 2);
+  assert.equal(loggedEggs.logged_unit, "eggs");
+
+  const roti = specFromFoodRow({
+    name: "2 roti",
+    portion: "2 medium",
+    portion_grams: null,
+    calories: 220,
+    protein_g: 6,
+    carbs_g: 44,
+    fat_g: 4,
+  });
+  assert.equal(roti.unit_mode, "count");
+  assert.equal(roti.amount, 2);
+  assert.equal(roti.unit, "roti");
+  assert.equal(roti.base_calories, 110);
+  assert.equal(totalsFor(roti).calories, 220);
+  const loggedRoti = logQuantityForFoodRow({
+    name: "2 roti",
+    portion: "2 medium",
+    portion_grams: null,
+    calories: 220,
+    protein_g: 6,
+    carbs_g: 44,
+    fat_g: 4,
+  });
+  assert.equal(loggedRoti.quantity, 2);
+  assert.equal(loggedRoti.logged_unit, "roti");
+
+  const noAnchor = specFromFoodRow({
+    name: "Mixed meal",
+    portion: "one serving",
+    portion_grams: null,
+    calories: 250,
+    protein_g: 12,
+    carbs_g: 30,
+    fat_g: 9,
+  });
   assert.equal(noAnchor.unit_mode, "count");
   assert.equal(noAnchor.amount, 1);
   assert.equal(noAnchor.base_calories, 250); // one full serving, NOT 1 gram
