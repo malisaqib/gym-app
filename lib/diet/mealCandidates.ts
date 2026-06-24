@@ -16,6 +16,7 @@ export interface MealCandidate {
   vegetarian: boolean;
   whey: boolean;
   common: boolean;
+  regionMatch: "specific" | "broad" | "global" | "other";
   aliases?: string[];
 }
 
@@ -31,6 +32,9 @@ export interface MealCandidateProfile {
 const SLOTS: MealSlot[] = ["breakfast", "lunch", "dinner", "snack"];
 
 function regionAllowed(food: CatalogFood, region: Region | null): boolean {
+  if (region && food.profileRegions?.length) {
+    return food.profileRegions.includes(region);
+  }
   if (region === "pakistan" || region === "india") {
     return food.region === "desi" || food.region === "global";
   }
@@ -40,6 +44,27 @@ function regionAllowed(food: CatalogFood, region: Region | null): boolean {
   // Middle East and Other do not yet have reliable catalog tags. Keep the full
   // curated pool available and let the prompt use region as a soft preference.
   return true;
+}
+
+function regionMatch(
+  food: CatalogFood,
+  region: Region | null
+): MealCandidate["regionMatch"] {
+  if (region && food.profileRegions?.includes(region)) return "specific";
+  if (
+    (region === "pakistan" || region === "india") &&
+    food.region === "desi"
+  ) {
+    return "broad";
+  }
+  if (
+    (region === "us_canada" || region === "uk_europe") &&
+    food.region === "western"
+  ) {
+    return "broad";
+  }
+  if (food.region === "global") return "global";
+  return "other";
 }
 
 function candidateAllowed(food: CatalogFood, profile: MealCandidateProfile): boolean {
@@ -53,7 +78,7 @@ function candidateAllowed(food: CatalogFood, profile: MealCandidateProfile): boo
   return true;
 }
 
-function toCandidate(food: CatalogFood): MealCandidate {
+function toCandidate(food: CatalogFood, region: Region | null): MealCandidate {
   return {
     id: food.id,
     name: food.name,
@@ -63,8 +88,17 @@ function toCandidate(food: CatalogFood): MealCandidate {
     vegetarian: food.vegetarian,
     whey: food.tags.includes("supplement"),
     common: food.staple != null,
+    regionMatch: regionMatch(food, region),
     ...(food.aliases?.length ? { aliases: food.aliases } : {}),
   };
+}
+
+/** Curated foods allowed for automatic planning for this profile. */
+export function buildMealCandidatePool(
+  profile: MealCandidateProfile,
+  pool: CatalogFood[] = DIET_PLAN_POOL
+): CatalogFood[] {
+  return pool.filter((food) => candidateAllowed(food, profile));
 }
 
 /** Curated, profile-filtered candidates exposed to Groq for each meal slot. */
@@ -72,11 +106,13 @@ export function buildMealCandidateLists(
   profile: MealCandidateProfile,
   pool: CatalogFood[] = DIET_PLAN_POOL
 ): MealCandidateLists {
-  const eligible = pool.filter((food) => candidateAllowed(food, profile));
+  const eligible = buildMealCandidatePool(profile, pool);
   return Object.fromEntries(
     SLOTS.map((slot) => [
       slot,
-      eligible.filter((food) => food.slots.includes(slot)).map(toCandidate),
+      eligible
+        .filter((food) => food.slots.includes(slot))
+        .map((food) => toCandidate(food, profile.region)),
     ])
   ) as MealCandidateLists;
 }

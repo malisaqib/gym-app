@@ -26,6 +26,7 @@ import {
 } from "@/lib/diet/planner";
 import { generateMealSelection, type MealSelectionProfile } from "@/lib/diet/mealSelection";
 import {
+  buildMealCandidatePool,
   buildMealCandidateLists,
   explicitProteinPowderOptIn,
 } from "@/lib/diet/mealCandidates";
@@ -178,7 +179,10 @@ export async function generateDietPlan(input?: {
       : profile?.region === "us_canada" || profile?.region === "uk_europe"
         ? "western"
         : null;
-  const base = filterFromPreference(profile?.food_preference ?? null, { regionFocus });
+  const base = filterFromPreference(profile?.food_preference ?? null, {
+    regionFocus,
+    profileRegion: profile?.region ?? null,
+  });
 
   const hasChoices =
     !!input &&
@@ -201,7 +205,12 @@ export async function generateDietPlan(input?: {
   } else {
     // Bare regenerate: keep the existing plan's prefs, else profile + dislikes.
     const prior = (await loadSavedPlan(supabase, user.id))?.filter;
-    filter = prior ? mergeFilters(prior, dislikes, { regionFocus }) : mergeFilters(base, dislikes);
+    filter = prior
+      ? mergeFilters(prior, dislikes, {
+          regionFocus,
+          profileRegion: profile?.region ?? null,
+        })
+      : mergeFilters(base, dislikes);
   }
 
   // If the user edited the "usual eating" box, persist it additively first so it
@@ -420,6 +429,14 @@ async function buildHybridPlan(args: {
     .filter(Boolean)
     .join(" ");
   const allowProteinPowder = explicitProteinPowderOptIn(usualText);
+  const candidateProfile = {
+    filter,
+    region: args.region,
+    foodPreference: args.foodPreference,
+    allowProteinPowder,
+  };
+  const plannerPool = buildMealCandidatePool(candidateProfile);
+  const safePlannerPool = plannerPool.length ? plannerPool : DIET_PLAN_POOL;
   const deterministic = () =>
     buildPlan({
       calorieTarget,
@@ -428,16 +445,11 @@ async function buildHybridPlan(args: {
       usual,
       seed: randomSeed(),
       preferIds,
-      pool: DIET_PLAN_POOL,
+      pool: safePlannerPool,
       allowProteinPowder,
     });
 
-  const candidates = buildMealCandidateLists({
-    filter,
-    region: args.region,
-    foodPreference: args.foodPreference,
-    allowProteinPowder,
-  });
+  const candidates = buildMealCandidateLists(candidateProfile, safePlannerPool);
   const mealProfile: MealSelectionProfile = {
     calorieTarget,
     proteinTargetG,
@@ -472,7 +484,7 @@ async function buildHybridPlan(args: {
     usual,
     seed: randomSeed(),
     preferIds,
-    pool: DIET_PLAN_POOL,
+    pool: safePlannerPool,
     allowProteinPowder,
   });
   // Safety net: if Groq's foods couldn't fill the day to tolerance, prefer the

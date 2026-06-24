@@ -3,8 +3,8 @@ import type { Lang, Region } from "@/lib/database.types";
 /**
  * Region is a single profile field that steers the LLM's FOOD SUGGESTIONS
  * toward cuisine-appropriate options (a Pakistani user gets desi staples, a
- * US/Canada user gets Western ones). It is a prompt hint ONLY — it never touches
- * the calorie/protein math or the RAG food-matching pipeline.
+ * US/Canada user gets Western ones). Diet Plan candidate selection also uses
+ * it, while calorie/protein math and the food-logging RAG pipeline stay unchanged.
  *
  * Single source of truth for the allowed values, their bilingual labels (used by
  * onboarding + Settings dropdowns), and the cuisine lean passed to the LLM.
@@ -30,7 +30,7 @@ export function isRegion(value: unknown): value is Region {
 /**
  * A short cuisine lean for the LLM food-suggestion prompts. Empty for "other"
  * (or unset) so the model stays bi-cuisine and doesn't get a false steer. This
- * is the ONLY place region influences anything — and only the SUGGESTIONS.
+ * Diet Plan candidate filtering separately uses the structured Region value.
  */
 export function regionCuisineHint(region: Region | null | undefined): string {
   switch (region) {

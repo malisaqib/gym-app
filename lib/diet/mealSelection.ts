@@ -108,6 +108,7 @@ function compactCandidates(candidates: MealCandidateLists): string {
           vegetarian: candidate.vegetarian,
           whey: candidate.whey,
           common: candidate.common,
+          regionMatch: candidate.regionMatch,
         })),
       ])
     )
@@ -152,6 +153,7 @@ RULES:
 - Choose ONLY ids present in the candidate list for that exact meal slot.
 - Return ids only. Do not return names, portions, calories, protein, macros, or extra keys.
 - Keep meals simple, realistic, familiar, and appropriate for the user's region and food style.
+- Prefer regionMatch="specific", then "broad", then "global" when realistic.
 - Prefer common=true foods for the main meal structure.
 - Do not choose avoided foods. Candidate filtering is authoritative.
 - Do not choose whey unless protein powder is explicitly allowed.

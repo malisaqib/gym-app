@@ -29,6 +29,7 @@ import {
 } from "./planner.ts";
 import { CATALOG_BY_ID, FOOD_CATALOG, type CatalogFood, type MealSlot } from "./foodCatalog.ts";
 import { DIET_PLAN_FOOD_IDS, DIET_PLAN_POOL } from "./planPool.ts";
+import { plannerPortionConstraint } from "./portionConstraints.ts";
 
 const openFilter: DietFilter = { vegetarian: false, excludeTags: [], excludeFoods: [], regionFocus: null };
 
@@ -487,6 +488,58 @@ test("aliases (incl. Roman Urdu) match free text and search (Phase 4)", () => {
   assert.ok(searchCatalog("panir", openFilter, "lunch").some((f) => f.id === "paneer"));
 });
 
+test("common planner aliases resolve to the intended curated foods", () => {
+  assert.equal(bestCatalogMatch("anda", openFilter, "breakfast")?.id, "eggs2");
+  assert.ok(
+    searchCatalog("boiled eggs", openFilter, "breakfast").some(
+      (food) => food.id === "boiled_egg1"
+    )
+  );
+  assert.equal(bestCatalogMatch("chapati", openFilter, "lunch")?.id, "roti2");
+  assert.equal(bestCatalogMatch("phulka", openFilter, "lunch")?.id, "roti2");
+  assert.equal(bestCatalogMatch("chawal", openFilter, "lunch")?.id, "rice");
+  assert.equal(bestCatalogMatch("curd", openFilter, "lunch")?.id, "dahi");
+  assert.equal(bestCatalogMatch("dhal", openFilter, "dinner")?.id, "daal");
+  assert.equal(bestCatalogMatch("chole", openFilter, "lunch")?.id, "chana");
+  assert.equal(bestCatalogMatch("cottage cheese", openFilter, "lunch")?.id, "cottage_cheese");
+});
+
+test("reviewed Phase 4C foods have usable roles, slots, and realistic caps", () => {
+  const expected = [
+    "chicken_thigh",
+    "turkey_breast",
+    "turkey_mince",
+    "lean_beef_steak",
+    "cottage_cheese",
+    "pita",
+    "boiled_potato",
+    "mashed_potato",
+    "boiled_chickpeas",
+    "hummus",
+    "raita",
+  ];
+  for (const id of expected) {
+    const food = CATALOG_BY_ID[id];
+    assert.ok(food, `${id} missing`);
+    assert.ok(food.slots.length > 0, `${id} has no meal slots`);
+    const spec = planItemSpec({
+      id: food.id,
+      name: food.name,
+      portion: food.portion,
+      calories: food.calories,
+      protein: food.protein,
+      carbs: food.carbs,
+      fat: food.fat,
+    });
+    const constraint = plannerPortionConstraint(food, {
+      unitMode: spec.unitMode,
+      amount: spec.amount,
+      unit: spec.unit,
+    });
+    assert.ok(constraint.maxAmount >= spec.amount, `${id} starts above its planner cap`);
+  }
+});
+
 test("planner contract: unsafe imported DB foods never enter add/search/swap/hybrid paths", () => {
   const unsafe: CatalogFood = {
     id: "db:straw-mushrooms",
@@ -606,7 +659,7 @@ test("candidate-id selection seeds the exact catalog food without fuzzy substitu
 
 test("typed Diet Plan matching fails closed for an unmatched estimate request", () => {
   assert.equal(
-    bestCatalogMatch("turkey avocado magazine bowl", openFilter, "lunch", DIET_PLAN_POOL),
+    bestCatalogMatch("purple dragonfruit quinoa bowl", openFilter, "lunch", DIET_PLAN_POOL),
     null
   );
 });
@@ -870,15 +923,20 @@ test("vegetarian protein coverage improved — a strict veg plan can now be buil
   assert.ok(plan.totalCalories <= 2000, "still within the calorie cap");
 });
 
-test("mergeFilters unions excludes, ORs vegetarian, last regionFocus wins", () => {
+test("mergeFilters unions excludes and keeps the latest region preferences", () => {
   const merged = mergeFilters(
     { vegetarian: false, excludeTags: ["beef"] },
-    { excludeTags: ["beef", "fish"], regionFocus: "desi" },
+    {
+      excludeTags: ["beef", "fish"],
+      regionFocus: "desi",
+      profileRegion: "pakistan",
+    },
     { vegetarian: true }
   );
   assert.equal(merged.vegetarian, true);
   assert.deepEqual([...merged.excludeTags].sort(), ["beef", "fish"]);
   assert.equal(merged.regionFocus, "desi");
+  assert.equal(merged.profileRegion, "pakistan");
 });
 
 test("filterFromPreference maps veg_limited to vegetarian and merges extras", () => {

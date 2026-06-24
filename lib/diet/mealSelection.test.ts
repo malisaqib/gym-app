@@ -6,10 +6,11 @@ import {
   type MealSelectionProfile,
 } from "./mealSelection.ts";
 import {
+  buildMealCandidatePool,
   buildMealCandidateLists,
   explicitProteinPowderOptIn,
 } from "./mealCandidates.ts";
-import { filterFromPreference, type DietFilter } from "./planner.ts";
+import { buildPlan, filterFromPreference, type DietFilter } from "./planner.ts";
 
 const openFilter: DietFilter = {
   vegetarian: false,
@@ -151,7 +152,117 @@ test("regional candidate lists keep western and desi automatic choices distinct"
 
   const pakistan = profile({ region: "pakistan" });
   assert.ok(pakistan.candidates.lunch.some((food) => food.id === "roti2"));
-  assert.ok(!pakistan.candidates.lunch.some((food) => food.region === "western"));
+  assert.ok(!pakistan.candidates.lunch.some((food) => food.id === "brown_rice"));
+  assert.ok(!pakistan.candidates.lunch.some((food) => food.id === "turkey_breast"));
+});
+
+test("specific region metadata exposes familiar India, UK, and Middle East foods", () => {
+  const india = profile({ region: "india" });
+  assert.equal(
+    india.candidates.lunch.find((food) => food.id === "paneer")?.regionMatch,
+    "specific"
+  );
+  assert.equal(
+    india.candidates.lunch.find((food) => food.id === "rajma")?.regionMatch,
+    "specific"
+  );
+
+  const uk = profile({ region: "uk_europe" });
+  assert.equal(
+    uk.candidates.breakfast.find((food) => food.id === "cottage_cheese")?.regionMatch,
+    "specific"
+  );
+  assert.equal(
+    uk.candidates.breakfast.find((food) => food.id === "bread2")?.regionMatch,
+    "specific"
+  );
+
+  const middleEast = profile({ region: "middle_east" });
+  assert.equal(
+    middleEast.candidates.lunch.find((food) => food.id === "pita")?.regionMatch,
+    "specific"
+  );
+  assert.equal(
+    middleEast.candidates.lunch.find((food) => food.id === "hummus")?.regionMatch,
+    "specific"
+  );
+});
+
+test("regional deterministic pools do not force cross-cuisine staples", () => {
+  const usaProfile = {
+    filter: openFilter,
+    region: "us_canada" as const,
+    foodPreference: "high_protein" as const,
+    allowProteinPowder: false,
+  };
+  const usaPool = buildMealCandidatePool(usaProfile);
+  assert.ok(usaPool.some((food) => food.id === "chicken_thigh"));
+  assert.ok(usaPool.some((food) => food.id === "bread2"));
+  assert.ok(!usaPool.some((food) => food.id === "roti2"));
+
+  const pakistanPool = buildMealCandidatePool({
+    ...usaProfile,
+    region: "pakistan",
+    foodPreference: "normal_desi",
+  });
+  assert.ok(pakistanPool.some((food) => food.id === "roti2"));
+  assert.ok(pakistanPool.some((food) => food.id === "daal"));
+  assert.ok(!pakistanPool.some((food) => food.id === "turkey_breast"));
+});
+
+test("regional deterministic plans use the matching curated cuisine pool", () => {
+  const usaFilter = {
+    ...openFilter,
+    regionFocus: "western" as const,
+    profileRegion: "us_canada" as const,
+  };
+  const usaPool = buildMealCandidatePool({
+    filter: usaFilter,
+    region: "us_canada",
+    foodPreference: "high_protein",
+    allowProteinPowder: false,
+  });
+  const usaPlan = buildPlan({
+    calorieTarget: 2100,
+    proteinTargetG: 130,
+    filter: usaFilter,
+    seed: 4,
+    pool: usaPool,
+  });
+  const usaRegions = usaPlan.meals
+    .flatMap((meal) => meal.items)
+    .map((item) => usaPool.find((food) => food.id === item.id)?.region);
+  assert.ok(usaRegions.includes("western"));
+  assert.ok(!usaRegions.includes("desi"));
+
+  const pakistanFilter = {
+    ...openFilter,
+    regionFocus: "desi" as const,
+    profileRegion: "pakistan" as const,
+  };
+  const pakistanPool = buildMealCandidatePool({
+    filter: pakistanFilter,
+    region: "pakistan",
+    foodPreference: "normal_desi",
+    allowProteinPowder: false,
+  });
+  const pakistanPlan = buildPlan({
+    calorieTarget: 2100,
+    proteinTargetG: 130,
+    filter: pakistanFilter,
+    seed: 4,
+    pool: pakistanPool,
+  });
+  const pakistanItems = pakistanPlan.meals
+    .flatMap((meal) => meal.items)
+    .map((item) => pakistanPool.find((food) => food.id === item.id))
+    .filter((food) => food != null);
+  assert.ok(pakistanItems.some((food) => food.region === "desi"));
+  assert.ok(
+    pakistanItems.every(
+      (food) => !["turkey_breast", "brown_rice", "bread2", "tuna"].includes(food.id)
+    )
+  );
 });
 
 test("non-veg can receive meat while current veg_limited semantics remain strict", () => {

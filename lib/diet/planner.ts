@@ -1,4 +1,4 @@
-import type { FoodPreference } from "@/lib/database.types";
+import type { FoodPreference, Region } from "@/lib/database.types";
 import { explicitProteinPowderOptIn } from "./proteinPowder.ts";
 import { FOOD_CATALOG, CATALOG_BY_ID, type CatalogFood, type MealSlot } from "./foodCatalog.ts";
 import { isUnsafeImportedPlannerFood } from "./foodClassify.ts";
@@ -30,6 +30,7 @@ export interface DietFilter {
   excludeTags: string[]; // whole categories to remove (e.g. "beef") — matched on tags
   excludeFoods: string[]; // SPECIFIC foods to avoid, free text (e.g. "whey protein shake")
   regionFocus: "desi" | "western" | null; // soft lean, not a hard filter
+  profileRegion?: Region | null;
 }
 
 /** The user's usual meals (free text), used to seed the plan. */
@@ -231,10 +232,12 @@ export function filterFromPreference(
     excludeTags: [],
     excludeFoods: [],
     regionFocus: null,
+    profileRegion: null,
   };
   return {
     vegetarian: extra?.vegetarian ?? base.vegetarian,
     regionFocus: extra?.regionFocus ?? base.regionFocus,
+    profileRegion: extra?.profileRegion ?? base.profileRegion,
     excludeTags: dedupe([...base.excludeTags, ...(extra?.excludeTags ?? [])]),
     excludeFoods: dedupe([...base.excludeFoods, ...(extra?.excludeFoods ?? [])]),
   };
@@ -247,15 +250,23 @@ export function filterFromPreference(
 export function mergeFilters(...parts: Partial<DietFilter>[]): DietFilter {
   let vegetarian = false;
   let regionFocus: DietFilter["regionFocus"] = null;
+  let profileRegion: Region | null = null;
   const tags = new Set<string>();
   const foods = new Set<string>();
   for (const p of parts) {
     if (p.vegetarian) vegetarian = true;
     if (p.regionFocus) regionFocus = p.regionFocus;
+    if (p.profileRegion) profileRegion = p.profileRegion;
     (p.excludeTags ?? []).forEach((t) => tags.add(t));
     (p.excludeFoods ?? []).forEach((f) => foods.add(f.toLowerCase().trim()));
   }
-  return { vegetarian, regionFocus, excludeTags: [...tags], excludeFoods: [...foods].filter(Boolean) };
+  return {
+    vegetarian,
+    regionFocus,
+    profileRegion,
+    excludeTags: [...tags],
+    excludeFoods: [...foods].filter(Boolean),
+  };
 }
 
 // --- matching ---------------------------------------------------------------
@@ -325,6 +336,9 @@ function allowedForAutoPlan(food: CatalogFood, filter: DietFilter): boolean {
 }
 
 function regionBonus(food: CatalogFood, filter: DietFilter): number {
+  if (filter.profileRegion && food.profileRegions?.includes(filter.profileRegion)) {
+    return 14;
+  }
   if (!filter.regionFocus) return 0;
   if (food.region === filter.regionFocus) return 10;
   return food.region === "global" ? 3 : 0;
