@@ -9,7 +9,7 @@ import {
   correctedMacroPatch,
   deriveQuantity,
   itemMacros,
-  specFromFoodRow,
+  logQuantityForFoodRow,
   totalsFor,
   MAX_AMOUNT_GRAMS,
   MAX_AMOUNT_UNITS,
@@ -66,9 +66,10 @@ export interface LogFoodSearchOption {
 
 type SearchLogFoodsResult = { ok: true; foods: LogFoodSearchOption[] } | { ok: false; error: string };
 
-type FoodRow = Omit<RetrievedFood, "score">;
+type FoodRow = Omit<RetrievedFood, "score"> & { serving_grams?: number | null };
 
-const FOOD_SELECT = "id,name,aliases,region,portion,portion_grams,calories,protein_g,carbs_g,fat_g,source";
+const FOOD_SELECT =
+  "id,name,aliases,region,portion,portion_grams,serving_grams,calories,protein_g,carbs_g,fat_g,source";
 
 const n = (value: unknown) => Math.round(Number(value) || 0);
 
@@ -342,7 +343,7 @@ export async function searchLogFoods(query: string): Promise<SearchLogFoodsResul
 // Canonical per-gram/per-serving spec for a DB food row — single tested
 // implementation in lib/food/quantity.ts (no duplicated scaling formula here).
 function foodQuantity(food: FoodRow) {
-  return specFromFoodRow(food);
+  return logQuantityForFoodRow(food);
 }
 
 /** Log an exact search result from the full food database or the user's recents. */
@@ -387,8 +388,8 @@ export async function logSearchedFood(input: { optionId: string; date: string })
       logged_on: input.date,
       raw_text: food.name,
       food_name: food.name,
-      quantity: 1,
-      unit: food.portion,
+      quantity: q.quantity,
+      unit: q.logged_unit,
       unit_mode: q.unit_mode,
       base_calories: q.base_calories,
       base_protein_g: q.base_protein_g,

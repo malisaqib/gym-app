@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildPlan,
   CALORIE_SHORT_THRESHOLD,
+  PROTEIN_SHORT_THRESHOLD,
   swapMeal,
   filterFromPreference,
   mergeFilters,
@@ -26,6 +27,7 @@ import {
   type SelectedNames,
 } from "./planner.ts";
 import { CATALOG_BY_ID, FOOD_CATALOG, type CatalogFood, type MealSlot } from "./foodCatalog.ts";
+import { DIET_PLAN_FOOD_IDS, DIET_PLAN_POOL } from "./planPool.ts";
 
 const openFilter: DietFilter = { vegetarian: false, excludeTags: [], excludeFoods: [], regionFocus: null };
 
@@ -540,11 +542,60 @@ test("planner contract: unsafe imported DB foods never enter add/search/swap/hyb
   assert.ok(!hybrid.meals.flatMap((m) => m.items).some((i) => i.id === unsafe.id));
 });
 
+test("central Diet Plan pool isolates every plan flow from broad USDA foods", () => {
+  const usdaOnly: CatalogFood = {
+    id: "db:usda-only-sentinel",
+    name: "Mushrooms, straw, canned",
+    region: "global",
+    portion: "~120g",
+    calories: 34,
+    protein: 3,
+    carbs: 5,
+    fat: 1,
+    vegetarian: true,
+    role: "veg",
+    slots: ["lunch", "dinner"],
+    tags: ["veg"],
+  };
+
+  assert.ok(DIET_PLAN_POOL.every((food) => !food.id.startsWith("db:")));
+  assert.ok(!DIET_PLAN_FOOD_IDS.has(usdaOnly.id));
+
+  const generated = buildPlan({
+    calorieTarget: 2000,
+    proteinTargetG: 120,
+    filter: openFilter,
+    seed: 1,
+    pool: DIET_PLAN_POOL,
+  });
+  assert.ok(generated.meals.flatMap((meal) => meal.items).every((item) => DIET_PLAN_FOOD_IDS.has(item.id)));
+
+  assert.deepEqual(searchCatalog("straw mushrooms", openFilter, "lunch", DIET_PLAN_POOL), []);
+  assert.equal(bestCatalogMatch("straw mushrooms", openFilter, "lunch", DIET_PLAN_POOL), null);
+  assert.equal(addPlanItem(generated, "lunch", usdaOnly.id, DIET_PLAN_POOL), generated);
+
+  const swapped = swapPlanItem(generated, "lunch", 0, 17, DIET_PLAN_POOL);
+  assert.ok(swapped.meals.flatMap((meal) => meal.items).every((item) => DIET_PLAN_FOOD_IDS.has(item.id)));
+
+  const refit = replanRemaining(
+    generated,
+    { calories: 900, proteinG: 55 },
+    ["breakfast"],
+    DIET_PLAN_POOL,
+    3
+  );
+  assert.ok(refit.meals.flatMap((meal) => meal.items).every((item) => DIET_PLAN_FOOD_IDS.has(item.id)));
+});
+
 test("final validator checks targets, safe foods, and realistic portions", () => {
   const plan = buildPlan({ calorieTarget: 2100, proteinTargetG: 120, filter: openFilter, seed: 1 });
   assert.equal(plan.validation?.foodsOk, true);
   assert.equal(plan.validation?.portionsOk, true);
-  assert.equal(plan.validation?.targetOk, plan.totalCalories >= 2100 * CALORIE_SHORT_THRESHOLD && plan.totalProtein >= 120);
+  assert.equal(
+    plan.validation?.targetOk,
+    plan.totalCalories >= 2100 * CALORIE_SHORT_THRESHOLD &&
+      plan.totalProtein >= 120 * PROTEIN_SHORT_THRESHOLD
+  );
 
   const overTarget = appendPlanItem(plan, "snack", {
     id: "custom-over",
@@ -563,6 +614,34 @@ test("final validator checks targets, safe foods, and realistic portions", () =>
   const oversized = setPlanItemAmount(withEggs, "breakfast", eggIndex, 10);
   assert.equal(oversized.validation?.portionsOk, false);
   assert.ok(oversized.validation?.issues.some((i) => i.code === "portion_too_large" && i.foodId === "eggs2"));
+
+  const withYogurt = addPlanItem(plan, "breakfast", "greek_yogurt");
+  const yogurtIndex = withYogurt.meals
+    .find((m) => m.slot === "breakfast")!
+    .items.findIndex((i) => i.id === "greek_yogurt");
+  const tooSmall = setPlanItemAmount(withYogurt, "breakfast", yogurtIndex, 50);
+  assert.ok(tooSmall.validation?.issues.some((i) => i.code === "portion_too_small"));
+  const offStep = setPlanItemAmount(withYogurt, "breakfast", yogurtIndex, 101);
+  assert.ok(offStep.validation?.issues.some((i) => i.code === "portion_step_invalid"));
+
+  const quantityMismatch = appendPlanItem(plan, "snack", {
+    id: "boiled_egg1",
+    name: "1 boiled egg",
+    portion: "1 egg",
+    calories: 999,
+    protein: 12,
+    carbs: 2,
+    fat: 10,
+    unitMode: "count",
+    baseCalories: 80,
+    baseProtein: 6,
+    baseCarbs: 1,
+    baseFat: 5,
+    amount: 2,
+    servingGrams: null,
+    unit: "egg",
+  });
+  assert.ok(quantityMismatch.validation?.issues.some((i) => i.code === "quantity_mismatch"));
 
   const unsafeItem: PlanMealItem = {
     id: "db:straw-mushrooms",
@@ -626,6 +705,42 @@ test("simple plan: protein comes primarily from staple sources", () => {
   );
 });
 
+test("feasible plan lands within 5% of both calorie and protein targets", () => {
+  const plan = buildPlan({
+    calorieTarget: 2200,
+    proteinTargetG: 140,
+    filter: openFilter,
+    seed: 1,
+    pool: DIET_PLAN_POOL,
+  });
+
+  assert.ok(plan.totalCalories >= 2200 * 0.95 && plan.totalCalories <= 2200);
+  assert.ok(plan.totalProtein >= 140 * 0.95 && plan.totalProtein <= 140 * 1.05);
+  assert.equal(plan.caloriesShort, false);
+  assert.equal(plan.proteinShort, false);
+});
+
+test("infeasible constrained target returns honest short flags and validation reasons", () => {
+  const tinyPool: CatalogFood[] = [
+    {
+      ...CATALOG_BY_ID.apple,
+      slots: ["breakfast", "lunch", "dinner", "snack"],
+    },
+  ];
+  const plan = buildPlan({
+    calorieTarget: 3000,
+    proteinTargetG: 180,
+    filter: openFilter,
+    seed: 1,
+    pool: tinyPool,
+  });
+
+  assert.equal(plan.caloriesShort, true);
+  assert.equal(plan.proteinShort, true);
+  assert.ok(plan.validation?.issues.some((issue) => issue.code === "calories_short"));
+  assert.ok(plan.validation?.issues.some((issue) => issue.code === "protein_short"));
+});
+
 test("snacks are fruit-led, and meals are anchored (protein + carb in mains)", () => {
   const plan = buildPlan({ calorieTarget: 2000, proteinTargetG: 130, filter: openFilter, seed: 3 });
   const snack = plan.meals.find((m) => m.slot === "snack")!;
@@ -654,6 +769,14 @@ test("whey never auto-planned by default; included (and swappable) when the usua
   });
   const wheyItem = withWhey.meals.flatMap((m) => m.items).find((i) => i.id === "whey");
   assert.ok(wheyItem, "whey missing despite the usual diet mentioning it");
+  assert.equal(wheyItem.amount, 1, "whey repair must stay at one serving");
+  const wheyMeal = withWhey.meals.find((m) => m.items.some((i) => i.id === "whey"))!;
+  assert.ok(
+    wheyMeal.items.some(
+      (item) => item.id !== "whey" && CATALOG_BY_ID[item.id]?.role === "protein"
+    ),
+    "whey replaced the meal's normal food protein"
+  );
   assert.ok(withWhey.totalCalories <= 2200, "whey pushed the day over budget");
   // Swappable: it is a real catalog item (not approx), so the per-item swap works.
   assert.equal(isKnownFood("whey"), true);
@@ -715,6 +838,35 @@ test("filterFromPreference maps veg_limited to vegetarian and merges extras", ()
   const merged = filterFromPreference("normal_desi", { excludeTags: ["beef", "beef"], regionFocus: "desi" });
   assert.deepEqual(merged.excludeTags, ["beef"]); // deduped
   assert.equal(merged.regionFocus, "desi");
+});
+
+test("region focus is a soft preference and still returns valid curated foods", () => {
+  const desi = buildPlan({
+    calorieTarget: 2000,
+    proteinTargetG: 120,
+    filter: { ...openFilter, regionFocus: "desi" },
+    seed: 4,
+    pool: DIET_PLAN_POOL,
+  });
+  const western = buildPlan({
+    calorieTarget: 2000,
+    proteinTargetG: 120,
+    filter: { ...openFilter, regionFocus: "western" },
+    seed: 4,
+    pool: DIET_PLAN_POOL,
+  });
+  const regionalCount = (plan: DietPlan, region: "desi" | "western") =>
+    plan.meals
+      .flatMap((meal) => meal.items)
+      .filter((item) => CATALOG_BY_ID[item.id]?.region === region).length;
+
+  assert.ok(regionalCount(desi, "desi") > regionalCount(western, "desi"));
+  assert.ok(regionalCount(western, "western") > regionalCount(desi, "western"));
+  assert.ok(
+    [...desi.meals, ...western.meals]
+      .flatMap((meal) => meal.items)
+      .every((item) => DIET_PLAN_FOOD_IDS.has(item.id))
+  );
 });
 
 // --- ship-readiness edge battery ---------------------------------------------
@@ -788,7 +940,7 @@ test("EDGE: per-item ops on SCALED items keep amounts and stay within flexed bud
 
 test("EDGE: automatic scaler respects per-food realistic max amounts", () => {
   const cases: Array<{ id: keyof typeof CATALOG_BY_ID; max: number; slots: MealSlot[] }> = [
-    { id: "greek_yogurt", max: 340, slots: ["breakfast", "snack"] },
+    { id: "greek_yogurt", max: 300, slots: ["breakfast", "snack"] },
     { id: "eggs2", max: 4, slots: ["breakfast", "snack"] },
     { id: "roti2", max: 4, slots: ["breakfast", "lunch", "dinner"] },
     { id: "chicken_breast", max: 250, slots: ["lunch", "dinner"] },

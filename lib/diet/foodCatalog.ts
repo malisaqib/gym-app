@@ -30,7 +30,10 @@ export interface CatalogFood {
   slots: MealSlot[];
   tags: string[]; // for preference filtering, e.g. ["beef"], ["egg","dairy"]
   aliases?: string[]; // extra search terms incl. Roman Urdu (e.g. "nehari", "aam")
+  minAmount?: number; // automatic planner floor in live units
   maxAmount?: number; // automatic planner cap in live units: grams for portions, count for count foods
+  stepAmount?: number; // automatic planner increment in live units
+  plannerUnit?: "count" | "grams" | "serving";
   /**
    * Staple classification for SIMPLE plan generation (diet rebuild): protein
    * anchors, carb bases, fruit snacks and plain sides. Foods without a staple
@@ -81,7 +84,7 @@ export const FOOD_CATALOG: CatalogFood[] = [
   { id: "tuna", name: "Canned tuna", region: "western", portion: "1 can (142g)", calories: 130, protein: 30, carbs: 0, fat: 1, vegetarian: false, role: "protein", slots: [L, D, S], tags: ["fish"] },
   { id: "salmon", name: "Salmon", region: "western", portion: "100g", calories: 206, protein: 22, carbs: 0, fat: 13, vegetarian: false, role: "protein", slots: [L, D], tags: ["fish"] },
   { id: "ground_beef", name: "Ground beef (cooked)", region: "western", portion: "100g", calories: 250, protein: 26, carbs: 0, fat: 15, vegetarian: false, role: "protein", slots: [L, D], tags: ["beef"] },
-  { id: "greek_yogurt", name: "Greek yogurt (plain)", region: "western", portion: "1 cup (170g)", calories: 100, protein: 17, carbs: 6, fat: 1, vegetarian: true, role: "dairy", slots: [B, S], tags: ["dairy"], maxAmount: 340 },
+  { id: "greek_yogurt", name: "Greek yogurt (plain)", region: "western", portion: "1 cup (170g)", calories: 100, protein: 17, carbs: 6, fat: 1, vegetarian: true, role: "dairy", slots: [B, S], tags: ["dairy"], maxAmount: 300 },
   { id: "scrambled", name: "Scrambled eggs", region: "western", portion: "2 eggs", calories: 180, protein: 12, carbs: 2, fat: 14, vegetarian: true, role: "protein", slots: [B], tags: ["egg"], maxAmount: 4 },
   // Egg white — per 1 large white (~33g). USDA FoodData Central: 17 kcal, 3.6 g
   // protein, ~0 g carb/fat (≈52 kcal & 11 g per 100 g). Protein kept fractional
@@ -102,7 +105,7 @@ export const FOOD_CATALOG: CatalogFood[] = [
   { id: "orange", name: "Orange", region: "global", portion: "1 medium", calories: 62, protein: 1, carbs: 15, fat: 0, vegetarian: true, role: "fruit", slots: [S], tags: ["fruit"] },
   { id: "almonds", name: "Almonds", region: "global", portion: "1 oz (28g)", calories: 165, protein: 6, carbs: 6, fat: 14, vegetarian: true, role: "snack", slots: [S], tags: ["nuts"] },
   { id: "peanut_butter", name: "Peanut butter", region: "global", portion: "2 tbsp", calories: 190, protein: 7, carbs: 7, fat: 16, vegetarian: true, role: "snack", slots: [B, S], tags: ["nuts"] },
-  { id: "whey", name: "Whey protein shake", region: "global", portion: "1 scoop", calories: 120, protein: 24, carbs: 3, fat: 2, vegetarian: true, role: "protein", slots: [B, S], tags: ["dairy", "supplement"] },
+  { id: "whey", name: "Whey protein shake", region: "global", portion: "1 scoop", calories: 120, protein: 24, carbs: 3, fat: 2, vegetarian: true, role: "protein", slots: [B, S], tags: ["dairy", "supplement"], maxAmount: 1, plannerUnit: "serving" },
   { id: "salad", name: "Green salad", region: "global", portion: "1 bowl", calories: 30, protein: 2, carbs: 6, fat: 0, vegetarian: true, role: "veg", slots: [L, D], tags: ["veg"] },
   { id: "boiled_egg1", name: "1 boiled egg", region: "global", portion: "1 egg", calories: 80, protein: 6, carbs: 1, fat: 5, vegetarian: true, role: "protein", slots: [B, S], tags: ["egg"], maxAmount: 4 },
 

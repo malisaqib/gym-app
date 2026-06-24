@@ -32,6 +32,7 @@ import ReportFoodSheet from "@/components/ReportFoodSheet";
 import QuantityControl, { type QtySpec } from "@/components/QuantityControl";
 import {
   CALORIE_SHORT_THRESHOLD,
+  PROTEIN_SHORT_THRESHOLD,
   insertPlanItem,
   planItemSpec,
   setPlanItemAmount,
@@ -1090,7 +1091,7 @@ function localRemove(plan: DietPlan, slot: MealSlot, index: number): DietPlan {
     meals,
     totalCalories,
     totalProtein,
-    proteinShort: totalProtein < plan.proteinTargetG,
+    proteinShort: totalProtein < plan.proteinTargetG * PROTEIN_SHORT_THRESHOLD,
     caloriesShort: totalCalories < plan.calorieTarget * CALORIE_SHORT_THRESHOLD,
   };
   return { ...next, validation: validateDietPlan(next) };
