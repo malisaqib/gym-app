@@ -1059,6 +1059,176 @@ test("hostel fallback prefers simple foods over complex cooked dishes", () => {
   assert.ok(!ids.some((id) => ["biryani", "pulao", "nihari", "haleem", "beef_karahi"].includes(id)));
 });
 
+function constrainedRegionalPlan(input: {
+  region: "pakistan" | "india" | "us_canada";
+  preference: "normal_desi" | "high_protein" | "hostel_student" | "veg_limited";
+  calories: number;
+  protein: number;
+  seed?: number;
+  excludeTags?: string[];
+  excludeFoods?: string[];
+  allowProteinPowder?: boolean;
+  usual?: { keep?: string };
+}) {
+  const regionFocus =
+    input.region === "pakistan" || input.region === "india" ? "desi" as const : "western" as const;
+  const filter = filterFromPreference(input.preference, {
+    regionFocus,
+    profileRegion: input.region,
+    excludeTags: input.excludeTags ?? [],
+    excludeFoods: input.excludeFoods ?? [],
+  });
+  const pool = buildMealCandidatePool({
+    filter,
+    region: input.region,
+    foodPreference: input.preference,
+    allowProteinPowder: input.allowProteinPowder ?? false,
+  });
+  return buildPlan({
+    calorieTarget: input.calories,
+    proteinTargetG: input.protein,
+    filter,
+    pool,
+    seed: input.seed ?? 4100,
+    foodPreference: input.preference,
+    allowProteinPowder: input.allowProteinPowder,
+    usual: input.usual,
+  });
+}
+
+test("constrained Pakistan fallback broadens beyond avoided chicken staples", () => {
+  const plan = constrainedRegionalPlan({
+    region: "pakistan",
+    preference: "normal_desi",
+    calories: 2100,
+    protein: 110,
+    excludeTags: ["chicken"],
+  });
+  const ids = plan.meals.flatMap((meal) => meal.items.map((item) => item.id));
+  assert.ok(!plan.proteinShort, `avoid-chicken plan stayed protein-short at ${plan.totalProtein}g`);
+  assert.ok(ids.every((id) => !CATALOG_BY_ID[id]?.tags.includes("chicken")));
+  assert.ok(
+    ids.some((id) => ["fish_curry", "qeema", "egg_white", "soya", "daal", "chana"].includes(id)),
+    `no allowed fallback protein was used: ${ids.join(",")}`
+  );
+});
+
+test("one-extra-item repair fixes feasible Pakistan and hostel protein gaps", () => {
+  const pakistan = constrainedRegionalPlan({
+    region: "pakistan",
+    preference: "normal_desi",
+    calories: 2100,
+    protein: 110,
+    seed: 26,
+  });
+  assert.equal(pakistan.proteinShort, false);
+  assert.ok(
+    pakistan.meals.some((meal) => meal.items.length === 4 && meal.items.some((item) => item.id === "soya")),
+    "Pakistan repair did not add the useful fourth protein item"
+  );
+
+  const hostel = constrainedRegionalPlan({
+    region: "pakistan",
+    preference: "hostel_student",
+    calories: 2000,
+    protein: 105,
+  });
+  assert.equal(hostel.proteinShort, false);
+  assert.ok(hostel.meals.some((meal) => meal.items.length === 4));
+  assert.ok(
+    hostel.meals.flatMap((meal) => meal.items).some((item) =>
+      ["egg_white", "chicken_breast", "soya", "daal", "chana"].includes(item.id)
+    )
+  );
+});
+
+test("vegetarian extra-item repair respects whey gating and honest infeasibility", () => {
+  const feasible = constrainedRegionalPlan({
+    region: "india",
+    preference: "veg_limited",
+    calories: 2100,
+    protein: 125,
+  });
+  assert.equal(feasible.proteinShort, false);
+  assert.ok(feasible.meals.some((meal) => meal.items.length === 4));
+  assert.ok(feasible.meals.flatMap((meal) => meal.items).every((item) => CATALOG_BY_ID[item.id]?.vegetarian));
+  assert.ok(!feasible.meals.flatMap((meal) => meal.items).some((item) => item.id === "whey"));
+
+  const withWhey = constrainedRegionalPlan({
+    region: "india",
+    preference: "veg_limited",
+    calories: 2100,
+    protein: 125,
+    allowProteinPowder: true,
+    usual: { keep: "whey protein shake" },
+  });
+  assert.ok(withWhey.meals.flatMap((meal) => meal.items).some((item) => item.id === "whey"));
+  assert.equal(withWhey.proteinShort, false);
+
+  const infeasible = constrainedRegionalPlan({
+    region: "india",
+    preference: "veg_limited",
+    calories: 2100,
+    protein: 150,
+  });
+  assert.equal(infeasible.proteinShort, true);
+  assert.ok(infeasible.validation?.issues.some((issue) => issue.code === "protein_short"));
+  assert.ok(!infeasible.meals.flatMap((meal) => meal.items).some((item) => item.id === "whey"));
+});
+
+test("egg-free western calorie repair uses allowed curated calorie foods", () => {
+  const plan = constrainedRegionalPlan({
+    region: "us_canada",
+    preference: "high_protein",
+    calories: 2100,
+    protein: 120,
+    excludeTags: ["egg"],
+  });
+  const items = plan.meals.flatMap((meal) => meal.items);
+  assert.equal(plan.caloriesShort, false);
+  assert.equal(plan.proteinShort, false);
+  assert.ok(items.every((item) => !CATALOG_BY_ID[item.id]?.tags.includes("egg")));
+  assert.ok(
+    items.some((item) => ["peanut_butter", "almonds", "cheese"].includes(item.id)),
+    `calorie repair missed existing dense foods: ${items.map((item) => item.id).join(",")}`
+  );
+});
+
+test("extra-item repair respects avoids and avoids redundant egg dishes", () => {
+  const plan = constrainedRegionalPlan({
+    region: "us_canada",
+    preference: "high_protein",
+    calories: 2100,
+    protein: 120,
+    excludeTags: ["egg"],
+    excludeFoods: ["peanut butter"],
+  });
+  const ids = plan.meals.flatMap((meal) => meal.items.map((item) => item.id));
+  assert.ok(!ids.includes("peanut_butter"));
+  assert.equal(plan.caloriesShort, false);
+
+  const pakistan = constrainedRegionalPlan({
+    region: "pakistan",
+    preference: "normal_desi",
+    calories: 2100,
+    protein: 110,
+    excludeTags: ["chicken"],
+  });
+  const pakistanIds = new Set(pakistan.meals.flatMap((meal) => meal.items.map((item) => item.id)));
+  assert.ok(!(pakistanIds.has("eggs2") && pakistanIds.has("omelette")));
+});
+
+test("already-valid simple plans do not gain an unnecessary extra item", () => {
+  const plan = buildPlan({
+    calorieTarget: 2000,
+    proteinTargetG: 100,
+    filter: openFilter,
+    seed: 2,
+  });
+  assert.equal(plan.validation?.ok, true);
+  assert.ok(plan.meals.every((meal) => meal.items.length <= 3));
+});
+
 test("fallback avoids repeated cooked proteins and excessive fruit or dairy filler", () => {
   const filter: DietFilter = {
     ...openFilter,

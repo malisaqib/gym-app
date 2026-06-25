@@ -351,12 +351,13 @@ function regionBonus(food: CatalogFood, filter: DietFilter): number {
 
 const REGION_FALLBACK_IDS: Partial<Record<Region, Set<string>>> = {
   pakistan: new Set([
-    "eggs2", "omelette", "roti1", "roti2", "daal", "chana", "dahi", "rice",
-    "chicken_salan", "chicken_karahi", "mix_sabzi", "palak", "banana", "dates",
+    "eggs2", "omelette", "egg_white", "roti1", "roti2", "daal", "chana", "soya",
+    "dahi", "rice", "chicken_salan", "chicken_karahi", "fish_curry", "qeema",
+    "mix_sabzi", "palak", "banana", "dates",
   ]),
   india: new Set([
-    "eggs2", "omelette", "roti1", "roti2", "daal", "chana", "rajma", "paneer",
-    "tofu", "dahi", "rice", "mix_sabzi", "palak", "banana",
+    "eggs2", "omelette", "egg_white", "roti1", "roti2", "daal", "chana", "rajma",
+    "paneer", "tofu", "soya", "dahi", "rice", "mix_sabzi", "palak", "banana",
   ]),
   middle_east: new Set([
     "eggs2", "boiled_egg1", "pita", "hummus", "rice", "chicken_breast",
@@ -377,8 +378,9 @@ const REGION_FALLBACK_IDS: Partial<Record<Region, Set<string>>> = {
 };
 
 const SIMPLE_FOOD_IDS = new Set([
-  "eggs2", "boiled_egg1", "roti1", "roti2", "daal", "chana", "dahi", "rice",
-  "mix_sabzi", "banana", "dates", "oats", "bread2", "boiled_potato", "milk",
+  "eggs2", "boiled_egg1", "egg_white", "chicken_breast", "roti1", "roti2",
+  "daal", "chana", "soya", "dahi", "rice", "mix_sabzi", "banana", "dates",
+  "oats", "bread2", "boiled_potato", "milk",
 ]);
 
 const COMPLEX_FOOD_IDS = new Set([
@@ -699,13 +701,6 @@ function buildSimpleMeal(
   };
   const preferenceBonus = (f: CatalogFood) =>
     fallbackPreferenceBonus(f, filter, foodPreference, slot) - repeatPenalty(f);
-  const regionPreferred = (foods: CatalogFood[]) => {
-    const preferredIds = filter.profileRegion ? REGION_FALLBACK_IDS[filter.profileRegion] : undefined;
-    if (!preferredIds) return foods;
-    const preferred = foods.filter((food) => preferredIds.has(food.id));
-    return preferred.length ? preferred : foods;
-  };
-
   // Exact upstream selections (Groq candidate ids) seed by id only. This path
   // never fuzzy-matches model output back onto a different catalog food.
   if (selectedIds?.length) {
@@ -783,12 +778,13 @@ function buildSimpleMeal(
   if (!picks.some((p) => p.food.role === "protein" && !p.food.tags.includes("supplement"))) {
     const staples = cands.filter((f) => f.staple === "protein" && !has(f));
     const fallback = cands.filter((f) => f.role === "protein" && !has(f));
-    const proteins = regionPreferred(staples.length ? staples : fallback);
+    // Regional ids affect scoring, but never hide the broader allowed pool.
+    const proteins = staples.length ? staples : fallback;
     const unusedProteins = proteins.filter((f) => !usedCounts.has(f.id));
     const anchor = chooseTop(
       unusedProteins.length ? unusedProteins : proteins,
       (f) =>
-        proteinDensity(f) * (foodPreference === "high_protein" || slotProtein >= 40 ? 100 : 35) +
+        proteinDensity(f) * (slotProtein / Math.max(budget, 1) >= 0.065 ? 100 : 35) +
         likeBonus(f) +
         preferenceBonus(f) -
         Math.abs(slotProtein - f.protein) / 2 -
@@ -810,7 +806,7 @@ function buildSimpleMeal(
   if (!picks.some((p) => p.food.staple === "carb" || p.food.role === "carb")) {
     const carbs = cands.filter((f) => f.staple === "carb" && !has(f));
     const fallback = cands.filter((f) => f.role === "carb" && !has(f));
-    const carbOptions = regionPreferred(carbs.length ? carbs : fallback);
+    const carbOptions = carbs.length ? carbs : fallback;
     const unusedCarbs = carbOptions.filter((f) => !usedCounts.has(f.id));
     const base = chooseTop(
       unusedCarbs.length ? unusedCarbs : carbOptions,
@@ -833,9 +829,7 @@ function buildSimpleMeal(
 
   // 4) At most ONE simple side (salad / sabzi / dahi / fruit) if real room remains.
   if (picks.length < 4 && budget - calSoFar() >= 90) {
-    const sides = regionPreferred(
-      cands.filter((f) => (f.staple === "side" || f.staple === "fruit") && !has(f))
-    );
+    const sides = cands.filter((f) => (f.staple === "side" || f.staple === "fruit") && !has(f));
     const unusedSides = sides.filter((f) => !usedCounts.has(f.id));
     const side = chooseTop(
       unusedSides.length ? unusedSides : sides,
@@ -996,6 +990,254 @@ function scaleDayToTargets(meals: BuiltMeal[], calorieTarget: number, proteinTar
       proteinTargetG * PROTEIN_MAX_THRESHOLD
     )) break;
   }
+}
+
+function cloneBuiltMeals(meals: BuiltMeal[]): BuiltMeal[] {
+  return meals.map((meal) => ({
+    ...meal,
+    cands: [...meal.cands],
+    picks: meal.picks.map((pick) => ({ ...pick })),
+  }));
+}
+
+function builtTotals(meals: BuiltMeal[]): { calories: number; protein: number } {
+  return meals
+    .flatMap((meal) => meal.picks)
+    .map((pick) => toScaledItem(pick.food, pick.mult))
+    .reduce(
+      (total, item) => ({
+        calories: total.calories + item.calories,
+        protein: total.protein + item.protein,
+      }),
+      { calories: 0, protein: 0 }
+    );
+}
+
+function previousRenderedMult(pick: MealPick): number | null {
+  const current = toScaledItem(pick.food, pick.mult);
+  const basis = catalogSpec(pick.food);
+  for (let mult = pick.mult - MULT_STEP; mult >= MULT_MIN - 1e-9; mult -= MULT_STEP) {
+    const snapped = snapMult(mult);
+    const previous = toScaledItem(pick.food, snapped);
+    if (previous.calories === current.calories && previous.protein === current.protein) continue;
+    if ((previous.amount ?? 0) < basis.amount) return null;
+    return snapped;
+  }
+  return null;
+}
+
+const EXTRA_ITEM_FAMILY_TAGS = [
+  "egg",
+  "chicken",
+  "beef",
+  "fish",
+  "turkey",
+  "soya",
+  "lentil",
+  "beans",
+  "dairy",
+  "nuts",
+] as const;
+
+function extraItemFamily(food: CatalogFood): string {
+  const tag = EXTRA_ITEM_FAMILY_TAGS.find((candidate) => food.tags.includes(candidate));
+  if (tag) return tag;
+  if (food.role === "fruit") return "fruit";
+  return food.staple ?? food.role;
+}
+
+function targetFailureCount(
+  totals: { calories: number; protein: number },
+  calorieTarget: number,
+  proteinTargetG: number
+): number {
+  return Number(totals.calories < calorieTarget * SHORT_THRESHOLD) +
+    Number(totals.calories > calorieTarget) +
+    Number(totals.protein < proteinTargetG * PROTEIN_SHORT_THRESHOLD) +
+    Number(totals.protein > proteinTargetG * PROTEIN_MAX_THRESHOLD);
+}
+
+function targetDistance(
+  totals: { calories: number; protein: number },
+  calorieTarget: number,
+  proteinTargetG: number
+): number {
+  const calorieDistance = Math.abs(calorieTarget - totals.calories) / Math.max(calorieTarget, 1);
+  const proteinDistance = Math.abs(proteinTargetG - totals.protein) / Math.max(proteinTargetG, 1);
+  return calorieDistance + proteinDistance;
+}
+
+function dailyDairyGrams(meals: BuiltMeal[]): number {
+  return meals
+    .flatMap((meal) => meal.picks)
+    .filter((pick) => pick.food.role === "dairy")
+    .reduce((sum, pick) => {
+      const item = toScaledItem(pick.food, pick.mult);
+      return sum + (item.unitMode === "portion" ? item.amount ?? 0 : 0);
+    }, 0);
+}
+
+/**
+ * Make room for one repair item by reducing already-scaled, unprotected foods.
+ * Prefer trimming low-protein carbs/sides, and first fix the meal that exceeds
+ * its shape budget. Catalog serving floors remain intact.
+ */
+function rebalanceForExtraItem(
+  meals: BuiltMeal[],
+  extraPick: MealPick,
+  calorieTarget: number
+): boolean {
+  const MEAL_FLEX = 1.1;
+  let guard = 0;
+  while (guard < 80) {
+    guard++;
+    const totals = builtTotals(meals);
+    const overMeal = meals.find(
+      (meal) =>
+        meal.picks.reduce((sum, pick) => sum + toScaledItem(pick.food, pick.mult).calories, 0) >
+        meal.budget * MEAL_FLEX
+    );
+    if (!overMeal && totals.calories <= calorieTarget) return true;
+
+    const eligibleMeals = overMeal ? [overMeal] : meals;
+    let best: { pick: MealPick; mult: number; score: number } | null = null;
+    for (const meal of eligibleMeals) {
+      for (const pick of meal.picks) {
+        if (pick === extraPick || pick.isProtected || pick.food.tags.includes("supplement")) continue;
+        const mult = previousRenderedMult(pick);
+        if (mult == null) continue;
+        const current = toScaledItem(pick.food, pick.mult);
+        const previous = toScaledItem(pick.food, mult);
+        const calorieDrop = current.calories - previous.calories;
+        if (calorieDrop <= 0) continue;
+        const proteinDrop = current.protein - previous.protein;
+        const score =
+          calorieDrop -
+          proteinDrop * 12 +
+          (pick.food.role === "carb" || pick.food.role === "fruit" || pick.food.role === "snack" ? 20 : 0);
+        if (!best || score > best.score) best = { pick, mult, score };
+      }
+    }
+    if (!best) return false;
+    best.pick.mult = best.mult;
+  }
+  return false;
+}
+
+/**
+ * A single composition repair after normal scaling. It trials one extra
+ * curated candidate and keeps it only when the final target validation has
+ * fewer failures. This avoids hiding genuinely infeasible plans with oversized
+ * portions or unnecessary fourth dishes.
+ */
+function repairWithOneExtraItem(
+  meals: BuiltMeal[],
+  calorieTarget: number,
+  proteinTargetG: number,
+  filter: DietFilter,
+  foodPreference: FoodPreference | null | undefined
+): boolean {
+  const baselineTotals = builtTotals(meals);
+  const baselineFailures = targetFailureCount(baselineTotals, calorieTarget, proteinTargetG);
+  if (baselineFailures === 0) return false;
+
+  const proteinShort = baselineTotals.protein < proteinTargetG * PROTEIN_SHORT_THRESHOLD;
+  const caloriesShort = baselineTotals.calories < calorieTarget * SHORT_THRESHOLD;
+  if (!proteinShort && !caloriesShort) return false;
+
+  const usedIds = new Set(meals.flatMap((meal) => meal.picks.map((pick) => pick.food.id)));
+  const usedFamilies = new Set(meals.flatMap((meal) => meal.picks.map((pick) => extraItemFamily(pick.food))));
+  const candidates = meals.flatMap((meal, mealIndex) =>
+    meal.picks.length >= 4
+      ? []
+      : meal.cands
+          .filter((food) => !usedIds.has(food.id))
+          .filter((food) => {
+            if (proteinShort) {
+              return food.role === "protein" || food.staple === "protein" || proteinDensity(food) >= 0.08;
+            }
+            return food.role === "carb" || food.role === "snack" || food.role === "fruit" || food.role === "dairy";
+          })
+          .map((food) => ({ mealIndex, food }))
+  );
+
+  candidates.sort((a, b) => {
+    const duplicateA = usedFamilies.has(extraItemFamily(a.food)) ? 1 : 0;
+    const duplicateB = usedFamilies.has(extraItemFamily(b.food)) ? 1 : 0;
+    if (duplicateA !== duplicateB) return duplicateA - duplicateB;
+    const preferenceA = fallbackPreferenceBonus(a.food, filter, foodPreference, meals[a.mealIndex].slot);
+    const preferenceB = fallbackPreferenceBonus(b.food, filter, foodPreference, meals[b.mealIndex].slot);
+    const utilityA = proteinShort ? proteinDensity(a.food) * 100 : a.food.calories / 20 - proteinDensity(a.food) * 10;
+    const utilityB = proteinShort ? proteinDensity(b.food) * 100 : b.food.calories / 20 - proteinDensity(b.food) * 10;
+    return preferenceB + utilityB - (preferenceA + utilityA) || a.food.id.localeCompare(b.food.id);
+  });
+
+  let best:
+    | {
+        meals: BuiltMeal[];
+        failures: number;
+        distance: number;
+        duplicateFamily: boolean;
+        addedCalories: number;
+      }
+    | null = null;
+
+  for (const candidate of candidates) {
+    const renderedAmounts = new Set<number>();
+    const basis = catalogSpec(candidate.food);
+    const constraint = plannerPortionConstraint(candidate.food, basis);
+    const maxMult = Math.max(MULT_MAX, constraint.maxAmount / Math.max(basis.amount, 1));
+    for (let mult = MULT_MIN; mult <= maxMult + 1e-9; mult += MULT_STEP) {
+      const item = toScaledItem(candidate.food, snapMult(mult));
+      const amount = item.amount ?? 0;
+      if (renderedAmounts.has(amount)) continue;
+      renderedAmounts.add(amount);
+
+      const trial = cloneBuiltMeals(meals);
+      const extraPick: MealPick = {
+        food: candidate.food,
+        mult: snapMult(mult),
+        isProtected: false,
+      };
+      trial[candidate.mealIndex].picks.push(extraPick);
+      if (dailyDairyGrams(trial) > 400) continue;
+      if (!rebalanceForExtraItem(trial, extraPick, calorieTarget)) continue;
+
+      scaleDayToTargets(trial, calorieTarget, proteinTargetG);
+      if (dailyDairyGrams(trial) > 400) continue;
+      const totals = builtTotals(trial);
+      const failures = targetFailureCount(totals, calorieTarget, proteinTargetG);
+      if (failures >= baselineFailures) continue;
+
+      const result = {
+        meals: trial,
+        failures,
+        distance: targetDistance(totals, calorieTarget, proteinTargetG),
+        duplicateFamily: usedFamilies.has(extraItemFamily(candidate.food)),
+        addedCalories: item.calories,
+      };
+      if (
+        !best ||
+        result.failures < best.failures ||
+        (result.failures === best.failures && Number(result.duplicateFamily) < Number(best.duplicateFamily)) ||
+        (result.failures === best.failures &&
+          result.duplicateFamily === best.duplicateFamily &&
+          result.distance < best.distance - 1e-9) ||
+        (result.failures === best.failures &&
+          result.duplicateFamily === best.duplicateFamily &&
+          Math.abs(result.distance - best.distance) < 1e-9 &&
+          result.addedCalories < best.addedCalories)
+      ) {
+        best = result;
+      }
+    }
+  }
+
+  if (!best) return false;
+  for (let index = 0; index < meals.length; index++) {
+    meals[index].picks = best.meals[index].picks;
+  }
+  return true;
 }
 
 /** Slot calorie budgets that sum to EXACTLY the daily target (snack absorbs rounding). */
@@ -1164,8 +1406,15 @@ export function buildPlan(input: {
   }
 
   // Scale portions toward the targets (protein first, then calories) — grow
-  // what's on the plate instead of adding more dishes.
+  // resizing the simple plate first; a bounded repair may then add one item.
   scaleDayToTargets(built, input.calorieTarget, input.proteinTargetG);
+  repairWithOneExtraItem(
+    built,
+    input.calorieTarget,
+    input.proteinTargetG,
+    input.filter,
+    input.foodPreference
+  );
 
   const meals = built.map(finalizeMeal);
   const totalCalories = meals.reduce((s, m) => s + m.calories, 0);
@@ -1386,6 +1635,7 @@ export function replanRemaining(
   });
 
   scaleDayToTargets(built, remCal, remPro);
+  repairWithOneExtraItem(built, remCal, remPro, plan.filter, plan.foodPreference);
 
   const rebuilt = new Map(built.map((b) => [b.slot, finalizeMeal(b)]));
   const meals = plan.meals.map((m) => (eaten.has(m.slot) ? m : rebuilt.get(m.slot) ?? m));
