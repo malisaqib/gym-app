@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   buildMealSelectionPrompt,
+  generateMealSelection,
   parseMealSelection,
   type MealSelectionProfile,
 } from "./mealSelection.ts";
@@ -293,4 +294,27 @@ test("malformed JSON shapes return null for deterministic fallback", () => {
     ),
     null
   );
+});
+
+test("HTTP 429 records a safe fallback reason for deterministic generation", async () => {
+  const result = await generateMealSelection(profile(), {
+    apiKey: "test-key",
+    fetchImpl: async () => new Response("rate limited", { status: 429 }),
+  });
+
+  assert.equal(result.selection, null);
+  assert.equal(result.fallbackReason, "rate_limited");
+});
+
+test("malformed Groq JSON records a safe fallback reason", async () => {
+  const result = await generateMealSelection(profile(), {
+    apiKey: "test-key",
+    fetchImpl: async () =>
+      Response.json({
+        choices: [{ message: { content: "{not-json" } }],
+      }),
+  });
+
+  assert.equal(result.selection, null);
+  assert.equal(result.fallbackReason, "malformed_json");
 });

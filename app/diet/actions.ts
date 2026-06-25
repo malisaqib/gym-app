@@ -447,6 +447,7 @@ async function buildHybridPlan(args: {
       preferIds,
       pool: safePlannerPool,
       allowProteinPowder,
+      foodPreference: args.foodPreference,
     });
 
   const candidates = buildMealCandidateLists(candidateProfile, safePlannerPool);
@@ -468,8 +469,15 @@ async function buildHybridPlan(args: {
     candidates,
   };
 
-  const selection = await generateMealSelection(mealProfile);
-  if (!selection) return deterministic(); // Groq off/failed → deterministic fallback
+  const selectionResult = await generateMealSelection(mealProfile);
+  if (!selectionResult.selection) {
+    console.warn("[diet] meal selection fallback", {
+      reason: selectionResult.fallbackReason,
+      region: args.region,
+    });
+    return deterministic();
+  }
+  const selection = selectionResult.selection;
 
   const ids: SelectedIds = {
     breakfast: selection.breakfast.map((food) => food.id),
@@ -486,6 +494,7 @@ async function buildHybridPlan(args: {
     preferIds,
     pool: safePlannerPool,
     allowProteinPowder,
+    foodPreference: args.foodPreference,
   });
   // Safety net: if Groq's foods couldn't fill the day to tolerance, prefer the
   // pure deterministic plan (proven to hit ±5% on the full catalog).

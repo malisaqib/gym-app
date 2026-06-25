@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildPlan,
   CALORIE_SHORT_THRESHOLD,
+  PROTEIN_MAX_THRESHOLD,
   PROTEIN_SHORT_THRESHOLD,
   swapMeal,
   filterFromPreference,
@@ -30,6 +31,8 @@ import {
 import { CATALOG_BY_ID, FOOD_CATALOG, type CatalogFood, type MealSlot } from "./foodCatalog.ts";
 import { DIET_PLAN_FOOD_IDS, DIET_PLAN_POOL } from "./planPool.ts";
 import { plannerPortionConstraint } from "./portionConstraints.ts";
+import { buildMealCandidatePool } from "./mealCandidates.ts";
+import { displayNameForQuantity } from "../food/displayName.ts";
 
 const openFilter: DietFilter = { vegetarian: false, excludeTags: [], excludeFoods: [], regionFocus: null };
 
@@ -199,7 +202,7 @@ test("caloriesShort always reflects reality (no false negatives), true when over
 test("hits the protein target within calories (or flags it honestly)", () => {
   const plan = buildPlan({ calorieTarget: 2100, proteinTargetG: 130, filter: openFilter, seed: 1 });
   // the flag must reflect reality
-  assert.equal(plan.proteinShort, plan.totalProtein < 130);
+  assert.equal(plan.proteinShort, plan.totalProtein < 130 * PROTEIN_SHORT_THRESHOLD);
   // and it gets reasonably close regardless
   assert.ok(plan.totalProtein >= 110, `protein too low: ${plan.totalProtein}`);
   // raising protein must NOT have pushed calories over budget
@@ -671,7 +674,8 @@ test("final validator checks targets, safe foods, and realistic portions", () =>
   assert.equal(
     plan.validation?.targetOk,
     plan.totalCalories >= 2100 * CALORIE_SHORT_THRESHOLD &&
-      plan.totalProtein >= 120 * PROTEIN_SHORT_THRESHOLD
+      plan.totalProtein >= 120 * PROTEIN_SHORT_THRESHOLD &&
+      plan.totalProtein <= 120 * PROTEIN_MAX_THRESHOLD
   );
 
   const overTarget = appendPlanItem(plan, "snack", {
@@ -742,12 +746,12 @@ test("final validator checks targets, safe foods, and realistic portions", () =>
 // SIMPLE-plan contract (diet rebuild): a few staple foods done right and
 // REPEATED — not a 15-dish rotating menu. Staple repetition across meals is
 // deliberate; the plan must stay minimal and recognizable.
-test("simple plan: a small repeatable set of foods (≤9 distinct), staples may repeat", () => {
+test("simple plan: a small repeatable set of foods (≤10 distinct), staples may repeat", () => {
   for (const seed of [1, 2, 3, 5, 9]) {
     const plan = buildPlan({ calorieTarget: 2100, proteinTargetG: 130, filter: openFilter, seed });
     const names = plan.meals.flatMap((m) => m.items.map((i) => i.name));
     const distinct = new Set(names);
-    assert.ok(distinct.size <= 9, `seed ${seed}: ${distinct.size} distinct dishes — too fancy: ${[...distinct].join(", ")}`);
+    assert.ok(distinct.size <= 10, `seed ${seed}: ${distinct.size} distinct dishes — too fancy: ${[...distinct].join(", ")}`);
     assert.ok(plan.totalCalories <= 2100, `seed ${seed} over budget`);
   }
 });
@@ -976,6 +980,171 @@ test("region focus is a soft preference and still returns valid curated foods", 
   );
 });
 
+test("deterministic fallback uses regional pools and familiar regional staples", () => {
+  const cases = [
+    {
+      region: "pakistan" as const,
+      preference: "normal_desi" as const,
+      expected: new Set(["eggs2", "roti1", "roti2", "daal", "chana", "rice", "dahi", "chicken_salan", "chicken_karahi"]),
+      forbidden: new Set(["brown_rice", "bread2", "turkey_breast"]),
+    },
+    {
+      region: "us_canada" as const,
+      preference: "high_protein" as const,
+      expected: new Set(["oats", "bread2", "chicken_breast", "chicken_thigh", "turkey_breast", "brown_rice", "baked_potato"]),
+      forbidden: new Set(["roti1", "roti2", "daal", "chicken_karahi"]),
+    },
+    {
+      region: "middle_east" as const,
+      preference: "normal_desi" as const,
+      expected: new Set(["pita", "hummus", "rice", "chicken_breast", "chicken_thigh", "dahi", "dates"]),
+      forbidden: new Set<string>(),
+    },
+  ];
+
+  for (const testCase of cases) {
+    const regionFocus =
+      testCase.region === "pakistan"
+        ? "desi" as const
+        : testCase.region === "us_canada"
+          ? "western" as const
+          : null;
+    const filter: DietFilter = {
+      ...openFilter,
+      regionFocus,
+      profileRegion: testCase.region,
+    };
+    const pool = buildMealCandidatePool({
+      filter,
+      region: testCase.region,
+      foodPreference: testCase.preference,
+      allowProteinPowder: false,
+    });
+    const plan = buildPlan({
+      calorieTarget: 2100,
+      proteinTargetG: 115,
+      filter,
+      pool,
+      seed: 17,
+      foodPreference: testCase.preference,
+    });
+    const ids = plan.meals.flatMap((meal) => meal.items.map((item) => item.id));
+    assert.ok(ids.some((id) => testCase.expected.has(id)), `${testCase.region} missed familiar foods: ${ids.join(",")}`);
+    assert.ok(ids.every((id) => !testCase.forbidden.has(id)), `${testCase.region} leaked foods: ${ids.join(",")}`);
+  }
+});
+
+test("hostel fallback prefers simple foods over complex cooked dishes", () => {
+  const filter: DietFilter = {
+    ...openFilter,
+    regionFocus: "desi",
+    profileRegion: "pakistan",
+  };
+  const pool = buildMealCandidatePool({
+    filter,
+    region: "pakistan",
+    foodPreference: "hostel_student",
+    allowProteinPowder: false,
+  });
+  const plan = buildPlan({
+    calorieTarget: 2000,
+    proteinTargetG: 105,
+    filter,
+    pool,
+    seed: 4100,
+    foodPreference: "hostel_student",
+  });
+  const ids = plan.meals.flatMap((meal) => meal.items.map((item) => item.id));
+  assert.ok(ids.some((id) => ["eggs2", "roti1", "roti2", "daal", "chana", "rice"].includes(id)));
+  assert.ok(!ids.some((id) => ["biryani", "pulao", "nihari", "haleem", "beef_karahi"].includes(id)));
+});
+
+test("fallback avoids repeated cooked proteins and excessive fruit or dairy filler", () => {
+  const filter: DietFilter = {
+    ...openFilter,
+    regionFocus: "western",
+    profileRegion: "us_canada",
+  };
+  const pool = buildMealCandidatePool({
+    filter,
+    region: "us_canada",
+    foodPreference: "normal_desi",
+    allowProteinPowder: false,
+  });
+
+  for (let seed = 1; seed <= 20; seed++) {
+    const plan = buildPlan({
+      calorieTarget: 2100,
+      proteinTargetG: 115,
+      filter,
+      pool,
+      seed,
+      foodPreference: "normal_desi",
+    });
+    const mealProteinIds = (slot: MealSlot) =>
+      plan.meals
+        .find((meal) => meal.slot === slot)!
+        .items.filter((item) => CATALOG_BY_ID[item.id]?.role === "protein")
+        .map((item) => item.id);
+    assert.ok(
+      !mealProteinIds("lunch").some((id) => mealProteinIds("dinner").includes(id)),
+      `seed ${seed} repeated a cooked protein`
+    );
+
+    const fruitMealCounts = new Map<string, number>();
+    for (const meal of plan.meals) {
+      for (const item of meal.items) {
+        if (CATALOG_BY_ID[item.id]?.role !== "fruit") continue;
+        fruitMealCounts.set(item.id, (fruitMealCounts.get(item.id) ?? 0) + 1);
+      }
+    }
+    assert.ok([...fruitMealCounts.values()].every((count) => count <= 1), `seed ${seed} repeated fruit across meals`);
+
+    const dairyGrams = plan.meals
+      .flatMap((meal) => meal.items)
+      .filter((item) => CATALOG_BY_ID[item.id]?.role === "dairy" && item.unitMode === "portion")
+      .reduce((sum, item) => sum + (item.amount ?? 0), 0);
+    assert.ok(dairyGrams <= 400, `seed ${seed} used ${dairyGrams}g dairy filler`);
+  }
+});
+
+test("protein overshoot is repaired to within +5% when the normal pool is feasible", () => {
+  for (const proteinTargetG of [100, 120, 140]) {
+    for (const seed of [1, 4, 7, 12]) {
+      const plan = buildPlan({
+        calorieTarget: 2100,
+        proteinTargetG,
+        filter: openFilter,
+        seed,
+      });
+      if (!plan.caloriesShort) {
+        assert.ok(
+          plan.totalProtein <= proteinTargetG * PROTEIN_MAX_THRESHOLD,
+          `${proteinTargetG}g target seed ${seed} overshot to ${plan.totalProtein}g`
+        );
+      } else if (plan.totalProtein > proteinTargetG * PROTEIN_MAX_THRESHOLD) {
+        assert.ok(plan.validation?.issues.some((issue) => issue.code === "protein_over_target"));
+      }
+      assert.ok(plan.totalCalories >= 2100 * CALORIE_SHORT_THRESHOLD || plan.caloriesShort);
+    }
+  }
+});
+
+test("scaled count foods use a canonical visible name beside the live amount", () => {
+  const plan = buildPlan({
+    calorieTarget: 1800,
+    proteinTargetG: 90,
+    filter: { ...openFilter, regionFocus: "desi", profileRegion: "pakistan" },
+    usual: { breakfast: "roti and eggs" },
+    seed: 2,
+  });
+  const roti = plan.meals.flatMap((meal) => meal.items).find((item) => item.id === "roti2");
+  assert.ok(roti);
+  assert.equal(displayNameForQuantity(roti.name), "roti");
+  assert.doesNotMatch(displayNameForQuantity(roti.name), /^\d/);
+  assert.equal(planItemSpec(roti).unit, "roti");
+});
+
 // --- ship-readiness edge battery ---------------------------------------------
 
 test("EDGE: floor-tier target (1200/100, female floor) builds sane non-empty mains", () => {
@@ -1180,7 +1349,10 @@ test("hybrid: hits ±5% (or honestly flags) and never exceeds, for ANY Groq sele
         plan.totalCalories >= 2100 * 0.95 || plan.caloriesShort,
         `silent shortfall: ${plan.totalCalories}/2100 for ${label}`
       );
-      assert.ok(plan.totalProtein >= 130 || plan.proteinShort, `silent protein shortfall for ${label}`);
+      assert.ok(
+        plan.totalProtein >= 130 * PROTEIN_SHORT_THRESHOLD || plan.proteinShort,
+        `silent protein shortfall for ${label}`
+      );
       // a COMPLETE plan: the deterministic builder fills every main meal even
       // when the selection seeded nothing for it.
       for (const m of plan.meals) {

@@ -29,6 +29,20 @@ export interface SelectedFood {
 
 export type MealSelection = Record<SelectionSlot, SelectedFood[]>;
 
+export type MealSelectionFallbackReason =
+  | "missing_api_key"
+  | "rate_limited"
+  | "http_error"
+  | "timeout"
+  | "request_error"
+  | "invalid_response"
+  | "malformed_json"
+  | "invalid_selection";
+
+export type MealSelectionResult =
+  | { selection: MealSelection; fallbackReason: null }
+  | { selection: null; fallbackReason: MealSelectionFallbackReason };
+
 export interface MealSelectionProfile {
   calorieTarget: number;
   proteinTargetG: number;
@@ -51,6 +65,12 @@ export interface MealSelectionProfile {
     keep?: string;
   };
   candidates: MealCandidateLists;
+}
+
+export interface MealSelectionRequestOptions {
+  apiKey?: string;
+  fetchImpl?: typeof fetch;
+  timeoutMs?: number;
 }
 
 /**
@@ -167,17 +187,18 @@ Return ONLY valid JSON in exactly this shape:
 {"breakfast":[{"id":"candidate_id"}],"lunch":[{"id":"candidate_id"}],"dinner":[{"id":"candidate_id"}],"snack":[{"id":"candidate_id"}]}`;
 }
 
-/** Ask Groq for candidate ids. Any failure returns null for deterministic fallback. */
+/** Ask Groq for candidate ids. Failures carry a safe internal fallback reason. */
 export async function generateMealSelection(
-  profile: MealSelectionProfile
-): Promise<MealSelection | null> {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) return null;
+  profile: MealSelectionProfile,
+  options: MealSelectionRequestOptions = {}
+): Promise<MealSelectionResult> {
+  const apiKey = options.apiKey ?? process.env.GROQ_API_KEY;
+  if (!apiKey) return { selection: null, fallbackReason: "missing_api_key" };
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20_000);
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 20_000);
   try {
-    const response = await fetch(GROQ_URL, {
+    const response = await (options.fetchImpl ?? fetch)(GROQ_URL, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -191,18 +212,32 @@ export async function generateMealSelection(
       }),
       signal: controller.signal,
     });
-    if (!response.ok) return null;
+    if (!response.ok) {
+      return {
+        selection: null,
+        fallbackReason: response.status === 429 ? "rate_limited" : "http_error",
+      };
+    }
     const data = await response.json();
     const content = data?.choices?.[0]?.message?.content;
-    if (typeof content !== "string") return null;
+    if (typeof content !== "string") {
+      return { selection: null, fallbackReason: "invalid_response" };
+    }
 
     try {
-      return parseMealSelection(JSON.parse(content), profile.candidates);
+      const selection = parseMealSelection(JSON.parse(content), profile.candidates);
+      return selection
+        ? { selection, fallbackReason: null }
+        : { selection: null, fallbackReason: "invalid_selection" };
     } catch {
-      return null;
+      return { selection: null, fallbackReason: "malformed_json" };
     }
-  } catch {
-    return null;
+  } catch (error) {
+    return {
+      selection: null,
+      fallbackReason:
+        error instanceof Error && error.name === "AbortError" ? "timeout" : "request_error",
+    };
   } finally {
     clearTimeout(timeout);
   }

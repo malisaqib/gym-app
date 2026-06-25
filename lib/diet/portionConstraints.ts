@@ -85,6 +85,31 @@ export function plannerPortionConstraint(
   };
 }
 
+/**
+ * A softer automatic-planner ceiling used while filling targets. The hard
+ * constraint remains authoritative, but this keeps the scaler from reaching
+ * visually large portions before it has used the rest of the plate.
+ */
+export function preferredPlannerAmountMax(
+  food: CatalogFood,
+  basis: PlannerPortionBasis
+): number {
+  const constraint = plannerPortionConstraint(food, basis);
+  if (constraint.unitType !== "grams") return constraint.maxAmount;
+
+  const serving = Math.max(constraint.minAmount, basis.amount);
+  const roleMax =
+    food.role === "carb"
+      ? 300
+      : food.role === "dairy"
+        ? 250
+        : food.role === "protein"
+          ? 250
+          : constraint.maxAmount;
+
+  return Math.min(constraint.maxAmount, Math.max(serving, roleMax));
+}
+
 export function clampPlannerAmount(
   amount: number,
   constraint: PlannerPortionConstraint

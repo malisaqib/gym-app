@@ -6,6 +6,7 @@ import {
   clampPlannerAmount,
   isPlannerAmountOnStep,
   plannerPortionConstraint,
+  preferredPlannerAmountMax,
 } from "./portionConstraints.ts";
 
 /**
@@ -88,6 +89,7 @@ export type DietPlanValidationIssueCode =
   | "calories_over_target"
   | "calories_short"
   | "protein_short"
+  | "protein_over_target"
   | "unsafe_food"
   | "portion_too_large"
   | "portion_too_small"
@@ -136,6 +138,7 @@ export interface DietPlan {
   // Final contract check for generated/saved plans: target fit, realistic
   // portions, and safe planner foods. Additive for older saved JSON.
   validation?: DietPlanValidation;
+  foodPreference?: FoodPreference | null;
 }
 
 // The tolerance bar (±5%): a generated plan must land within 95–100% of the
@@ -143,6 +146,7 @@ export interface DietPlan {
 // honestly flagged as the closest fit possible under the user's restrictions.
 export const CALORIE_SHORT_THRESHOLD = 0.95;
 export const PROTEIN_SHORT_THRESHOLD = 0.95;
+export const PROTEIN_MAX_THRESHOLD = 1.05;
 const SHORT_THRESHOLD = CALORIE_SHORT_THRESHOLD;
 
 const SLOT_META: { slot: MealSlot; title: string; pct: number }[] = [
@@ -217,6 +221,7 @@ export function normalizeDietPlan(
     seed: safeNumber(input.seed) || 1,
     rev: typeof input.rev === "number" ? input.rev : undefined,
     logged,
+    foodPreference: input.foodPreference ?? null,
   });
 }
 
@@ -344,6 +349,63 @@ function regionBonus(food: CatalogFood, filter: DietFilter): number {
   return food.region === "global" ? 3 : 0;
 }
 
+const REGION_FALLBACK_IDS: Partial<Record<Region, Set<string>>> = {
+  pakistan: new Set([
+    "eggs2", "omelette", "roti1", "roti2", "daal", "chana", "dahi", "rice",
+    "chicken_salan", "chicken_karahi", "mix_sabzi", "palak", "banana", "dates",
+  ]),
+  india: new Set([
+    "eggs2", "omelette", "roti1", "roti2", "daal", "chana", "rajma", "paneer",
+    "tofu", "dahi", "rice", "mix_sabzi", "palak", "banana",
+  ]),
+  middle_east: new Set([
+    "eggs2", "boiled_egg1", "pita", "hummus", "rice", "chicken_breast",
+    "chicken_thigh", "dahi", "greek_yogurt", "banana", "dates",
+  ]),
+  us_canada: new Set([
+    "scrambled", "boiled_egg1", "oats", "bread2", "chicken_breast",
+    "chicken_thigh", "turkey_breast", "turkey_mince", "tuna", "brown_rice",
+    "baked_potato", "boiled_potato", "mashed_potato", "greek_yogurt",
+    "cottage_cheese", "banana", "apple",
+  ]),
+  uk_europe: new Set([
+    "scrambled", "boiled_egg1", "oats", "bread2", "chicken_breast",
+    "chicken_thigh", "turkey_breast", "turkey_mince", "brown_rice",
+    "baked_potato", "boiled_potato", "mashed_potato", "greek_yogurt",
+    "cottage_cheese", "banana", "apple",
+  ]),
+};
+
+const SIMPLE_FOOD_IDS = new Set([
+  "eggs2", "boiled_egg1", "roti1", "roti2", "daal", "chana", "dahi", "rice",
+  "mix_sabzi", "banana", "dates", "oats", "bread2", "boiled_potato", "milk",
+]);
+
+const COMPLEX_FOOD_IDS = new Set([
+  "chicken_karahi", "biryani", "pulao", "nihari", "haleem", "beef_karahi",
+  "aloo_gosht", "chicken_sandwich",
+]);
+
+function fallbackPreferenceBonus(
+  food: CatalogFood,
+  filter: DietFilter,
+  foodPreference: FoodPreference | null | undefined,
+  slot: MealSlot
+): number {
+  let score = regionBonus(food, filter);
+  if (filter.profileRegion && REGION_FALLBACK_IDS[filter.profileRegion]?.has(food.id)) score += 20;
+
+  if (foodPreference === "budget" || foodPreference === "hostel_student") {
+    if (SIMPLE_FOOD_IDS.has(food.id)) score += 14;
+    if (COMPLEX_FOOD_IDS.has(food.id)) score -= 20;
+  }
+
+  if (slot === "breakfast" && food.tags.includes("egg")) score += 8;
+  if (slot === "breakfast" && food.role === "dairy" && food.staple === "protein") score -= 3;
+  if (slot === "breakfast" && food.id === "boiled_chickpeas") score -= 18;
+  return score;
+}
+
 function foodForPlanItem(item: PlanMealItem, pool: CatalogFood[]): CatalogFood | undefined {
   return pool.find((f) => f.id === item.id) ?? CATALOG_BY_ID[item.id];
 }
@@ -378,6 +440,14 @@ export function validateDietPlan(plan: DietPlan, pool: CatalogFood[] = FOOD_CATA
       message: "Plan protein is below the daily target.",
       amount: plan.totalProtein,
       maxAmount: plan.proteinTargetG,
+    });
+  }
+  if (plan.proteinTargetG > 0 && plan.totalProtein > plan.proteinTargetG * PROTEIN_MAX_THRESHOLD) {
+    issues.push({
+      code: "protein_over_target",
+      message: "Plan protein exceeds the daily target tolerance.",
+      amount: plan.totalProtein,
+      maxAmount: Math.round(plan.proteinTargetG * PROTEIN_MAX_THRESHOLD),
     });
   }
 
@@ -469,7 +539,11 @@ export function validateDietPlan(plan: DietPlan, pool: CatalogFood[] = FOOD_CATA
   }
 
   const targetOk = !issues.some((i) =>
-    i.code === "invalid_target" || i.code === "calories_over_target" || i.code === "calories_short" || i.code === "protein_short"
+    i.code === "invalid_target" ||
+    i.code === "calories_over_target" ||
+    i.code === "calories_short" ||
+    i.code === "protein_short" ||
+    i.code === "protein_over_target"
   );
   const portionsOk = !issues.some((i) =>
     i.code === "portion_too_large" ||
@@ -605,7 +679,9 @@ function buildSimpleMeal(
   rng: () => number,
   selectedIds: string[] | undefined,
   usualText: string | undefined,
-  likeIds: Set<string>
+  likeIds: Set<string>,
+  usedCounts: Map<string, number>,
+  foodPreference: FoodPreference | null | undefined
 ): MealPick[] {
   const picks: MealPick[] = [];
   // RENDERED calories so far — counts round to whole units, grams to 5g steps;
@@ -613,6 +689,22 @@ function buildSimpleMeal(
   const calSoFar = () => picks.reduce((s, p) => s + toScaledItem(p.food, p.mult).calories, 0);
   const has = (f: CatalogFood) => picks.some((p) => p.food.id === f.id);
   const likeBonus = (f: CatalogFood) => (likeIds.has(f.id) ? 8 : 0);
+  const repeatPenalty = (f: CatalogFood) => {
+    const used = usedCounts.get(f.id) ?? 0;
+    if (!used) return 0;
+    if (f.staple === "fruit" || f.staple === "side" || (slot === "dinner" && f.role === "protein")) {
+      return used * 28;
+    }
+    return used * 8;
+  };
+  const preferenceBonus = (f: CatalogFood) =>
+    fallbackPreferenceBonus(f, filter, foodPreference, slot) - repeatPenalty(f);
+  const regionPreferred = (foods: CatalogFood[]) => {
+    const preferredIds = filter.profileRegion ? REGION_FALLBACK_IDS[filter.profileRegion] : undefined;
+    if (!preferredIds) return foods;
+    const preferred = foods.filter((food) => preferredIds.has(food.id));
+    return preferred.length ? preferred : foods;
+  };
 
   // Exact upstream selections (Groq candidate ids) seed by id only. This path
   // never fuzzy-matches model output back onto a different catalog food.
@@ -664,11 +756,16 @@ function buildSimpleMeal(
   // opted-in shake). Simple and small by design.
   if (slot === "snack") {
     if (!picks.some((p) => p.food.staple === "fruit")) {
+      // Fruit is globally familiar and should rotate across the day. Applying
+      // the regional shortlist here forced India plans into banana twice even
+      // when apple, orange, mango, or dates were available.
+      const fruits = cands.filter((f) => f.staple === "fruit" && !has(f));
+      const unusedFruits = fruits.filter((f) => !usedCounts.has(f.id));
       const fruit = chooseTop(
-        cands.filter((f) => f.staple === "fruit" && !has(f)),
-        (f) => likeBonus(f) + regionBonus(f, filter) - Math.abs(budget - f.calories) / 20,
+        unusedFruits.length ? unusedFruits : fruits,
+        (f) => likeBonus(f) + preferenceBonus(f) - Math.abs(budget - f.calories) / 20,
         rng,
-        4
+        2
       );
       if (fruit) {
         const m = fitRenderedMult(fruit, calSoFar(), budget, 2);
@@ -686,17 +783,25 @@ function buildSimpleMeal(
   if (!picks.some((p) => p.food.role === "protein" && !p.food.tags.includes("supplement"))) {
     const staples = cands.filter((f) => f.staple === "protein" && !has(f));
     const fallback = cands.filter((f) => f.role === "protein" && !has(f));
+    const proteins = regionPreferred(staples.length ? staples : fallback);
+    const unusedProteins = proteins.filter((f) => !usedCounts.has(f.id));
     const anchor = chooseTop(
-      staples.length ? staples : fallback,
-      (f) => proteinDensity(f) * 100 + likeBonus(f) + regionBonus(f, filter),
+      unusedProteins.length ? unusedProteins : proteins,
+      (f) =>
+        proteinDensity(f) * (foodPreference === "high_protein" || slotProtein >= 40 ? 100 : 35) +
+        likeBonus(f) +
+        preferenceBonus(f) -
+        Math.abs(slotProtein - f.protein) / 2 -
+        Math.abs(budget * 0.42 - f.calories) / 18,
       rng,
-      4
+      2
     );
     if (anchor) {
       const need = Math.max(0, slotProtein - mealPro(picks));
       const ideal = anchor.protein > 0 ? clampMult(need / anchor.protein) : 1;
-      // Leave ~20% of the budget for the carb base.
-      const m = fitRenderedMult(anchor, calSoFar(), budget * 0.8, ideal);
+      // Leave enough room for a normal carb base instead of making the protein
+      // anchor carry nearly the whole meal.
+      const m = fitRenderedMult(anchor, calSoFar(), budget * 0.6, ideal);
       if (m != null) picks.push({ food: anchor, mult: m, isProtected: false });
     }
   }
@@ -705,15 +810,22 @@ function buildSimpleMeal(
   if (!picks.some((p) => p.food.staple === "carb" || p.food.role === "carb")) {
     const carbs = cands.filter((f) => f.staple === "carb" && !has(f));
     const fallback = cands.filter((f) => f.role === "carb" && !has(f));
+    const carbOptions = regionPreferred(carbs.length ? carbs : fallback);
+    const unusedCarbs = carbOptions.filter((f) => !usedCounts.has(f.id));
     const base = chooseTop(
-      carbs.length ? carbs : fallback,
-      (f) => likeBonus(f) + regionBonus(f, filter) - Math.abs((budget - calSoFar()) * 0.9 - f.calories) / 15,
+      unusedCarbs.length ? unusedCarbs : carbOptions,
+      (f) => likeBonus(f) + preferenceBonus(f) - Math.abs((budget - calSoFar()) * 0.75 - f.calories) / 15,
       rng,
-      4
+      2
     );
     if (base) {
       const remaining = budget - calSoFar();
-      const ideal = base.calories > 0 ? clampMult((remaining * 0.95) / base.calories) : 1;
+      const spec = catalogSpec(base);
+      const preferredMax = preferredPlannerAmountMax(base, spec);
+      const preferredMult = preferredMax / Math.max(spec.amount, 1);
+      const ideal = base.calories > 0
+        ? Math.min(preferredMult, clampMult((remaining * 0.65) / base.calories))
+        : 1;
       const m = fitRenderedMult(base, calSoFar(), budget, ideal);
       if (m != null) picks.push({ food: base, mult: m, isProtected: false });
     }
@@ -721,12 +833,15 @@ function buildSimpleMeal(
 
   // 4) At most ONE simple side (salad / sabzi / dahi / fruit) if real room remains.
   if (picks.length < 4 && budget - calSoFar() >= 90) {
-    const sides = cands.filter((f) => (f.staple === "side" || f.staple === "fruit") && !has(f));
+    const sides = regionPreferred(
+      cands.filter((f) => (f.staple === "side" || f.staple === "fruit") && !has(f))
+    );
+    const unusedSides = sides.filter((f) => !usedCounts.has(f.id));
     const side = chooseTop(
-      sides,
-      (f) => likeBonus(f) + regionBonus(f, filter) - Math.abs(budget - calSoFar() - f.calories) / 12,
+      unusedSides.length ? unusedSides : sides,
+      (f) => likeBonus(f) + preferenceBonus(f) - Math.abs(budget - calSoFar() - f.calories) / 12,
       rng,
-      4
+      2
     );
     if (side) {
       const m = fitRenderedMult(side, calSoFar(), budget, 1.5);
@@ -763,6 +878,15 @@ function scaleDayToTargets(meals: BuiltMeal[], calorieTarget: number, proteinTar
   const renderedMealCal = (m: BuiltMeal) =>
     m.picks.reduce((s, p) => s + toScaledItem(p.food, p.mult).calories, 0);
 
+  const dailyGramAmount = (predicate: (food: CatalogFood) => boolean) =>
+    meals
+      .flatMap((meal) => meal.picks)
+      .filter((pick) => predicate(pick.food))
+      .reduce((sum, pick) => {
+        const item = toScaledItem(pick.food, pick.mult);
+        return sum + (item.unitMode === "portion" ? item.amount ?? 0 : 0);
+      }, 0);
+
   // One +step bump of the best-scoring pick that (a) actually moves the metric
   // we're raising and (b) keeps its meal under the hard cap. Deltas are
   // computed on RENDERED items — count foods jump in WHOLE units (one more
@@ -780,9 +904,22 @@ function scaleDayToTargets(meals: BuiltMeal[], calorieTarget: number, proteinTar
     return null;
   };
 
-  const bump = (metric: (i: PlanMealItem) => number, score: (p: MealPick) => number): boolean => {
+  const previousUsefulMult = (p: MealPick): number | null => {
+    const cur = toScaledItem(p.food, p.mult);
+    for (let m = p.mult - MULT_STEP; m >= MULT_MIN - 1e-9; m -= MULT_STEP) {
+      const previous = toScaledItem(p.food, snapMult(m));
+      if (previous.calories !== cur.calories || previous.protein !== cur.protein) return snapMult(m);
+    }
+    return null;
+  };
+
+  const bump = (
+    metric: (i: PlanMealItem) => number,
+    score: (p: MealPick) => number,
+    proteinCeiling?: number
+  ): boolean => {
     const day = dayCal();
-    let best: { pick: MealPick; mult: number } | null = null;
+    let best: { pick: MealPick; mult: number; score: number } | null = null;
     for (const m of meals) {
       const cal = renderedMealCal(m);
       for (const p of m.picks) {
@@ -797,7 +934,16 @@ function scaleDayToTargets(meals: BuiltMeal[], calorieTarget: number, proteinTar
         if (metric(next) - metric(cur) <= 0) continue; // no progress on this metric
         if (cal + delta > m.budget * MEAL_FLEX) continue; // soft per-meal shape
         if (day + delta > calorieTarget) continue; // HARD day cap
-        if (!best || score(p) > score(best.pick)) best = { pick: p, mult };
+        if (proteinCeiling != null && dayPro() + next.protein - cur.protein > proteinCeiling) continue;
+        if (
+          cur.unitMode === "portion" &&
+          p.food.role === "dairy" &&
+          dailyGramAmount((food) => food.role === "dairy") + ((next.amount ?? 0) - (cur.amount ?? 0)) > 400
+        ) continue;
+        const preferredMax = preferredPlannerAmountMax(p.food, catalogSpec(p.food));
+        const saturation = Math.max(0, (next.amount ?? 0) / Math.max(preferredMax, 1) - 0.8);
+        const adjustedScore = score(p) - saturation * 30;
+        if (!best || adjustedScore > best.score) best = { pick: p, mult, score: adjustedScore };
       }
     }
     if (!best) return false;
@@ -815,6 +961,40 @@ function scaleDayToTargets(meals: BuiltMeal[], calorieTarget: number, proteinTar
     guard++;
     // Prefer carbs/sides for pure calorie filling (protein already handled).
     if (!bump((i) => i.calories, (p) => -proteinDensity(p.food))) break;
+  }
+
+  // Coarse count steps and calorie filling can overshoot protein. Reduce a
+  // dense item when the day can stay above the lower tolerance, then refill
+  // calories from lower-protein foods.
+  guard = 0;
+  while (dayPro() > proteinTargetG * PROTEIN_MAX_THRESHOLD && guard < 40) {
+    guard++;
+    let best: { pick: MealPick; mult: number; proteinDrop: number } | null = null;
+    for (const meal of meals) {
+      for (const pick of meal.picks) {
+        if (pick.isProtected || pick.food.tags.includes("supplement")) continue;
+        const mult = previousUsefulMult(pick);
+        if (mult == null) continue;
+        const cur = toScaledItem(pick.food, pick.mult);
+        const previous = toScaledItem(pick.food, mult);
+        if ((previous.amount ?? 0) < catalogSpec(pick.food).amount) continue;
+        const proteinDrop = cur.protein - previous.protein;
+        if (proteinDrop <= 0 || dayPro() - proteinDrop < proteinTargetG * PROTEIN_SHORT_THRESHOLD) continue;
+        if (!best || proteinDrop > best.proteinDrop) best = { pick, mult, proteinDrop };
+      }
+    }
+    if (!best) break;
+    best.pick.mult = best.mult;
+  }
+
+  guard = 0;
+  while (dayCal() < calorieTarget * SHORT_THRESHOLD && guard < 80) {
+    guard++;
+    if (!bump(
+      (i) => i.calories,
+      (p) => -proteinDensity(p.food) - (p.food.role === "protein" ? 20 : 0),
+      proteinTargetG * PROTEIN_MAX_THRESHOLD
+    )) break;
   }
 }
 
@@ -887,6 +1067,7 @@ export function buildPlan(input: {
   preferIds?: Set<string>;
   selectedIds?: Partial<Record<MealSlot, string[]>>;
   allowProteinPowder?: boolean;
+  foodPreference?: FoodPreference | null;
 }): DietPlan {
   const pool = input.pool ?? FOOD_CATALOG;
   const seed = input.seed ?? 1;
@@ -906,6 +1087,7 @@ export function buildPlan(input: {
       proteinShort: input.proteinTargetG > 0,
       caloriesShort: true,
       seed,
+      foodPreference: input.foodPreference ?? null,
     }, pool);
   }
 
@@ -932,6 +1114,7 @@ export function buildPlan(input: {
   const allowProteinPowder =
     input.allowProteinPowder ?? explicitProteinPowderOptIn(usualAll);
 
+  const usedCounts = new Map<string, number>();
   const built: BuiltMeal[] = slotBudgets(input.calorieTarget).map((s) => {
     const slotProtein = input.proteinTargetG * PROTEIN_SHARE[s.slot];
     const cands = pool.filter(
@@ -957,8 +1140,13 @@ export function buildPlan(input: {
       rng,
       input.selectedIds?.[s.slot],
       usualText,
-      likeIds
+      likeIds,
+      usedCounts,
+      input.foodPreference
     );
+    for (const pick of picks) {
+      usedCounts.set(pick.food.id, (usedCounts.get(pick.food.id) ?? 0) + 1);
+    }
     return { slot: s.slot, title: s.title, budget: s.cal, cands, picks };
   });
 
@@ -992,6 +1180,7 @@ export function buildPlan(input: {
     proteinShort: totalProtein < input.proteinTargetG * PROTEIN_SHORT_THRESHOLD,
     caloriesShort: totalCalories < input.calorieTarget * SHORT_THRESHOLD,
     seed,
+    foodPreference: input.foodPreference ?? null,
   }, pool);
 }
 
@@ -1024,6 +1213,7 @@ export function buildPlanFromSelectionIds(
     seed?: number;
     preferIds?: Set<string>;
     allowProteinPowder?: boolean;
+    foodPreference?: FoodPreference | null;
   }
 ): DietPlan {
   return buildPlan({
@@ -1042,6 +1232,7 @@ export function buildPlanFromSelection(
     pool?: CatalogFood[];
     seed?: number;
     preferIds?: Set<string>;
+    foodPreference?: FoodPreference | null;
   }
 ): DietPlan {
   const base = input.usual ?? {};
@@ -1068,6 +1259,7 @@ export function buildPlanFromSelection(
     pool: input.pool,
     seed: input.seed,
     preferIds: input.preferIds,
+    foodPreference: input.foodPreference,
   });
 }
 
@@ -1086,8 +1278,27 @@ export function swapMeal(
   const budget = target.budget;
   const slotProtein = plan.proteinTargetG * PROTEIN_SHARE[slot];
   const cands = pool.filter((f) => f.slots.includes(slot) && allowedForAutoPlan(f, plan.filter));
+  const usedCounts = new Map<string, number>();
+  for (const meal of plan.meals) {
+    if (meal.slot === slot) continue;
+    for (const item of meal.items) {
+      usedCounts.set(item.id, (usedCounts.get(item.id) ?? 0) + 1);
+    }
+  }
   // Bias the fresh selection toward the foods the user logs most.
-  const picks = buildSimpleMeal(budget, slotProtein, slot, cands, plan.filter, rng, undefined, undefined, preferIds);
+  const picks = buildSimpleMeal(
+    budget,
+    slotProtein,
+    slot,
+    cands,
+    plan.filter,
+    rng,
+    undefined,
+    undefined,
+    preferIds,
+    usedCounts,
+    plan.foodPreference
+  );
 
   const meal = finalizeMeal({ slot, title: meta.title, budget, cands, picks });
   const meals = plan.meals.map((m) => (m.slot === slot ? meal : m));
@@ -1145,10 +1356,32 @@ export function replanRemaining(
   // we just fill calories.
   const proShareSum = openMeta.reduce((s, m) => s + PROTEIN_SHARE[m.slot], 0);
 
+  const usedCounts = new Map<string, number>();
+  for (const meal of plan.meals) {
+    if (!eaten.has(meal.slot)) continue;
+    for (const item of meal.items) {
+      usedCounts.set(item.id, (usedCounts.get(item.id) ?? 0) + 1);
+    }
+  }
   const built: BuiltMeal[] = budgets.map((b) => {
     const slotProtein = proShareSum > 0 ? remPro * (PROTEIN_SHARE[b.slot] / proShareSum) : 0;
     const cands = pool.filter((f) => f.slots.includes(b.slot) && allowedForAutoPlan(f, plan.filter));
-    const picks = buildSimpleMeal(b.cal, slotProtein, b.slot, cands, plan.filter, rng, undefined, undefined, preferIds);
+    const picks = buildSimpleMeal(
+      b.cal,
+      slotProtein,
+      b.slot,
+      cands,
+      plan.filter,
+      rng,
+      undefined,
+      undefined,
+      preferIds,
+      usedCounts,
+      plan.foodPreference
+    );
+    for (const pick of picks) {
+      usedCounts.set(pick.food.id, (usedCounts.get(pick.food.id) ?? 0) + 1);
+    }
     return { slot: b.slot, title: b.title, budget: b.cal, cands, picks };
   });
 
