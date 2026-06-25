@@ -93,6 +93,10 @@ const T = {
     en: "Preferences changed — tap Regenerate to apply them.",
     roman_urdu: "Preferences badli hain — apply karne ke liye Regenerate dabayein.",
   },
+  settingsChangedNote: {
+    en: "Your preferences changed, so this plan may no longer fit your targets. Tap Regenerate for a better match.",
+    roman_urdu: "Aap ki preferences badal gayi hain, is liye ye plan shayad ab aap ke targets pe fit na ho. Behtar match ke liye Regenerate dabayein.",
+  },
   swap: { en: "Swap", roman_urdu: "Badlein" },
   logMeal: { en: "Log meal", roman_urdu: "Meal log karein" },
   mealLogged: { en: "Added to Today ✓", roman_urdu: "Aaj mein add ho gaya ✓" },
@@ -196,6 +200,7 @@ function fillPaceLine(template: string, info: PaceInfo, lang: Lang): string {
 
 export default function DietPlanView({
   initialPlan,
+  initialSettingsChanged = false,
   initialFilter,
   initialUsual,
   hasTargets,
@@ -205,6 +210,9 @@ export default function DietPlanView({
   consumed,
 }: {
   initialPlan: DietPlan | null;
+  // True when the saved plan was just normalized to match changed profile
+  // preferences (meat/whey removed) — drives a friendly "Regenerate" nudge.
+  initialSettingsChanged?: boolean;
   initialFilter: DietFilter;
   initialUsual: UsualEating;
   hasTargets: boolean;
@@ -226,6 +234,9 @@ export default function DietPlanView({
   }
 
   const [plan, setPlan] = useState<DietPlan | null>(initialPlan);
+  // Saved plan was normalized on load because Settings changed (meat/whey removed).
+  // Cleared once the user regenerates, since that rebuilds the plan to fit.
+  const [settingsChanged, setSettingsChanged] = useState(initialSettingsChanged);
   // Live "eaten today" mirror — starts from the server snapshot and updates when
   // a plan meal is logged below, so the Today card stays honest without a reload.
   const [eaten, setEaten] = useState(consumed);
@@ -343,6 +354,8 @@ export default function DietPlanView({
       });
       if (res.ok) {
         setPlan(res.plan);
+        // A fresh plan reflects current preferences — clear the settings nudge.
+        setSettingsChanged(false);
         // Surface any newly-parsed exclusions as chips, and clear the note box.
         setAvoidFoods(res.plan.filter.excludeFoods ?? []);
         setVegetarian(res.plan.filter.vegetarian);
@@ -696,6 +709,11 @@ export default function DietPlanView({
         {planStale && !busy && (
           <p className="flex items-center gap-1.5 rounded-field bg-muted px-3 py-2 text-xs text-warning">
             <AlertTriangle size={13} aria-hidden /> {t("dirtyNote")}
+          </p>
+        )}
+        {settingsChanged && !planStale && !busy && plan && (
+          <p className="flex items-center gap-1.5 rounded-field bg-muted px-3 py-2 text-xs text-warning">
+            <AlertTriangle size={13} aria-hidden /> {t("settingsChangedNote")}
           </p>
         )}
         {error && <p className="text-sm text-destructive">{error}</p>}

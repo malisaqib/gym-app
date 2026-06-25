@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { resolveDietMode, hasExplicitDietMode } from "./dietMode.ts";
 import {
   buildPlan,
@@ -11,6 +12,8 @@ import {
   swapPlanItem,
   replanRemaining,
   setPlanDietMode,
+  setPlanProteinPowderAccess,
+  PROTEIN_SHORT_THRESHOLD,
   type DietPlan,
   type DietFilter,
 } from "./planner.ts";
@@ -335,4 +338,115 @@ test("setPlanDietMode (legacy, non-authoritative) keeps a saved vegetarian plan 
   const kept = setPlanDietMode(p, "non_veg", DIET_PLAN_POOL, false);
   assert.equal(kept.filter.vegetarian, true);
   assert.equal(anyAnimalItems(kept), 0);
+});
+
+test("normalizing a saved plan recomputes totals and flags any resulting shortfall", () => {
+  // A non_veg plan leaning on meat for its protein, then switched to vegetarian:
+  // totals must drop to match the remaining items, and the short flags must be set
+  // honestly so the UI can show the friendly shortfall note (no silent under-target).
+  const p = planFor("non_veg", { seed: 4100 });
+  const veg = setPlanDietMode(p, "vegetarian", DIET_PLAN_POOL, true);
+  // Totals reflect ONLY the surviving items — no stale numbers from the old plan.
+  const sumCal = veg.meals.reduce((s, m) => s + m.calories, 0);
+  const sumPro = veg.meals.reduce((s, m) => s + m.protein, 0);
+  assert.equal(veg.totalCalories, sumCal);
+  assert.equal(veg.totalProtein, sumPro);
+  assert.ok(veg.totalCalories < p.totalCalories, "stripping meat should lower calories");
+  assert.ok(veg.totalProtein < p.totalProtein, "stripping meat should lower protein");
+  // Short flags stay consistent with the recomputed totals.
+  assert.equal(veg.proteinShort, veg.totalProtein < veg.proteinTargetG * PROTEIN_SHORT_THRESHOLD);
+});
+
+// --- regenerate-nudge signal (loadSavedPlanState uses item-count drop) ---------
+// The diet screen nudges a Regenerate when normalization REMOVED foods because
+// the profile's diet mode / protein-powder preference changed. Normalization only
+// ever drops items, so a lower item count is exactly that signal. These tests
+// exercise the underlying normalization the server action compares.
+
+const countItems = (plan: DietPlan) => plan.meals.reduce((s, m) => s + m.items.length, 0);
+
+function wheyPlan(seed = 4100): DietPlan {
+  // High protein + powder enabled so the deterministic repair seats a whey shake.
+  const filter = filterFromPreference("high_protein", { regionFocus: "desi", profileRegion: "pakistan" }, "non_veg");
+  const pool = buildMealCandidatePool({ filter, region: "pakistan", foodPreference: "high_protein", allowProteinPowder: true });
+  return buildPlan({ calorieTarget: 2100, proteinTargetG: 150, filter, pool, seed, foodPreference: "high_protein", allowProteinPowder: true });
+}
+const hasWhey = (plan: DietPlan) => plan.meals.some((m) => m.items.some((i) => i.id === "whey"));
+
+test("normalization signal: disabling protein powder removes whey and drops the item count", () => {
+  const withWhey = wheyPlan();
+  assert.ok(hasWhey(withWhey), "precondition: whey-enabled plan should carry a shake");
+  const off = setPlanProteinPowderAccess(withWhey, false, DIET_PLAN_POOL);
+  assert.ok(!hasWhey(off), "whey must be stripped when powder is disabled");
+  assert.ok(countItems(off) < countItems(withWhey), "item count must drop → regenerate nudge fires");
+});
+
+test("normalization signal: tightening diet mode drops the item count", () => {
+  // Pick a non_veg plan that actually carries meat so normalization has work to do.
+  let base: DietPlan | null = null;
+  for (const seed of SEEDS) {
+    const p = planFor("non_veg", { seed });
+    if (anyAnimalItems(p) >= 1) { base = p; break; }
+  }
+  assert.ok(base, "could not build a meat-carrying non_veg plan");
+  const veg = setPlanDietMode(base!, "vegetarian", DIET_PLAN_POOL, true);
+  assert.ok(countItems(veg) < countItems(base!), "veg switch must drop item count → nudge fires");
+
+  // Flexitarian only trims when there are 2+ meat items; find such a plan.
+  let twoMeat: DietPlan | null = null;
+  for (const seed of SEEDS) {
+    const p = planFor("non_veg", { seed });
+    if (anyAnimalItems(p) >= 2) { twoMeat = p; break; }
+  }
+  if (twoMeat) {
+    const flex = setPlanDietMode(twoMeat, "flexitarian", DIET_PLAN_POOL, true);
+    assert.ok(countItems(flex) < countItems(twoMeat), "flexitarian trim must drop item count → nudge fires");
+  }
+});
+
+test("normalization signal: an already-matching plan does NOT drop items (no false nudge)", () => {
+  const veg = planFor("vegetarian", { seed: 4100 });
+  const renormalized = setPlanDietMode(veg, "vegetarian", DIET_PLAN_POOL, true);
+  assert.equal(countItems(renormalized), countItems(veg), "no items removed → no nudge");
+});
+
+// --- whey-enabled extra-item repair -------------------------------------------
+
+test("explicit whey enabled lets the repair add a shake for a protein shortfall", () => {
+  const plan = wheyPlan(4100);
+  assert.ok(hasWhey(plan), "whey-enabled protein-short plan should top up with a shake");
+  const wheyItem = plan.meals.flatMap((m) => m.items).find((i) => i.id === "whey");
+  assert.equal(wheyItem?.amount, 1, "whey must stay at one serving");
+});
+
+test("whey disabled or unknown still blocks whey from the repair", () => {
+  // Disabled and unknown both resolve to allowProteinPowder=false (no opt-in text).
+  const filter = filterFromPreference("high_protein", { regionFocus: "desi", profileRegion: "pakistan" }, "non_veg");
+  const pool = buildMealCandidatePool({ filter, region: "pakistan", foodPreference: "high_protein", allowProteinPowder: false });
+  const plan = buildPlan({ calorieTarget: 2100, proteinTargetG: 150, filter, pool, seed: 4100, foodPreference: "high_protein", allowProteinPowder: false });
+  assert.ok(!hasWhey(plan), "whey must never appear when powder is not enabled");
+});
+
+test("whey-enabled repair respects an explicit avoid of the shake", () => {
+  const filter = filterFromPreference(
+    "high_protein",
+    { regionFocus: "desi", profileRegion: "pakistan", excludeFoods: ["whey protein shake"] },
+    "non_veg"
+  );
+  const pool = buildMealCandidatePool({ filter, region: "pakistan", foodPreference: "high_protein", allowProteinPowder: true });
+  const plan = buildPlan({ calorieTarget: 2100, proteinTargetG: 150, filter, pool, seed: 4100, foodPreference: "high_protein", allowProteinPowder: true });
+  assert.ok(!hasWhey(plan), "avoided whey must not be added even with powder enabled");
+});
+
+// --- user-facing copy hygiene -------------------------------------------------
+
+test("diet-screen copy never exposes internal/technical terms", () => {
+  const forbidden = /\b(groq|429|http|llm|fallback|validation|model|exception|stack ?trace|null|undefined)\b/i;
+  for (const rel of ["../../app/diet/DietPlanView.tsx", "../../app/diet/AddFoodPanel.tsx"]) {
+    const src = readFileSync(new URL(rel, import.meta.url), "utf8");
+    // Extract just the user-facing copy dictionary: `const T = { ... } satisfies`.
+    const block = src.match(/const T = \{[\s\S]*?\n\} satisfies Record<string, Record<Lang, string>>;/);
+    assert.ok(block, `could not locate the copy dictionary in ${rel}`);
+    assert.ok(!forbidden.test(block![0]), `copy in ${rel} exposes an internal/technical term`);
+  }
 });

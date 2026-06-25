@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Screen } from "@/components/ui/Screen";
 import BottomNav from "@/components/BottomNav";
 import DietPlanView from "./DietPlanView";
-import { getDietPlan } from "./actions";
+import { getDietPlanState } from "./actions";
 import { filterFromPreference, mergeFilters, type DietFilter } from "@/lib/diet/planner";
 import { keywordPreferences } from "@/lib/coach/dietCoach";
 import { extractOnboardingNote } from "@/lib/onboarding/notes";
@@ -37,7 +37,7 @@ export default async function DietPage() {
   if (!profile?.onboarded) redirect("/onboarding");
 
   const lang = (profile?.preferred_language as Lang) ?? "en";
-  const plan = await getDietPlan();
+  const { plan, settingsChanged } = await getDietPlanState();
 
   // Today-aware Plan tab (the daily loop): read what's actually been eaten today
   // from the SAME food_logs source as Home, so "eaten / remaining" agrees across
@@ -95,6 +95,7 @@ export default async function DietPage() {
       <Screen>
         <DietPlanView
           initialPlan={plan}
+          initialSettingsChanged={settingsChanged}
           initialFilter={initialFilter}
           initialUsual={initialUsual}
           hasTargets={!!profile?.calorie_target}

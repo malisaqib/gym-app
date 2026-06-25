@@ -1385,7 +1385,18 @@ function repairWithOneExtraItem(
       if (dailyDairyGrams(trial) > 400) continue;
       const totals = builtTotals(trial);
       const failures = targetFailureCount(totals, calorieTarget, proteinTargetG);
-      if (failures >= baselineFailures) continue;
+      // Whey is the user's opted-in protein lever (it only reaches `candidates`
+      // when protein powder is explicitly enabled). When protein is short, accept
+      // a single shake that RAISES protein even if one serving can't fully clear
+      // the threshold — but never when it would worsen the overall failure count
+      // (e.g. tipping calories over). Non-whey items still must strictly reduce
+      // failures, so we don't bloat meals with extra dishes that only narrow a gap.
+      const wheyProteinBoost =
+        proteinShort &&
+        candidate.food.tags.includes("supplement") &&
+        failures <= baselineFailures &&
+        totals.protein > baselineTotals.protein;
+      if (failures >= baselineFailures && !wheyProteinBoost) continue;
 
       const result = {
         meals: trial,

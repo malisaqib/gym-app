@@ -85,7 +85,24 @@ const splitTerms = (s: string | null | undefined) =>
     .map((t) => t.trim())
     .filter((t) => t.length >= 3);
 
+const countPlanItems = (plan: DietPlan) =>
+  plan.meals.reduce((sum, meal) => sum + meal.items.length, 0);
+
 async function loadSavedPlan(supabase: Supa, userId: string): Promise<DietPlan | null> {
+  return (await loadSavedPlanState(supabase, userId))?.plan ?? null;
+}
+
+/**
+ * Load + normalize the saved plan AND report whether normalization actually
+ * removed/trimmed foods because the profile's diet mode or protein-powder
+ * preference changed since the plan was built. Normalization only ever drops
+ * items, so a lower item count is the signal that the plan no longer matches the
+ * user's current preferences (used to nudge a Regenerate — see the diet screen).
+ */
+async function loadSavedPlanState(
+  supabase: Supa,
+  userId: string
+): Promise<{ plan: DietPlan; settingsChanged: boolean } | null> {
   const [{ data: row }, { data: profile }] = await Promise.all([
     supabase.from("meal_plans").select("plan").eq("user_id", userId).maybeSingle(),
     supabase
@@ -126,12 +143,16 @@ async function loadSavedPlan(supabase: Supa, userId: string): Promise<DietPlan |
     legacyText
   );
   const dietMode = resolveDietMode(profile?.diet_mode, profile?.food_preference);
-  return setPlanDietMode(
+  const normalized = setPlanDietMode(
     setPlanProteinPowderAccess(plan, allowProteinPowder, DIET_PLAN_POOL),
     dietMode,
     DIET_PLAN_POOL,
     hasExplicitDietMode(profile?.diet_mode)
   );
+  // Normalization only removes items (whey when powder is off, meat/fish when the
+  // mode tightened) — a drop means the saved plan no longer matches current prefs.
+  const settingsChanged = countPlanItems(normalized) < countPlanItems(plan);
+  return { plan: normalized, settingsChanged };
 }
 
 /** Load the user's saved plan (or null). */
@@ -143,6 +164,22 @@ export async function getDietPlan(): Promise<DietPlan | null> {
   if (!user) return null;
 
   return loadSavedPlan(supabase, user.id);
+}
+
+/**
+ * Initial page load: the saved plan plus whether it was just normalized to match
+ * changed profile preferences (so the screen can nudge a Regenerate). Per-item
+ * actions use {@link getDietPlan} and don't need this signal.
+ */
+export async function getDietPlanState(): Promise<{ plan: DietPlan | null; settingsChanged: boolean }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { plan: null, settingsChanged: false };
+
+  const state = await loadSavedPlanState(supabase, user.id);
+  return { plan: state?.plan ?? null, settingsChanged: state?.settingsChanged ?? false };
 }
 
 /**
