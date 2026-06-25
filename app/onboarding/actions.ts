@@ -9,6 +9,7 @@ import { isRegion } from "@/lib/region";
 import { logEvent } from "@/lib/analytics";
 import type {
   ActivityLevel,
+  DietMode,
   Experience,
   ProteinPowderPreference,
   Sex,
@@ -20,6 +21,7 @@ const SEXES: Sex[] = ["male", "female"];
 const EXPERIENCES: Experience[] = ["beginner", "intermediate", "advanced"];
 const ACTIVITY_LEVELS: ActivityLevel[] = ["sedentary", "light", "moderate", "very", "extra"];
 const PROTEIN_POWDER_PREFERENCES: ProteinPowderPreference[] = ["enabled", "disabled", "unknown"];
+const DIET_MODES: DietMode[] = ["vegetarian", "flexitarian", "non_veg", "unknown"];
 
 type SaveResult =
   | { ok: true; plan: GoalPlan; targetDate: string | null; goalWeightKg: number; guidance: PlanGuidance }
@@ -55,6 +57,7 @@ export async function saveOnboarding(input: OnboardingInput): Promise<SaveResult
     SEXES.includes(input.sex) &&
     EXPERIENCES.includes(input.experience) &&
     ACTIVITY_LEVELS.includes(input.activityLevel) &&
+    DIET_MODES.includes(input.dietMode) &&
     PROTEIN_POWDER_PREFERENCES.includes(input.proteinPowderPreference) &&
     isRegion(input.region) &&
     Number.isFinite(age) && age >= 13 && age <= 99 &&
@@ -102,6 +105,7 @@ export async function saveOnboarding(input: OnboardingInput): Promise<SaveResult
       timeline: input.timeline,
       training_location: input.trainingLocation,
       food_preference: input.foodPreference,
+      diet_mode: input.dietMode,
       protein_powder_preference: input.proteinPowderPreference,
       sex: input.sex,
       age,

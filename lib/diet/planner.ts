@@ -1,5 +1,9 @@
 import type { FoodPreference, Region } from "@/lib/database.types";
 import { explicitProteinPowderOptIn } from "./proteinPowder.ts";
+import {
+  resolveDietMode,
+  type ResolvedDietMode,
+} from "./dietMode.ts";
 import { FOOD_CATALOG, CATALOG_BY_ID, type CatalogFood, type MealSlot } from "./foodCatalog.ts";
 import { isUnsafeImportedPlannerFood } from "./foodClassify.ts";
 import {
@@ -28,6 +32,7 @@ import {
 
 export interface DietFilter {
   vegetarian: boolean;
+  dietMode?: ResolvedDietMode;
   excludeTags: string[]; // whole categories to remove (e.g. "beef") — matched on tags
   excludeFoods: string[]; // SPECIFIC foods to avoid, free text (e.g. "whey protein shake")
   regionFocus: "desi" | "western" | null; // soft lean, not a hard filter
@@ -95,7 +100,8 @@ export type DietPlanValidationIssueCode =
   | "portion_too_small"
   | "portion_step_invalid"
   | "quantity_mismatch"
-  | "excessive_repeat";
+  | "excessive_repeat"
+  | "diet_mode_violation";
 
 export interface DietPlanValidationIssue {
   code: DietPlanValidationIssueCode;
@@ -219,7 +225,13 @@ export function normalizeDietPlan(
     proteinTargetG,
     totalCalories,
     totalProtein,
-    filter: input.filter ?? { vegetarian: false, excludeTags: [], excludeFoods: [], regionFocus: null },
+    filter: input.filter ?? {
+      vegetarian: false,
+      dietMode: "non_veg",
+      excludeTags: [],
+      excludeFoods: [],
+      regionFocus: null,
+    },
     proteinShort: totalProtein < proteinTargetG * PROTEIN_SHORT_THRESHOLD,
     caloriesShort: totalCalories < calorieTarget * SHORT_THRESHOLD,
     seed: safeNumber(input.seed) || 1,
@@ -235,10 +247,13 @@ export function normalizeDietPlan(
 /** Build a filter from the saved food preference + any AI-parsed extras. */
 export function filterFromPreference(
   pref: FoodPreference | null,
-  extra?: Partial<DietFilter>
+  extra?: Partial<DietFilter>,
+  dietMode?: ResolvedDietMode
 ): DietFilter {
+  const resolvedMode = dietMode ?? resolveDietMode(null, pref);
   const base: DietFilter = {
-    vegetarian: pref === "veg_limited",
+    vegetarian: resolvedMode === "vegetarian",
+    dietMode: resolvedMode,
     excludeTags: [],
     excludeFoods: [],
     regionFocus: null,
@@ -246,6 +261,7 @@ export function filterFromPreference(
   };
   return {
     vegetarian: extra?.vegetarian ?? base.vegetarian,
+    dietMode: extra?.dietMode ?? base.dietMode,
     regionFocus: extra?.regionFocus ?? base.regionFocus,
     profileRegion: extra?.profileRegion ?? base.profileRegion,
     excludeTags: dedupe([...base.excludeTags, ...(extra?.excludeTags ?? [])]),
@@ -259,12 +275,14 @@ export function filterFromPreference(
  */
 export function mergeFilters(...parts: Partial<DietFilter>[]): DietFilter {
   let vegetarian = false;
+  let dietMode: ResolvedDietMode | undefined;
   let regionFocus: DietFilter["regionFocus"] = null;
   let profileRegion: Region | null = null;
   const tags = new Set<string>();
   const foods = new Set<string>();
   for (const p of parts) {
     if (p.vegetarian) vegetarian = true;
+    if (p.dietMode) dietMode = p.dietMode;
     if (p.regionFocus) regionFocus = p.regionFocus;
     if (p.profileRegion) profileRegion = p.profileRegion;
     (p.excludeTags ?? []).forEach((t) => tags.add(t));
@@ -272,6 +290,7 @@ export function mergeFilters(...parts: Partial<DietFilter>[]): DietFilter {
   }
   return {
     vegetarian,
+    dietMode,
     regionFocus,
     profileRegion,
     excludeTags: [...tags],
@@ -324,14 +343,86 @@ function mentioned(food: CatalogFood, text: string): boolean {
   return tokens.some((tok) => wordPhrase(t, tok));
 }
 
+// How specifically does the free text name this food? A whole-name or alias
+// phrase match is the strongest signal; otherwise we count distinct matched
+// tags/name-tokens. Used to tell whether the user clearly typed a meat/fish
+// dish (which a diet mode blocks) vs. merely shares a generic token like
+// "curry" with an allowed vegetarian food. Mirrors mentioned()'s matching.
+function mentionScore(food: CatalogFood, text: string): number {
+  const t = text.toLowerCase();
+  if (!t.trim()) return 0;
+  const name = food.name.toLowerCase();
+  if (wordPhrase(t, name)) return 1000 + name.length;
+  for (const a of food.aliases ?? []) {
+    const al = a.toLowerCase();
+    if (al.length >= 3 && wordPhrase(t, al)) return 1000 + al.length;
+  }
+  let score = 0;
+  for (const tag of food.tags) {
+    if (tag.length >= 3 && wordPhrase(t, tag.toLowerCase())) score++;
+  }
+  const tokens = new Set(name.replace(/[^a-z]+/g, " ").split(" ").filter((w) => w.length >= 4));
+  for (const tok of tokens) {
+    if (wordPhrase(t, tok)) score++;
+  }
+  return score;
+}
+
 function allowed(food: CatalogFood, filter: DietFilter): boolean {
   if (isUnsafeImportedPlannerFood(food)) return false;
   // Veg drops only meat/fish (food.vegetarian = lacto-ovo). Egg/dairy/nuts are
   // NOT dropped by the veg toggle — they're avoided individually via excludeTags.
-  if (filter.vegetarian && !food.vegetarian) return false;
+  if (effectiveDietMode(filter) === "vegetarian" && !food.vegetarian) return false;
   if (food.tags.some((t) => filter.excludeTags.includes(t))) return false;
   if (matchesAvoidedFood(food, filter.excludeFoods ?? [])) return false;
   return true;
+}
+
+// Would this food be valid if the diet mode placed NO restriction on meat/fish?
+// (i.e. it only fails the vegetarian/flexitarian-animal rule, not unsafe/avoid/
+// supplement gates). Lets us tell a diet-mode block apart from other reasons.
+function allowedIgnoringDietAnimal(
+  food: CatalogFood,
+  filter: DietFilter,
+  allowProteinPowder: boolean
+): boolean {
+  if (isUnsafeImportedPlannerFood(food)) return false;
+  if (food.tags.some((t) => filter.excludeTags.includes(t))) return false;
+  if (matchesAvoidedFood(food, filter.excludeFoods ?? [])) return false;
+  if (food.tags.includes("supplement") && !allowProteinPowder) return false;
+  return true;
+}
+
+export function effectiveDietMode(filter: DietFilter): ResolvedDietMode {
+  if (filter.vegetarian) return "vegetarian";
+  return filter.dietMode ?? "non_veg";
+}
+
+const FLEXITARIAN_MAIN_SLOTS = new Set<MealSlot>(["lunch", "dinner"]);
+
+function isAnimalFood(food: CatalogFood): boolean {
+  return !food.vegetarian;
+}
+
+function mealHasAnimalFood(meal: Pick<PlanMeal, "items">, pool: CatalogFood[]): boolean {
+  return meal.items.some((item) => {
+    const food = pool.find((candidate) => candidate.id === item.id) ?? CATALOG_BY_ID[item.id];
+    return food ? isAnimalFood(food) : false;
+  });
+}
+
+function builtMealHasAnimalFood(meal: BuiltMeal): boolean {
+  return meal.picks.some((pick) => isAnimalFood(pick.food));
+}
+
+function flexitarianFoodAllowed(
+  food: CatalogFood,
+  filter: DietFilter,
+  slot: MealSlot,
+  animalMainUsedElsewhere: boolean
+): boolean {
+  if (effectiveDietMode(filter) !== "flexitarian" || !isAnimalFood(food)) return true;
+  return FLEXITARIAN_MAIN_SLOTS.has(slot) && !animalMainUsedElsewhere;
 }
 
 export function isDietPlanFoodAllowed(food: CatalogFood, filter: DietFilter): boolean {
@@ -348,10 +439,33 @@ function allowedForAutoPlan(food: CatalogFood, filter: DietFilter): boolean {
 function allowedForPlanOperation(
   food: CatalogFood,
   filter: DietFilter,
-  allowProteinPowder: boolean
+  allowProteinPowder: boolean,
+  slot?: MealSlot,
+  plan?: Pick<DietPlan, "meals">,
+  // Validation walks items already on the plan; the day-level cap is checked
+  // separately there (diet_mode_violation), so the per-item flexitarian count is
+  // skipped to avoid flagging the single legitimately placed meat/fish item.
+  ignoreFlexitarianLimit = false
 ): boolean {
   if (!allowed(food, filter)) return false;
   if (food.tags.includes("supplement") && !allowProteinPowder) return false;
+  if (
+    !ignoreFlexitarianLimit &&
+    slot &&
+    plan &&
+    effectiveDietMode(filter) === "flexitarian" &&
+    isAnimalFood(food)
+  ) {
+    // Candidate filtering: a meat/fish item may only be ADDED when the plan has
+    // no meat/fish in ANY main meal yet (the day's single allowance). Counting
+    // the current slot too stops two meat dishes stacking in one meal.
+    const animalMainAlreadyUsed = plan.meals.some(
+      (meal) =>
+        FLEXITARIAN_MAIN_SLOTS.has(meal.slot) &&
+        mealHasAnimalFood(meal, FOOD_CATALOG)
+    );
+    if (!flexitarianFoodAllowed(food, filter, slot, animalMainAlreadyUsed)) return false;
+  }
   return true;
 }
 
@@ -474,7 +588,15 @@ export function validateDietPlan(plan: DietPlan, pool: CatalogFood[] = FOOD_CATA
       if (
         (!food && !item.approx) ||
         isUnsafeImportedPlannerFood(food ?? item) ||
-        (food && !allowedForPlanOperation(food, plan.filter, plan.allowProteinPowder === true))
+        (food &&
+          !allowedForPlanOperation(
+            food,
+            plan.filter,
+            plan.allowProteinPowder === true,
+            meal.slot,
+            plan,
+            true // day-level flexitarian cap is checked separately below
+          ))
       ) {
         issues.push({
           code: "unsafe_food",
@@ -537,6 +659,36 @@ export function validateDietPlan(plan: DietPlan, pool: CatalogFood[] = FOOD_CATA
     }
   }
 
+  if (effectiveDietMode(plan.filter) === "flexitarian") {
+    // Flexitarian is "little meat": at most ONE meat/fish item per day, and only
+    // in a lunch/dinner main meal. Counting items (not just meals) also catches a
+    // single main meal that stacks two meat dishes.
+    let animalMainItems = 0;
+    for (const meal of plan.meals) {
+      if (!FLEXITARIAN_MAIN_SLOTS.has(meal.slot)) continue;
+      for (const item of meal.items) {
+        const food = pool.find((candidate) => candidate.id === item.id) ?? CATALOG_BY_ID[item.id];
+        if (food && isAnimalFood(food)) animalMainItems++;
+      }
+    }
+    // Meat/fish in a non-main slot (breakfast/snack) is never allowed for flexitarian.
+    const animalOffMainItems = plan.meals
+      .filter((meal) => !FLEXITARIAN_MAIN_SLOTS.has(meal.slot))
+      .flatMap((meal) => meal.items)
+      .filter((item) => {
+        const food = pool.find((candidate) => candidate.id === item.id) ?? CATALOG_BY_ID[item.id];
+        return food ? isAnimalFood(food) : false;
+      }).length;
+    if (animalMainItems + animalOffMainItems > 1) {
+      issues.push({
+        code: "diet_mode_violation",
+        message: "Flexitarian plans can include meat or fish in at most one main meal.",
+        amount: animalMainItems + animalOffMainItems,
+        maxAmount: 1,
+      });
+    }
+  }
+
   const repeatCounts = new Map<string, number>();
   for (const item of plan.meals.flatMap((meal) => meal.items)) {
     repeatCounts.set(item.id, (repeatCounts.get(item.id) ?? 0) + 1);
@@ -568,7 +720,11 @@ export function validateDietPlan(plan: DietPlan, pool: CatalogFood[] = FOOD_CATA
     i.code === "portion_step_invalid" ||
     i.code === "quantity_mismatch"
   );
-  const foodsOk = !issues.some((i) => i.code === "unsafe_food" || i.code === "excessive_repeat");
+  const foodsOk = !issues.some((i) =>
+    i.code === "unsafe_food" ||
+    i.code === "excessive_repeat" ||
+    i.code === "diet_mode_violation"
+  );
   return { ok: targetOk && portionsOk && foodsOk, targetOk, portionsOk, foodsOk, issues };
 }
 
@@ -1162,11 +1318,18 @@ function repairWithOneExtraItem(
 
   const usedIds = new Set(meals.flatMap((meal) => meal.picks.map((pick) => pick.food.id)));
   const usedFamilies = new Set(meals.flatMap((meal) => meal.picks.map((pick) => extraItemFamily(pick.food))));
+  // Flexitarian is capped at ONE meat/fish item per day across the main meals.
+  // If the day already spent that allowance (anywhere, including the meal we are
+  // repairing), no extra animal item may be added — only vegetarian proteins.
+  const animalMainAlreadyUsed = meals.some(
+    (meal) => FLEXITARIAN_MAIN_SLOTS.has(meal.slot) && builtMealHasAnimalFood(meal)
+  );
   const candidates = meals.flatMap((meal, mealIndex) =>
     meal.picks.length >= 4
       ? []
       : meal.cands
           .filter((food) => !usedIds.has(food.id))
+          .filter((food) => flexitarianFoodAllowed(food, filter, meal.slot, animalMainAlreadyUsed))
           .filter((food) => {
             if (proteinShort) {
               return food.role === "protein" || food.staple === "protein" || proteinDensity(food) >= 0.08;
@@ -1373,6 +1536,7 @@ export function buildPlan(input: {
     input.allowProteinPowder ?? explicitProteinPowderOptIn(usualAll);
 
   const usedCounts = new Map<string, number>();
+  let animalMainUsed = false;
   const built: BuiltMeal[] = slotBudgets(input.calorieTarget).map((s) => {
     const slotProtein = input.proteinTargetG * PROTEIN_SHARE[s.slot];
     const cands = pool.filter(
@@ -1381,7 +1545,8 @@ export function buildPlan(input: {
         (allowedForAutoPlan(f, input.filter) ||
           (f.tags.includes("supplement") &&
             allowed(f, input.filter) &&
-            allowProteinPowder))
+            allowProteinPowder)) &&
+        flexitarianFoodAllowed(f, input.filter, s.slot, animalMainUsed)
     );
     // Seed from this slot's usual meal PLUS any "keep" foods (keep applies to
     // every slot the food fits).
@@ -1402,6 +1567,9 @@ export function buildPlan(input: {
     );
     for (const pick of picks) {
       usedCounts.set(pick.food.id, (usedCounts.get(pick.food.id) ?? 0) + 1);
+    }
+    if (FLEXITARIAN_MAIN_SLOTS.has(s.slot) && picks.some((pick) => isAnimalFood(pick.food))) {
+      animalMainUsed = true;
     }
     return { slot: s.slot, title: s.title, budget: s.cal, cands, picks };
   });
@@ -1549,7 +1717,18 @@ export function swapMeal(
       (allowedForAutoPlan(f, plan.filter) ||
         (plan.allowProteinPowder === true &&
           f.tags.includes("supplement") &&
-          allowed(f, plan.filter)))
+          allowed(f, plan.filter))) &&
+      flexitarianFoodAllowed(
+        f,
+        plan.filter,
+        slot,
+        plan.meals.some(
+          (meal) =>
+            meal.slot !== slot &&
+            FLEXITARIAN_MAIN_SLOTS.has(meal.slot) &&
+            mealHasAnimalFood(meal, pool)
+        )
+      )
   );
   const usedCounts = new Map<string, number>();
   for (const meal of plan.meals) {
@@ -1630,6 +1809,12 @@ export function replanRemaining(
   const proShareSum = openMeta.reduce((s, m) => s + PROTEIN_SHARE[m.slot], 0);
 
   const usedCounts = new Map<string, number>();
+  let animalMainUsed = plan.meals.some(
+    (meal) =>
+      eaten.has(meal.slot) &&
+      FLEXITARIAN_MAIN_SLOTS.has(meal.slot) &&
+      mealHasAnimalFood(meal, pool)
+  );
   for (const meal of plan.meals) {
     if (!eaten.has(meal.slot)) continue;
     for (const item of meal.items) {
@@ -1644,7 +1829,8 @@ export function replanRemaining(
         (allowedForAutoPlan(f, plan.filter) ||
           (plan.allowProteinPowder === true &&
             f.tags.includes("supplement") &&
-            allowed(f, plan.filter)))
+            allowed(f, plan.filter))) &&
+        flexitarianFoodAllowed(f, plan.filter, b.slot, animalMainUsed)
     );
     const picks = buildSimpleMeal(
       b.cal,
@@ -1661,6 +1847,9 @@ export function replanRemaining(
     );
     for (const pick of picks) {
       usedCounts.set(pick.food.id, (usedCounts.get(pick.food.id) ?? 0) + 1);
+    }
+    if (FLEXITARIAN_MAIN_SLOTS.has(b.slot) && picks.some((pick) => isAnimalFood(pick.food))) {
+      animalMainUsed = true;
     }
     return { slot: b.slot, title: b.title, budget: b.cal, cands, picks };
   });
@@ -1722,6 +1911,50 @@ export function setPlanProteinPowderAccess(
   return recompute({ ...plan, meals, allowProteinPowder }, pool);
 }
 
+/**
+ * Apply the profile diet mode to a saved plan. Explicit modes are authoritative;
+ * legacy unknown users keep any stricter saved vegetarian override.
+ */
+export function setPlanDietMode(
+  plan: DietPlan,
+  dietMode: ResolvedDietMode,
+  pool: CatalogFood[] = FOOD_CATALOG,
+  authoritative = true
+): DietPlan {
+  const vegetarian =
+    dietMode === "vegetarian" ||
+    (!authoritative && plan.filter.vegetarian);
+  // Flexitarian keeps the day's single allowed meat/fish ITEM (the first one in a
+  // main meal) and strips every other animal item — including a second item that a
+  // legacy non-veg plan stacked in the same meal.
+  let animalItemKept = false;
+  const meals = plan.meals.map((meal) => {
+    if (dietMode === "non_veg" && !vegetarian) return meal;
+    const mainSlot = FLEXITARIAN_MAIN_SLOTS.has(meal.slot);
+    const items = meal.items.filter((item) => {
+      const food = pool.find((candidate) => candidate.id === item.id) ?? CATALOG_BY_ID[item.id];
+      if (!food || !isAnimalFood(food)) return true; // non-animal items always stay
+      if (vegetarian) return false; // vegetarian: drop all meat/fish
+      // flexitarian: keep only the first animal item, and only in a main slot
+      if (dietMode === "flexitarian" && mainSlot && !animalItemKept) {
+        animalItemKept = true;
+        return true;
+      }
+      return false;
+    });
+    return items.length === meal.items.length ? meal : { ...meal, items };
+  });
+  return recompute({
+    ...plan,
+    meals,
+    filter: {
+      ...plan.filter,
+      vegetarian,
+      dietMode,
+    },
+  }, pool);
+}
+
 const sumItemsCal = (items: PlanMealItem[]) => items.reduce((s, i) => s + i.calories, 0);
 const sumItemsPro = (items: PlanMealItem[]) => items.reduce((s, i) => s + i.protein, 0);
 const mealAt = (plan: DietPlan, slot: MealSlot) => plan.meals.find((m) => m.slot === slot);
@@ -1739,6 +1972,17 @@ export function removePlanItem(plan: DietPlan, slot: MealSlot, index: number): D
 export function insertPlanItem(plan: DietPlan, slot: MealSlot, index: number, item: PlanMealItem): DietPlan {
   const meal = mealAt(plan, slot);
   if (!meal) return plan;
+  const food = CATALOG_BY_ID[item.id];
+  if (
+    food &&
+    !allowedForPlanOperation(
+      food,
+      plan.filter,
+      plan.allowProteinPowder === true,
+      slot,
+      plan
+    )
+  ) return plan;
   const safeIndex = Math.max(0, Math.min(index, meal.items.length));
   return withMeal(plan, slot, [
     ...meal.items.slice(0, safeIndex),
@@ -1754,7 +1998,13 @@ export function addPlanItem(plan: DietPlan, slot: MealSlot, foodId: string, pool
   if (
     !food ||
     !meal ||
-    !allowedForPlanOperation(food, plan.filter, plan.allowProteinPowder === true)
+    !allowedForPlanOperation(
+      food,
+      plan.filter,
+      plan.allowProteinPowder === true,
+      slot,
+      plan
+    )
   ) return plan;
   return withMeal(plan, slot, [...meal.items, toItem(food)], pool);
 }
@@ -1892,7 +2142,13 @@ export function swapPlanItem(
     pool.filter(
       (f) =>
         f.slots.includes(slot) &&
-        allowedForPlanOperation(f, plan.filter, plan.allowProteinPowder === true) &&
+        allowedForPlanOperation(
+          f,
+          plan.filter,
+          plan.allowProteinPowder === true,
+          slot,
+          plan
+        ) &&
         !used.has(f.id) &&
         otherCal + f.calories <= meal.budget && // keep the meal within its budget
         extra(f)
@@ -1923,13 +2179,14 @@ export function searchCatalog(
   filter: DietFilter,
   slot?: MealSlot,
   pool: CatalogFood[] = FOOD_CATALOG,
-  allowProteinPowder = false
+  allowProteinPowder = false,
+  plan?: Pick<DietPlan, "meals">
 ): CatalogFood[] {
   const q = query.toLowerCase().trim();
   if (q.length < 2) return [];
   const tokens = q.split(/\s+/).filter(Boolean);
   return pool.filter((f) => {
-    if (!allowedForPlanOperation(f, filter, allowProteinPowder)) return false;
+    if (!allowedForPlanOperation(f, filter, allowProteinPowder, slot, plan)) return false;
     if (slot && !f.slots.includes(slot)) return false;
     const hay = `${f.name} ${f.tags.join(" ")} ${(f.aliases ?? []).join(" ")}`.toLowerCase();
     return tokens.every((tok) => hay.includes(tok));
@@ -1942,17 +2199,35 @@ export function bestCatalogMatch(
   filter: DietFilter,
   slot?: MealSlot,
   pool: CatalogFood[] = FOOD_CATALOG,
-  allowProteinPowder = false
+  allowProteinPowder = false,
+  plan?: Pick<DietPlan, "meals">
 ): CatalogFood | null {
   if (!allowProteinPowder && explicitProteinPowderOptIn(text)) return null;
-  return (
+  const fitsSlot = (f: CatalogFood) => !slot || f.slots.includes(slot);
+  const match =
     pool.find(
       (f) =>
-        (!slot || f.slots.includes(slot)) &&
-        allowedForPlanOperation(f, filter, allowProteinPowder) &&
+        fitsSlot(f) &&
+        allowedForPlanOperation(f, filter, allowProteinPowder, slot, plan) &&
         mentioned(f, text)
-    ) ?? null
+    ) ?? null;
+
+  // Anti-substitution guard: if the user clearly typed a meat/fish dish that the
+  // diet mode blocks (vegetarian, or a flexitarian day that already used its one
+  // meat/fish main), do NOT silently swap in a vegetarian food that merely shares
+  // a generic token ("curry", "aloo"). Reject so the caller shows "not available".
+  const matchScore = match ? mentionScore(match, text) : 0;
+  const namesBlockedAnimal = pool.some(
+    (f) =>
+      isAnimalFood(f) &&
+      fitsSlot(f) &&
+      mentioned(f, text) &&
+      allowedIgnoringDietAnimal(f, filter, allowProteinPowder) &&
+      !allowedForPlanOperation(f, filter, allowProteinPowder, slot, plan) &&
+      mentionScore(f, text) > matchScore
   );
+  if (namesBlockedAnimal) return null;
+  return match;
 }
 
 // --- helpers ----------------------------------------------------------------

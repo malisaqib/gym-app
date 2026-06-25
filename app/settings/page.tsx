@@ -9,6 +9,7 @@ import { FeedbackForm } from "@/components/FeedbackForm";
 import ProfileEditor, { type ProfileDetails } from "./ProfileEditor";
 import BottomNav from "@/components/BottomNav";
 import type { Lang, Profile } from "@/lib/database.types";
+import { resolveDietMode } from "@/lib/diet/dietMode";
 
 // Protected by its own auth check (same pattern as other pages).
 export default async function SettingsPage() {
@@ -21,7 +22,7 @@ export default async function SettingsPage() {
   const { data: profile } = await supabase
     .from("profiles")
     .select(
-      "full_name, relatable_goal, timeline, training_location, food_preference, protein_powder_preference, region, sex, age, height_cm, weight_kg, training_days, experience, calorie_target, protein_target_g, carb_target_g, fat_target_g, preferred_language, activity_level, goal_weight_kg, weekly_pace_kg, target_date, usual_breakfast, usual_lunch, usual_dinner, usual_foods, disliked_foods"
+      "full_name, relatable_goal, timeline, training_location, food_preference, diet_mode, protein_powder_preference, region, sex, age, height_cm, weight_kg, training_days, experience, calorie_target, protein_target_g, carb_target_g, fat_target_g, preferred_language, activity_level, goal_weight_kg, weekly_pace_kg, target_date, usual_breakfast, usual_lunch, usual_dinner, usual_foods, disliked_foods"
     )
     .eq("id", user.id)
     .single<Partial<Profile>>();
@@ -36,7 +37,11 @@ export default async function SettingsPage() {
     relatableGoal: profile?.relatable_goal ?? "general",
     timeline: profile?.timeline ?? "no_deadline",
     trainingLocation: profile?.training_location ?? "home",
-    foodPreference: profile?.food_preference ?? "normal_desi",
+    foodPreference:
+      profile?.food_preference === "veg_limited"
+        ? "normal_desi"
+        : profile?.food_preference ?? "normal_desi",
+    dietMode: profile?.diet_mode ?? resolveDietMode(null, profile?.food_preference),
     proteinPowderPreference: profile?.protein_powder_preference ?? "unknown",
     region: profile?.region ?? null,
     sex: profile?.sex ?? "male",

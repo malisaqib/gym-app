@@ -17,7 +17,9 @@ import {
   bestCatalogMatch,
   replanRemaining,
   buildPlanFromSelectionIds,
+  effectiveDietMode,
   normalizeDietPlan,
+  setPlanDietMode,
   setPlanProteinPowderAccess,
   type DietPlan,
   type DietFilter,
@@ -31,6 +33,10 @@ import {
   buildMealCandidateLists,
 } from "@/lib/diet/mealCandidates";
 import { resolveProteinPowderPreference } from "@/lib/diet/proteinPowder";
+import {
+  hasExplicitDietMode,
+  resolveDietMode,
+} from "@/lib/diet/dietMode";
 import { parsePreferences, keywordPreferences } from "@/lib/coach/dietCoach";
 import type { MealSlot } from "@/lib/diet/foodCatalog";
 import { DIET_PLAN_POOL } from "@/lib/diet/planPool";
@@ -44,6 +50,7 @@ import { consumeUsage, USAGE_LIMIT_MESSAGE } from "@/lib/usage";
 import { reportError } from "@/lib/log";
 import type {
   ActivityLevel,
+  DietMode,
   FoodLog,
   FoodPreference,
   Goal,
@@ -84,12 +91,14 @@ async function loadSavedPlan(supabase: Supa, userId: string): Promise<DietPlan |
     supabase
       .from("profiles")
       .select(
-        "calorie_target, protein_target_g, protein_powder_preference, usual_breakfast, usual_lunch, usual_dinner, usual_foods, keep_foods"
+        "calorie_target, protein_target_g, food_preference, diet_mode, protein_powder_preference, usual_breakfast, usual_lunch, usual_dinner, usual_foods, keep_foods"
       )
       .eq("id", userId)
       .maybeSingle<{
         calorie_target: number | null;
         protein_target_g: number | null;
+        food_preference: FoodPreference | null;
+        diet_mode: DietMode | null;
         protein_powder_preference: ProteinPowderPreference | null;
         usual_breakfast: string | null;
         usual_lunch: string | null;
@@ -116,7 +125,13 @@ async function loadSavedPlan(supabase: Supa, userId: string): Promise<DietPlan |
     profile?.protein_powder_preference,
     legacyText
   );
-  return setPlanProteinPowderAccess(plan, allowProteinPowder, DIET_PLAN_POOL);
+  const dietMode = resolveDietMode(profile?.diet_mode, profile?.food_preference);
+  return setPlanDietMode(
+    setPlanProteinPowderAccess(plan, allowProteinPowder, DIET_PLAN_POOL),
+    dietMode,
+    DIET_PLAN_POOL,
+    hasExplicitDietMode(profile?.diet_mode)
+  );
 }
 
 /** Load the user's saved plan (or null). */
@@ -167,7 +182,7 @@ export async function generateDietPlan(input?: {
   const { data: profile } = await supabase
     .from("profiles")
     .select(
-      "calorie_target, protein_target_g, weight_kg, goal, activity_level, training_location, food_preference, protein_powder_preference, preferred_language, region, sex, usual_breakfast, usual_lunch, usual_dinner, usual_foods, keep_foods, disliked_foods"
+      "calorie_target, protein_target_g, weight_kg, goal, activity_level, training_location, food_preference, diet_mode, protein_powder_preference, preferred_language, region, sex, usual_breakfast, usual_lunch, usual_dinner, usual_foods, keep_foods, disliked_foods"
     )
     .eq("id", user.id)
     .single<{
@@ -178,6 +193,7 @@ export async function generateDietPlan(input?: {
       activity_level: ActivityLevel | null;
       training_location: TrainingLocation | null;
       food_preference: FoodPreference | null;
+      diet_mode: DietMode | null;
       protein_powder_preference: ProteinPowderPreference | null;
       preferred_language: Lang | null;
       region: Region | null;
@@ -208,10 +224,18 @@ export async function generateDietPlan(input?: {
       : profile?.region === "us_canada" || profile?.region === "uk_europe"
         ? "western"
         : null;
-  const base = filterFromPreference(profile?.food_preference ?? null, {
-    regionFocus,
-    profileRegion: profile?.region ?? null,
-  });
+  const profileDietMode = resolveDietMode(
+    profile?.diet_mode,
+    profile?.food_preference
+  );
+  const base = filterFromPreference(
+    profile?.food_preference ?? null,
+    {
+      regionFocus,
+      profileRegion: profile?.region ?? null,
+    },
+    profileDietMode
+  );
 
   const hasChoices =
     !!input &&
@@ -496,6 +520,7 @@ async function buildHybridPlan(args: {
     activityLevel: args.activityLevel,
     trainingLocation: args.trainingLocation,
     vegetarian: filter.vegetarian,
+    dietMode: effectiveDietMode(filter),
     excludeTags: filter.excludeTags,
     excludeFoods: filter.excludeFoods,
     allowProteinPowder,
@@ -705,7 +730,8 @@ export async function searchDietFoods(slot: MealSlot, query: string): Promise<Se
     ctx.plan.filter,
     slot,
     DIET_PLAN_POOL,
-    ctx.plan.allowProteinPowder === true
+    ctx.plan.allowProteinPowder === true,
+    ctx.plan
   ).map((f) => ({
     id: f.id,
     name: f.name,
@@ -729,7 +755,8 @@ export async function addCustomDietItem(slot: MealSlot, text: string): Promise<A
     ctx.plan.filter,
     slot,
     DIET_PLAN_POOL,
-    ctx.plan.allowProteinPowder === true
+    ctx.plan.allowProteinPowder === true,
+    ctx.plan
   );
   if (!match) {
     return {

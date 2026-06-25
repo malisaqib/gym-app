@@ -8,6 +8,7 @@ import type {
   TrainingLocation,
 } from "@/lib/database.types";
 import type { MealCandidateLists } from "./mealCandidates.ts";
+import type { ResolvedDietMode } from "./dietMode.ts";
 
 /**
  * Groq chooses only catalog ids from explicit, profile-filtered candidate lists.
@@ -54,6 +55,7 @@ export interface MealSelectionProfile {
   activityLevel: ActivityLevel | null;
   trainingLocation: TrainingLocation | null;
   vegetarian: boolean;
+  dietMode: ResolvedDietMode;
   excludeTags: string[];
   excludeFoods: string[];
   allowProteinPowder: boolean;
@@ -80,7 +82,8 @@ export interface MealSelectionRequestOptions {
  */
 export function parseMealSelection(
   raw: unknown,
-  candidates: MealCandidateLists
+  candidates: MealCandidateLists,
+  dietMode: ResolvedDietMode = "non_veg"
 ): MealSelection | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const record = raw as Record<string, unknown>;
@@ -90,11 +93,13 @@ export function parseMealSelection(
   const out: MealSelection = { breakfast: [], lunch: [], dinner: [], snack: [] };
   const dayCounts = new Map<string, number>();
   let total = 0;
+  // Flexitarian is capped at ONE meat/fish item per day, only in a main meal.
+  let animalMainItems = 0;
 
   for (const slot of SELECTION_SLOTS) {
     const list = record[slot] as unknown[];
     if (list.length > MAX_PER_SLOT) return null;
-    const allowedIds = new Set(candidates[slot].map((candidate) => candidate.id));
+    const candidateById = new Map(candidates[slot].map((candidate) => [candidate.id, candidate]));
     const slotIds = new Set<string>();
 
     for (const item of list) {
@@ -102,7 +107,14 @@ export function parseMealSelection(
       const value = item as Record<string, unknown>;
       if (Object.keys(value).some((key) => key !== "id")) return null;
       const id = typeof value.id === "string" ? value.id.trim() : "";
-      if (!id || !allowedIds.has(id) || slotIds.has(id)) return null;
+      const candidate = candidateById.get(id);
+      if (!id || !candidate || slotIds.has(id)) return null;
+      if (dietMode === "vegetarian" && !candidate.vegetarian) return null;
+      if (dietMode === "flexitarian" && !candidate.vegetarian) {
+        if (slot !== "lunch" && slot !== "dinner") return null;
+        animalMainItems++;
+        if (animalMainItems > 1) return null;
+      }
 
       slotIds.add(id);
       dayCounts.set(id, (dayCounts.get(id) ?? 0) + 1);
@@ -161,6 +173,7 @@ USER CONTEXT:
 - Daily activity: ${profile.activityLevel ?? "unknown"}.
 - Training location: ${profile.trainingLocation ?? "unknown"}.
 - Vegetarian: ${profile.vegetarian ? "yes" : "no"}.
+- Diet mode: ${profile.dietMode}.
 - Avoid categories: ${profile.excludeTags.length ? profile.excludeTags.join(", ") : "none"}.
 - Avoid foods: ${profile.excludeFoods.length ? profile.excludeFoods.join(", ") : "none"}.
 - Protein powder: ${profile.allowProteinPowder ? "explicitly allowed" : "not allowed"}.
@@ -176,6 +189,8 @@ RULES:
 - Prefer regionMatch="specific", then "broad", then "global" when realistic.
 - Prefer common=true foods for the main meal structure.
 - Do not choose avoided foods. Candidate filtering is authoritative.
+- Vegetarian means no meat or fish.
+- Flexitarian means at most ONE meat or fish dish for the whole day, placed in either lunch or dinner; use vegetarian proteins everywhere else (breakfast and snack must be vegetarian).
 - Do not choose whey unless protein powder is explicitly allowed.
 - Do not choose fast food for automatic generation.
 - Avoid fancy nutrition-magazine meals.
@@ -225,7 +240,11 @@ export async function generateMealSelection(
     }
 
     try {
-      const selection = parseMealSelection(JSON.parse(content), profile.candidates);
+      const selection = parseMealSelection(
+        JSON.parse(content),
+        profile.candidates,
+        profile.dietMode
+      );
       return selection
         ? { selection, fallbackReason: null }
         : { selection: null, fallbackReason: "invalid_selection" };

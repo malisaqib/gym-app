@@ -1,5 +1,6 @@
 import type {
   ActivityLevel,
+  DietMode,
   Experience,
   FoodPreference,
   Lang,
@@ -233,7 +234,29 @@ export const STEPS: Step[] = [
       { value: "high_protein", label: { en: "High protein", roman_urdu: "High protein" } },
       { value: "budget", label: { en: "Budget", roman_urdu: "Budget" } },
       { value: "hostel_student", label: { en: "Hostel / student", roman_urdu: "Hostel / student" } },
-      { value: "veg_limited", label: { en: "Veg / little meat", roman_urdu: "Veg / kam meat" } },
+    ],
+  },
+  {
+    key: "dietMode",
+    kind: "choice",
+    prompt: {
+      en: "Which diet mode fits you?",
+      roman_urdu: "Aap ka diet mode kya hai?",
+    },
+    options: [
+      {
+        value: "vegetarian",
+        label: { en: "Vegetarian - no meat or fish", roman_urdu: "Vegetarian - meat ya fish nahi" },
+      },
+      {
+        value: "flexitarian",
+        label: { en: "Little meat / flexitarian", roman_urdu: "Kam meat / flexitarian" },
+      },
+      {
+        value: "non_veg",
+        label: { en: "Non-veg - meat/fish is okay", roman_urdu: "Non-veg - meat/fish theek hai" },
+      },
+      { value: "unknown", label: { en: "Not sure", roman_urdu: "Pata nahi" } },
     ],
   },
   {
@@ -369,6 +392,7 @@ export interface OnboardingInput {
   experience: Experience;
   region: Region; // home region — cuisine hint for the LLM only
   foodPreference: FoodPreference;
+  dietMode: DietMode;
   proteinPowderPreference: ProteinPowderPreference;
   // Usual eating (all optional; "" when skipped).
   usualBreakfast: string;

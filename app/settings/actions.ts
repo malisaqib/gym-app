@@ -8,6 +8,7 @@ import { isRegion } from "@/lib/region";
 import { getLocalToday } from "@/lib/date";
 import type {
   ActivityLevel,
+  DietMode,
   Experience,
   FoodPreference,
   Lang,
@@ -35,6 +36,7 @@ const FOODS: FoodPreference[] = ["normal_desi", "high_protein", "budget", "hoste
 const LANGS: Lang[] = ["en", "roman_urdu"];
 const ACTIVITY_LEVELS: ActivityLevel[] = ["sedentary", "light", "moderate", "very", "extra"];
 const PROTEIN_POWDER_PREFERENCES: ProteinPowderPreference[] = ["enabled", "disabled", "unknown"];
+const DIET_MODES: DietMode[] = ["vegetarian", "flexitarian", "non_veg", "unknown"];
 // Derived from the single source of truth so adding a goal in goals.ts can
 // never again leave this validator out of sync (the bug that rejected
 // "build_muscle" with "Some values look off").
@@ -46,6 +48,7 @@ export interface ProfileEditInput {
   timeline: Timeline;
   trainingLocation: TrainingLocation;
   foodPreference: FoodPreference;
+  dietMode: DietMode;
   proteinPowderPreference: ProteinPowderPreference;
   sex: Sex;
   age: number;
@@ -98,6 +101,7 @@ export async function updateProfile(input: ProfileEditInput): Promise<Result> {
     TIMELINES.includes(input.timeline) &&
     LOCATIONS.includes(input.trainingLocation) &&
     FOODS.includes(input.foodPreference) &&
+    DIET_MODES.includes(input.dietMode) &&
     PROTEIN_POWDER_PREFERENCES.includes(input.proteinPowderPreference) &&
     LANGS.includes(input.preferredLanguage) &&
     GOAL_KEYS.includes(input.relatableGoal) &&
@@ -133,6 +137,7 @@ export async function updateProfile(input: ProfileEditInput): Promise<Result> {
       timeline: input.timeline,
       training_location: input.trainingLocation,
       food_preference: input.foodPreference,
+      diet_mode: input.dietMode,
       protein_powder_preference: input.proteinPowderPreference,
       sex: input.sex,
       age,

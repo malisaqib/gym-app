@@ -10,7 +10,14 @@ import { extractOnboardingNote } from "@/lib/onboarding/notes";
 import { getLocalToday } from "@/lib/date";
 import { itemMacros } from "@/lib/food/quantity";
 import { sumMacros } from "@/lib/food/totals";
-import type { FoodLog, FoodPreference, Lang, OnboardingEntry } from "@/lib/database.types";
+import { resolveDietMode } from "@/lib/diet/dietMode";
+import type {
+  DietMode,
+  FoodLog,
+  FoodPreference,
+  Lang,
+  OnboardingEntry,
+} from "@/lib/database.types";
 
 // The diet-plan generator screen (reached from the Eat tab). Protected.
 export default async function DietPage() {
@@ -23,7 +30,7 @@ export default async function DietPage() {
   const { data: profile } = await supabase
     .from("profiles")
     .select(
-      "onboarded, calorie_target, protein_target_g, preferred_language, food_preference, onboarding_raw, usual_breakfast, usual_lunch, usual_dinner, usual_foods, keep_foods, goal_weight_kg, weekly_pace_kg, target_date"
+      "onboarded, calorie_target, protein_target_g, preferred_language, food_preference, diet_mode, onboarding_raw, usual_breakfast, usual_lunch, usual_dinner, usual_foods, keep_foods, goal_weight_kg, weekly_pace_kg, target_date"
     )
     .eq("id", user.id)
     .single();
@@ -52,7 +59,14 @@ export default async function DietPage() {
   const initialFilter: DietFilter =
     plan?.filter ??
     mergeFilters(
-      filterFromPreference((profile?.food_preference as FoodPreference) ?? null),
+      filterFromPreference(
+        (profile?.food_preference as FoodPreference) ?? null,
+        undefined,
+        resolveDietMode(
+          (profile?.diet_mode as DietMode) ?? null,
+          (profile?.food_preference as FoodPreference) ?? null
+        )
+      ),
       keywordPreferences(note)
     );
 

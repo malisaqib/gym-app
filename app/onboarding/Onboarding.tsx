@@ -13,6 +13,7 @@ import {
 } from "@/lib/onboarding/questions";
 import type {
   ActivityLevel,
+  DietMode,
   Experience,
   FoodPreference,
   Lang,
@@ -31,7 +32,7 @@ import { saveOnboarding } from "./actions";
 type Status = "asking" | "submitting" | "done" | "error";
 type AnswerValue = string | number;
 
-const ONBOARDING_PROGRESS_KEY = "gymCoach.onboardingProgress.v2";
+const ONBOARDING_PROGRESS_KEY = "gymCoach.onboardingProgress.v3";
 
 export default function Onboarding({ initialLang }: { initialLang: Lang }) {
   const router = useRouter();
@@ -218,6 +219,7 @@ export default function Onboarding({ initialLang }: { initialLang: Lang }) {
       experience: a.experience as Experience,
       region: a.region as Region,
       foodPreference: a.foodPreference as FoodPreference,
+      dietMode: a.dietMode as DietMode,
       proteinPowderPreference: a.proteinPowderPreference as ProteinPowderPreference,
       usualBreakfast: str(a.usualBreakfast),
       usualLunch: str(a.usualLunch),

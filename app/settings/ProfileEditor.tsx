@@ -8,6 +8,7 @@ import { toast } from "@/lib/toast";
 import { RELATABLE_GOALS } from "@/lib/onboarding/goals";
 import type {
   ActivityLevel,
+  DietMode,
   Experience,
   FoodPreference,
   Lang,
@@ -32,6 +33,7 @@ export interface ProfileDetails {
   timeline: Timeline;
   trainingLocation: TrainingLocation;
   foodPreference: FoodPreference;
+  dietMode: DietMode;
   proteinPowderPreference: ProteinPowderPreference;
   region: Region | null; // null until an older account sets it
   sex: Sex;
@@ -76,7 +78,12 @@ const FOOD_OPTS: { value: FoodPreference; label: string }[] = [
   { value: "high_protein", label: "High protein" },
   { value: "budget", label: "Budget" },
   { value: "hostel_student", label: "Hostel / student" },
-  { value: "veg_limited", label: "Veg / little meat" },
+];
+const DIET_MODE_OPTS: { value: DietMode; label: string }[] = [
+  { value: "vegetarian", label: "Vegetarian - no meat or fish" },
+  { value: "flexitarian", label: "Little meat / flexitarian" },
+  { value: "non_veg", label: "Non-veg - meat/fish is okay" },
+  { value: "unknown", label: "Not sure" },
 ];
 const PROTEIN_POWDER_OPTS: { value: ProteinPowderPreference; label: string }[] = [
   { value: "enabled", label: "Yes" },
@@ -146,6 +153,7 @@ export default function ProfileEditor({ initial }: { initial: ProfileDetails }) 
       timeline: draft.timeline,
       trainingLocation: draft.trainingLocation,
       foodPreference: draft.foodPreference,
+      dietMode: draft.dietMode,
       proteinPowderPreference: draft.proteinPowderPreference,
       sex: draft.sex,
       age: draft.age,
@@ -225,6 +233,10 @@ export default function ProfileEditor({ initial }: { initial: ProfileDetails }) 
           <Stat label="Goal weight" value={`${details.goalWeightKg} kg`} />
           <Stat label="Activity" value={ACT_OPTS.find((o) => o.value === details.activityLevel)?.label ?? "—"} />
           <Stat label="Training" value={`${details.trainingDays} days/wk`} />
+          <Stat
+            label="Diet mode"
+            value={DIET_MODE_OPTS.find((o) => o.value === details.dietMode)?.label ?? "Not sure"}
+          />
           <Stat
             label="Protein powder"
             value={PROTEIN_POWDER_OPTS.find((o) => o.value === details.proteinPowderPreference)?.label ?? "Not sure"}
@@ -313,6 +325,14 @@ export default function ProfileEditor({ initial }: { initial: ProfileDetails }) 
 
       <Field label="Food style">
         <Chips options={FOOD_OPTS} selected={draft.foodPreference} onSelect={(v) => patch({ foodPreference: v })} />
+      </Field>
+
+      <Field label="Diet mode">
+        <Chips
+          options={DIET_MODE_OPTS}
+          selected={draft.dietMode}
+          onSelect={(v) => patch({ dietMode: v })}
+        />
       </Field>
 
       <Field label="Use protein powder?">

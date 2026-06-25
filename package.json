@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "audit:foods": "node --env-file=.env.local scripts/audit-food-nutrition.ts",
-    "test": "node --test lib/site/url.test.ts lib/nutrition/engine.test.ts lib/nutrition/goalPlan.test.ts lib/nutrition/adapt.test.ts lib/diet/planner.test.ts lib/diet/planToLog.test.ts lib/diet/upgrades.test.ts lib/diet/foodClassify.test.ts lib/diet/learned.test.ts lib/diet/mealSelection.test.ts lib/coach/dietCoach.test.ts lib/localDate.test.ts lib/food/totals.test.ts lib/food/quantity.test.ts lib/food/searchRank.test.ts lib/food/logDisplayName.test.ts lib/food/grounding.test.ts lib/workouts/progression.test.ts lib/workouts/exerciseDb.test.ts lib/workouts/enrich.test.ts lib/workouts/coachPlan.test.ts lib/onboarding/goals.test.ts lib/weight/series.test.ts"
+    "test": "node --test lib/site/url.test.ts lib/nutrition/engine.test.ts lib/nutrition/goalPlan.test.ts lib/nutrition/adapt.test.ts lib/diet/planner.test.ts lib/diet/planToLog.test.ts lib/diet/upgrades.test.ts lib/diet/foodClassify.test.ts lib/diet/learned.test.ts lib/diet/mealSelection.test.ts lib/diet/dietMode.test.ts lib/coach/dietCoach.test.ts lib/localDate.test.ts lib/food/totals.test.ts lib/food/quantity.test.ts lib/food/searchRank.test.ts lib/food/logDisplayName.test.ts lib/food/grounding.test.ts lib/workouts/progression.test.ts lib/workouts/exerciseDb.test.ts lib/workouts/enrich.test.ts lib/workouts/coachPlan.test.ts lib/onboarding/goals.test.ts lib/weight/series.test.ts"
   },
   "dependencies": {
     "@sentry/nextjs": "^10.57.0",
