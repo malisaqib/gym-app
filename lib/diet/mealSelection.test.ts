@@ -11,6 +11,7 @@ import {
   buildMealCandidateLists,
   explicitProteinPowderOptIn,
 } from "./mealCandidates.ts";
+import { resolveProteinPowderPreference } from "./proteinPowder.ts";
 import { buildPlan, filterFromPreference, type DietFilter } from "./planner.ts";
 
 const openFilter: DietFilter = {
@@ -144,6 +145,15 @@ test("protein powder opt-in requires explicit powder language", () => {
   assert.equal(explicitProteinPowderOptIn("I use whey after training"), true);
   assert.equal(explicitProteinPowderOptIn("Keep my protein powder"), true);
   assert.equal(explicitProteinPowderOptIn("A protein shake is fine"), true);
+});
+
+test("stored protein powder preference overrides legacy text inference", () => {
+  assert.equal(resolveProteinPowderPreference("enabled", ""), true);
+  assert.equal(resolveProteinPowderPreference("disabled", "whey protein shake"), false);
+  assert.equal(resolveProteinPowderPreference("unknown", "banana shake"), false);
+  assert.equal(resolveProteinPowderPreference(null, "banana shake"), false);
+  assert.equal(resolveProteinPowderPreference("unknown", "I use whey"), true);
+  assert.equal(resolveProteinPowderPreference(null, "keep my protein powder"), true);
 });
 
 test("regional candidate lists keep western and desi automatic choices distinct", () => {

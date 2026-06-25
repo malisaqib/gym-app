@@ -22,6 +22,7 @@ import {
   buildPlanFromSelection,
   buildPlanFromSelectionIds,
   normalizeDietPlan,
+  setPlanProteinPowderAccess,
   validateDietPlan,
   type DietPlan,
   type DietFilter,
@@ -886,6 +887,55 @@ test("whey never auto-planned by default; included (and swappable) when the usua
   assert.ok(withWhey.totalCalories <= 2200, "whey pushed the day over budget");
   // Swappable: it is a real catalog item (not approx), so the per-item swap works.
   assert.equal(isKnownFood("whey"), true);
+});
+
+test("explicit protein powder access gates add, search, and typed matching", () => {
+  const disabled = buildPlan({
+    calorieTarget: 2100,
+    proteinTargetG: 130,
+    filter: openFilter,
+    seed: 1,
+    allowProteinPowder: false,
+  });
+  assert.equal(disabled.allowProteinPowder, false);
+  assert.deepEqual(addPlanItem(disabled, "snack", "whey"), disabled);
+  assert.equal(searchCatalog("whey", openFilter, "snack", DIET_PLAN_POOL, false).length, 0);
+  assert.equal(bestCatalogMatch("whey protein shake", openFilter, "snack", DIET_PLAN_POOL, false), null);
+
+  const enabled = setPlanProteinPowderAccess(disabled, true, DIET_PLAN_POOL);
+  const withWhey = addPlanItem(enabled, "snack", "whey", DIET_PLAN_POOL);
+  assert.ok(withWhey.meals.find((meal) => meal.slot === "snack")?.items.some((item) => item.id === "whey"));
+  assert.ok(searchCatalog("whey", openFilter, "snack", DIET_PLAN_POOL, true).some((food) => food.id === "whey"));
+  assert.equal(
+    bestCatalogMatch("whey protein shake", openFilter, "snack", DIET_PLAN_POOL, true)?.id,
+    "whey"
+  );
+});
+
+test("disabling protein powder strips legacy whey and fit-remaining cannot restore it", () => {
+  const legacyEnabled = buildPlan({
+    calorieTarget: 2200,
+    proteinTargetG: 160,
+    filter: openFilter,
+    usual: { keep: "whey protein shake" },
+    allowProteinPowder: true,
+    seed: 1,
+    pool: DIET_PLAN_POOL,
+  });
+  assert.ok(legacyEnabled.meals.flatMap((meal) => meal.items).some((item) => item.id === "whey"));
+
+  const disabled = setPlanProteinPowderAccess(legacyEnabled, false, DIET_PLAN_POOL);
+  assert.equal(disabled.allowProteinPowder, false);
+  assert.ok(!disabled.meals.flatMap((meal) => meal.items).some((item) => item.id === "whey"));
+
+  const refit = replanRemaining(
+    disabled,
+    { calories: 1400, proteinG: 100 },
+    ["breakfast"],
+    DIET_PLAN_POOL,
+    9
+  );
+  assert.ok(!refit.meals.flatMap((meal) => meal.items).some((item) => item.id === "whey"));
 });
 
 test("item swaps rotate through MANY options, not the same 2-3", () => {

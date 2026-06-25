@@ -11,6 +11,7 @@ import type {
   Experience,
   FoodPreference,
   Lang,
+  ProteinPowderPreference,
   Region,
   RelatableGoalKey,
   Sex,
@@ -31,6 +32,7 @@ export interface ProfileDetails {
   timeline: Timeline;
   trainingLocation: TrainingLocation;
   foodPreference: FoodPreference;
+  proteinPowderPreference: ProteinPowderPreference;
   region: Region | null; // null until an older account sets it
   sex: Sex;
   age: number;
@@ -75,6 +77,11 @@ const FOOD_OPTS: { value: FoodPreference; label: string }[] = [
   { value: "budget", label: "Budget" },
   { value: "hostel_student", label: "Hostel / student" },
   { value: "veg_limited", label: "Veg / little meat" },
+];
+const PROTEIN_POWDER_OPTS: { value: ProteinPowderPreference; label: string }[] = [
+  { value: "enabled", label: "Yes" },
+  { value: "disabled", label: "No" },
+  { value: "unknown", label: "Not sure" },
 ];
 const REGION_OPTS: { value: Region; label: string }[] = REGIONS.map((r) => ({
   value: r,
@@ -139,6 +146,7 @@ export default function ProfileEditor({ initial }: { initial: ProfileDetails }) 
       timeline: draft.timeline,
       trainingLocation: draft.trainingLocation,
       foodPreference: draft.foodPreference,
+      proteinPowderPreference: draft.proteinPowderPreference,
       sex: draft.sex,
       age: draft.age,
       heightCm: draft.heightCm,
@@ -217,6 +225,10 @@ export default function ProfileEditor({ initial }: { initial: ProfileDetails }) 
           <Stat label="Goal weight" value={`${details.goalWeightKg} kg`} />
           <Stat label="Activity" value={ACT_OPTS.find((o) => o.value === details.activityLevel)?.label ?? "—"} />
           <Stat label="Training" value={`${details.trainingDays} days/wk`} />
+          <Stat
+            label="Protein powder"
+            value={PROTEIN_POWDER_OPTS.find((o) => o.value === details.proteinPowderPreference)?.label ?? "Not sure"}
+          />
           <Stat label="Experience" value={EXP_OPTS.find((o) => o.value === details.experience)?.label ?? "—"} />
         </dl>
 
@@ -301,6 +313,14 @@ export default function ProfileEditor({ initial }: { initial: ProfileDetails }) 
 
       <Field label="Food style">
         <Chips options={FOOD_OPTS} selected={draft.foodPreference} onSelect={(v) => patch({ foodPreference: v })} />
+      </Field>
+
+      <Field label="Use protein powder?">
+        <Chips
+          options={PROTEIN_POWDER_OPTS}
+          selected={draft.proteinPowderPreference}
+          onSelect={(v) => patch({ proteinPowderPreference: v })}
+        />
       </Field>
 
       {/* Region — only steers the LLM's food suggestions, not the calorie math. */}

@@ -90,6 +90,7 @@ export type FoodPreference =
   | "budget"
   | "hostel_student"
   | "veg_limited";
+export type ProteinPowderPreference = "enabled" | "disabled" | "unknown";
 // Home region — steers the LLM's food SUGGESTIONS toward cuisine-appropriate
 // options. Never affects calorie math or the RAG pipeline. (migration 0023)
 export type Region =
@@ -134,6 +135,7 @@ export interface Profile {
   timeline: Timeline | null;
   training_location: TrainingLocation | null;
   food_preference: FoodPreference | null;
+  protein_powder_preference: ProteinPowderPreference | null;
   region: Region | null; // home region for cuisine-appropriate LLM suggestions (migration 0023)
   // Usual eating (migration 0011) — all additive / nullable, optional.
   usual_breakfast: string | null;

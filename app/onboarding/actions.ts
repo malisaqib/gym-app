@@ -7,13 +7,19 @@ import type { OnboardingInput } from "@/lib/onboarding/questions";
 import { buildPlanGuidance, type PlanGuidance } from "@/lib/onboarding/goals";
 import { isRegion } from "@/lib/region";
 import { logEvent } from "@/lib/analytics";
-import type { ActivityLevel, Experience, Sex } from "@/lib/database.types";
+import type {
+  ActivityLevel,
+  Experience,
+  ProteinPowderPreference,
+  Sex,
+} from "@/lib/database.types";
 
 // Allowed values, used to validate the client input on the server (never trust
 // the client). These mirror the CHECK constraints in the SQL schema.
 const SEXES: Sex[] = ["male", "female"];
 const EXPERIENCES: Experience[] = ["beginner", "intermediate", "advanced"];
 const ACTIVITY_LEVELS: ActivityLevel[] = ["sedentary", "light", "moderate", "very", "extra"];
+const PROTEIN_POWDER_PREFERENCES: ProteinPowderPreference[] = ["enabled", "disabled", "unknown"];
 
 type SaveResult =
   | { ok: true; plan: GoalPlan; targetDate: string | null; goalWeightKg: number; guidance: PlanGuidance }
@@ -49,6 +55,7 @@ export async function saveOnboarding(input: OnboardingInput): Promise<SaveResult
     SEXES.includes(input.sex) &&
     EXPERIENCES.includes(input.experience) &&
     ACTIVITY_LEVELS.includes(input.activityLevel) &&
+    PROTEIN_POWDER_PREFERENCES.includes(input.proteinPowderPreference) &&
     isRegion(input.region) &&
     Number.isFinite(age) && age >= 13 && age <= 99 &&
     Number.isFinite(heightCm) && heightCm >= 120 && heightCm <= 230 &&
@@ -95,6 +102,7 @@ export async function saveOnboarding(input: OnboardingInput): Promise<SaveResult
       timeline: input.timeline,
       training_location: input.trainingLocation,
       food_preference: input.foodPreference,
+      protein_powder_preference: input.proteinPowderPreference,
       sex: input.sex,
       age,
       height_cm: heightCm,

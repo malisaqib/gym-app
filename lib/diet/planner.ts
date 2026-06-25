@@ -139,6 +139,10 @@ export interface DietPlan {
   // portions, and safe planner foods. Additive for older saved JSON.
   validation?: DietPlanValidation;
   foodPreference?: FoodPreference | null;
+  // Resolved from the explicit profile preference (legacy clear-text inference
+  // is applied before the plan is built). Persisted so every Diet Plan flow
+  // enforces the same whey rule.
+  allowProteinPowder?: boolean;
 }
 
 // The tolerance bar (±5%): a generated plan must land within 95–100% of the
@@ -222,6 +226,7 @@ export function normalizeDietPlan(
     rev: typeof input.rev === "number" ? input.rev : undefined,
     logged,
     foodPreference: input.foodPreference ?? null,
+    allowProteinPowder: input.allowProteinPowder === true,
   });
 }
 
@@ -337,6 +342,16 @@ function allowedForAutoPlan(food: CatalogFood, filter: DietFilter): boolean {
   if (!allowed(food, filter)) return false;
   if (food.tags.includes("supplement")) return false;
   if (food.role === "drink" && (food.tags.includes("sweet") || /\bshake\b/i.test(food.name))) return false;
+  return true;
+}
+
+function allowedForPlanOperation(
+  food: CatalogFood,
+  filter: DietFilter,
+  allowProteinPowder: boolean
+): boolean {
+  if (!allowed(food, filter)) return false;
+  if (food.tags.includes("supplement") && !allowProteinPowder) return false;
   return true;
 }
 
@@ -459,7 +474,7 @@ export function validateDietPlan(plan: DietPlan, pool: CatalogFood[] = FOOD_CATA
       if (
         (!food && !item.approx) ||
         isUnsafeImportedPlannerFood(food ?? item) ||
-        (food && !allowed(food, plan.filter))
+        (food && !allowedForPlanOperation(food, plan.filter, plan.allowProteinPowder === true))
       ) {
         issues.push({
           code: "unsafe_food",
@@ -1330,6 +1345,7 @@ export function buildPlan(input: {
       caloriesShort: true,
       seed,
       foodPreference: input.foodPreference ?? null,
+      allowProteinPowder: input.allowProteinPowder === true,
     }, pool);
   }
 
@@ -1365,9 +1381,7 @@ export function buildPlan(input: {
         (allowedForAutoPlan(f, input.filter) ||
           (f.tags.includes("supplement") &&
             allowed(f, input.filter) &&
-            allowProteinPowder &&
-            !!usualAll &&
-            mentioned(f, usualAll)))
+            allowProteinPowder))
     );
     // Seed from this slot's usual meal PLUS any "keep" foods (keep applies to
     // every slot the food fits).
@@ -1430,6 +1444,7 @@ export function buildPlan(input: {
     caloriesShort: totalCalories < input.calorieTarget * SHORT_THRESHOLD,
     seed,
     foodPreference: input.foodPreference ?? null,
+    allowProteinPowder,
   }, pool);
 }
 
@@ -1481,6 +1496,7 @@ export function buildPlanFromSelection(
     pool?: CatalogFood[];
     seed?: number;
     preferIds?: Set<string>;
+    allowProteinPowder?: boolean;
     foodPreference?: FoodPreference | null;
   }
 ): DietPlan {
@@ -1508,6 +1524,7 @@ export function buildPlanFromSelection(
     pool: input.pool,
     seed: input.seed,
     preferIds: input.preferIds,
+    allowProteinPowder: input.allowProteinPowder,
     foodPreference: input.foodPreference,
   });
 }
@@ -1526,7 +1543,14 @@ export function swapMeal(
   const rng = mulberry32(newSeed);
   const budget = target.budget;
   const slotProtein = plan.proteinTargetG * PROTEIN_SHARE[slot];
-  const cands = pool.filter((f) => f.slots.includes(slot) && allowedForAutoPlan(f, plan.filter));
+  const cands = pool.filter(
+    (f) =>
+      f.slots.includes(slot) &&
+      (allowedForAutoPlan(f, plan.filter) ||
+        (plan.allowProteinPowder === true &&
+          f.tags.includes("supplement") &&
+          allowed(f, plan.filter)))
+  );
   const usedCounts = new Map<string, number>();
   for (const meal of plan.meals) {
     if (meal.slot === slot) continue;
@@ -1614,7 +1638,14 @@ export function replanRemaining(
   }
   const built: BuiltMeal[] = budgets.map((b) => {
     const slotProtein = proShareSum > 0 ? remPro * (PROTEIN_SHARE[b.slot] / proShareSum) : 0;
-    const cands = pool.filter((f) => f.slots.includes(b.slot) && allowedForAutoPlan(f, plan.filter));
+    const cands = pool.filter(
+      (f) =>
+        f.slots.includes(b.slot) &&
+        (allowedForAutoPlan(f, plan.filter) ||
+          (plan.allowProteinPowder === true &&
+            f.tags.includes("supplement") &&
+            allowed(f, plan.filter)))
+    );
     const picks = buildSimpleMeal(
       b.cal,
       slotProtein,
@@ -1670,6 +1701,27 @@ function recompute(plan: DietPlan, pool: CatalogFood[] = FOOD_CATALOG): DietPlan
   }, pool);
 }
 
+/**
+ * Apply the current profile preference to a saved plan. Disabling powder strips
+ * any legacy whey row immediately and recomputes totals/validation.
+ */
+export function setPlanProteinPowderAccess(
+  plan: DietPlan,
+  allowProteinPowder: boolean,
+  pool: CatalogFood[] = FOOD_CATALOG
+): DietPlan {
+  const meals = allowProteinPowder
+    ? plan.meals
+    : plan.meals.map((meal) => ({
+        ...meal,
+        items: meal.items.filter((item) => {
+          const food = pool.find((candidate) => candidate.id === item.id) ?? CATALOG_BY_ID[item.id];
+          return !food?.tags.includes("supplement");
+        }),
+      }));
+  return recompute({ ...plan, meals, allowProteinPowder }, pool);
+}
+
 const sumItemsCal = (items: PlanMealItem[]) => items.reduce((s, i) => s + i.calories, 0);
 const sumItemsPro = (items: PlanMealItem[]) => items.reduce((s, i) => s + i.protein, 0);
 const mealAt = (plan: DietPlan, slot: MealSlot) => plan.meals.find((m) => m.slot === slot);
@@ -1699,7 +1751,11 @@ export function insertPlanItem(plan: DietPlan, slot: MealSlot, index: number, it
 export function addPlanItem(plan: DietPlan, slot: MealSlot, foodId: string, pool: CatalogFood[] = FOOD_CATALOG): DietPlan {
   const food = pool.find((f) => f.id === foodId) ?? CATALOG_BY_ID[foodId];
   const meal = mealAt(plan, slot);
-  if (!food || !meal || !allowed(food, plan.filter)) return plan;
+  if (
+    !food ||
+    !meal ||
+    !allowedForPlanOperation(food, plan.filter, plan.allowProteinPowder === true)
+  ) return plan;
   return withMeal(plan, slot, [...meal.items, toItem(food)], pool);
 }
 
@@ -1836,7 +1892,7 @@ export function swapPlanItem(
     pool.filter(
       (f) =>
         f.slots.includes(slot) &&
-        allowed(f, plan.filter) &&
+        allowedForPlanOperation(f, plan.filter, plan.allowProteinPowder === true) &&
         !used.has(f.id) &&
         otherCal + f.calories <= meal.budget && // keep the meal within its budget
         extra(f)
@@ -1862,12 +1918,18 @@ export function swapPlanItem(
 }
 
 /** Deterministic pool search for the "add food" picker (respects the filter). */
-export function searchCatalog(query: string, filter: DietFilter, slot?: MealSlot, pool: CatalogFood[] = FOOD_CATALOG): CatalogFood[] {
+export function searchCatalog(
+  query: string,
+  filter: DietFilter,
+  slot?: MealSlot,
+  pool: CatalogFood[] = FOOD_CATALOG,
+  allowProteinPowder = false
+): CatalogFood[] {
   const q = query.toLowerCase().trim();
   if (q.length < 2) return [];
   const tokens = q.split(/\s+/).filter(Boolean);
   return pool.filter((f) => {
-    if (!allowed(f, filter)) return false;
+    if (!allowedForPlanOperation(f, filter, allowProteinPowder)) return false;
     if (slot && !f.slots.includes(slot)) return false;
     const hay = `${f.name} ${f.tags.join(" ")} ${(f.aliases ?? []).join(" ")}`.toLowerCase();
     return tokens.every((tok) => hay.includes(tok));
@@ -1875,10 +1937,20 @@ export function searchCatalog(query: string, filter: DietFilter, slot?: MealSlot
 }
 
 /** Best deterministic pool match for free-typed text, or null if none. */
-export function bestCatalogMatch(text: string, filter: DietFilter, slot?: MealSlot, pool: CatalogFood[] = FOOD_CATALOG): CatalogFood | null {
+export function bestCatalogMatch(
+  text: string,
+  filter: DietFilter,
+  slot?: MealSlot,
+  pool: CatalogFood[] = FOOD_CATALOG,
+  allowProteinPowder = false
+): CatalogFood | null {
+  if (!allowProteinPowder && explicitProteinPowderOptIn(text)) return null;
   return (
     pool.find(
-      (f) => (!slot || f.slots.includes(slot)) && allowed(f, filter) && mentioned(f, text)
+      (f) =>
+        (!slot || f.slots.includes(slot)) &&
+        allowedForPlanOperation(f, filter, allowProteinPowder) &&
+        mentioned(f, text)
     ) ?? null
   );
 }

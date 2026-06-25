@@ -18,6 +18,7 @@ import {
   replanRemaining,
   buildPlanFromSelectionIds,
   normalizeDietPlan,
+  setPlanProteinPowderAccess,
   type DietPlan,
   type DietFilter,
   type PlanMealItem,
@@ -28,8 +29,8 @@ import { generateMealSelection, type MealSelectionProfile } from "@/lib/diet/mea
 import {
   buildMealCandidatePool,
   buildMealCandidateLists,
-  explicitProteinPowderOptIn,
 } from "@/lib/diet/mealCandidates";
+import { resolveProteinPowderPreference } from "@/lib/diet/proteinPowder";
 import { parsePreferences, keywordPreferences } from "@/lib/coach/dietCoach";
 import type { MealSlot } from "@/lib/diet/foodCatalog";
 import { DIET_PLAN_POOL } from "@/lib/diet/planPool";
@@ -47,6 +48,7 @@ import type {
   FoodPreference,
   Goal,
   Lang,
+  ProteinPowderPreference,
   Region,
   Sex,
   TrainingLocation,
@@ -81,14 +83,40 @@ async function loadSavedPlan(supabase: Supa, userId: string): Promise<DietPlan |
     supabase.from("meal_plans").select("plan").eq("user_id", userId).maybeSingle(),
     supabase
       .from("profiles")
-      .select("calorie_target, protein_target_g")
+      .select(
+        "calorie_target, protein_target_g, protein_powder_preference, usual_breakfast, usual_lunch, usual_dinner, usual_foods, keep_foods"
+      )
       .eq("id", userId)
-      .maybeSingle<{ calorie_target: number | null; protein_target_g: number | null }>(),
+      .maybeSingle<{
+        calorie_target: number | null;
+        protein_target_g: number | null;
+        protein_powder_preference: ProteinPowderPreference | null;
+        usual_breakfast: string | null;
+        usual_lunch: string | null;
+        usual_dinner: string | null;
+        usual_foods: string | null;
+        keep_foods: string | null;
+      }>(),
   ]);
-  return normalizeDietPlan(row?.plan, {
+  const plan = normalizeDietPlan(row?.plan, {
     calorieTarget: profile?.calorie_target ?? null,
     proteinTargetG: profile?.protein_target_g ?? null,
   });
+  if (!plan) return null;
+  const legacyText = [
+    profile?.usual_breakfast,
+    profile?.usual_lunch,
+    profile?.usual_dinner,
+    profile?.usual_foods,
+    profile?.keep_foods,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const allowProteinPowder = resolveProteinPowderPreference(
+    profile?.protein_powder_preference,
+    legacyText
+  );
+  return setPlanProteinPowderAccess(plan, allowProteinPowder, DIET_PLAN_POOL);
 }
 
 /** Load the user's saved plan (or null). */
@@ -139,7 +167,7 @@ export async function generateDietPlan(input?: {
   const { data: profile } = await supabase
     .from("profiles")
     .select(
-      "calorie_target, protein_target_g, weight_kg, goal, activity_level, training_location, food_preference, preferred_language, region, sex, usual_breakfast, usual_lunch, usual_dinner, usual_foods, keep_foods, disliked_foods"
+      "calorie_target, protein_target_g, weight_kg, goal, activity_level, training_location, food_preference, protein_powder_preference, preferred_language, region, sex, usual_breakfast, usual_lunch, usual_dinner, usual_foods, keep_foods, disliked_foods"
     )
     .eq("id", user.id)
     .single<{
@@ -150,6 +178,7 @@ export async function generateDietPlan(input?: {
       activity_level: ActivityLevel | null;
       training_location: TrainingLocation | null;
       food_preference: FoodPreference | null;
+      protein_powder_preference: ProteinPowderPreference | null;
       preferred_language: Lang | null;
       region: Region | null;
       sex: Sex | null;
@@ -264,6 +293,7 @@ export async function generateDietPlan(input?: {
     activityLevel: profile?.activity_level ?? null,
     trainingLocation: profile?.training_location ?? null,
     foodPreference: profile?.food_preference ?? null,
+    proteinPowderPreference: profile?.protein_powder_preference ?? null,
   });
 
   // A regenerate is an intentional full replace — no compare-and-swap, but it
@@ -423,12 +453,16 @@ async function buildHybridPlan(args: {
   activityLevel: ActivityLevel | null;
   trainingLocation: TrainingLocation | null;
   foodPreference: FoodPreference | null;
+  proteinPowderPreference: ProteinPowderPreference | null;
 }): Promise<DietPlan> {
   const { calorieTarget, proteinTargetG, filter, usual, preferIds } = args;
   const usualText = [usual.breakfast, usual.lunch, usual.dinner, usual.foods, usual.keep]
     .filter(Boolean)
     .join(" ");
-  const allowProteinPowder = explicitProteinPowderOptIn(usualText);
+  const allowProteinPowder = resolveProteinPowderPreference(
+    args.proteinPowderPreference,
+    usualText
+  );
   const candidateProfile = {
     filter,
     region: args.region,
@@ -666,7 +700,13 @@ export async function searchDietFoods(slot: MealSlot, query: string): Promise<Se
   if (!SLOTS.includes(slot)) return { ok: false, error: "Unknown meal." };
   const ctx = await planContext();
   if (!ctx.ok) return ctx;
-  const foods: FoodOption[] = searchCatalog(query, ctx.plan.filter, slot, DIET_PLAN_POOL).map((f) => ({
+  const foods: FoodOption[] = searchCatalog(
+    query,
+    ctx.plan.filter,
+    slot,
+    DIET_PLAN_POOL,
+    ctx.plan.allowProteinPowder === true
+  ).map((f) => ({
     id: f.id,
     name: f.name,
     portion: f.portion,
@@ -684,7 +724,13 @@ export async function addCustomDietItem(slot: MealSlot, text: string): Promise<A
   const ctx = await planContext();
   if (!ctx.ok) return ctx;
 
-  const match = bestCatalogMatch(q, ctx.plan.filter, slot, DIET_PLAN_POOL);
+  const match = bestCatalogMatch(
+    q,
+    ctx.plan.filter,
+    slot,
+    DIET_PLAN_POOL,
+    ctx.plan.allowProteinPowder === true
+  );
   if (!match) {
     return {
       ok: false,

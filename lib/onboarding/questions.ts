@@ -4,6 +4,7 @@ import type {
   FoodPreference,
   Lang,
   OnboardingEntry,
+  ProteinPowderPreference,
   Region,
   RelatableGoalKey,
   Sex,
@@ -236,6 +237,19 @@ export const STEPS: Step[] = [
     ],
   },
   {
+    key: "proteinPowderPreference",
+    kind: "choice",
+    prompt: {
+      en: "Do you use protein powder?",
+      roman_urdu: "Kya aap protein powder use karte hain?",
+    },
+    options: [
+      { value: "enabled", label: { en: "Yes", roman_urdu: "Haan" } },
+      { value: "disabled", label: { en: "No", roman_urdu: "Nahi" } },
+      { value: "unknown", label: { en: "Not sure", roman_urdu: "Pata nahi" } },
+    ],
+  },
+  {
     // Usual eating — one compact, fully optional screen. Powers the diet plan
     // (Phase 3 seeds meals from these). Skippable so onboarding stays fast.
     key: "eating",
@@ -355,6 +369,7 @@ export interface OnboardingInput {
   experience: Experience;
   region: Region; // home region — cuisine hint for the LLM only
   foodPreference: FoodPreference;
+  proteinPowderPreference: ProteinPowderPreference;
   // Usual eating (all optional; "" when skipped).
   usualBreakfast: string;
   usualLunch: string;
