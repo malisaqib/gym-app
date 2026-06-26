@@ -366,8 +366,11 @@ test("normalizing a saved plan recomputes totals and flags any resulting shortfa
 const countItems = (plan: DietPlan) => plan.meals.reduce((s, m) => s + m.items.length, 0);
 
 function wheyPlan(seed = 4100): DietPlan {
-  // High protein + powder enabled so the deterministic repair seats a whey shake.
-  const filter = filterFromPreference("high_protein", { regionFocus: "desi", profileRegion: "pakistan" }, "non_veg");
+  // Vegetarian high-protein + powder enabled: with no meat/fish to lean on, whey is
+  // the densest available protein lever, so the deterministic repair seats a shake.
+  // (Non-veg high-protein now reaches target via lean meats/fish like white_fish,
+  // which is the desired behavior — whey is the veg-user top-up.)
+  const filter = filterFromPreference("high_protein", { regionFocus: "desi", profileRegion: "pakistan" }, "vegetarian");
   const pool = buildMealCandidatePool({ filter, region: "pakistan", foodPreference: "high_protein", allowProteinPowder: true });
   return buildPlan({ calorieTarget: 2100, proteinTargetG: 150, filter, pool, seed, foodPreference: "high_protein", allowProteinPowder: true });
 }

@@ -98,7 +98,7 @@ export const FOOD_CATALOG: CatalogFood[] = [
   { id: "ground_beef", name: "Ground beef (cooked)", region: "western", portion: "100g", calories: 250, protein: 26, carbs: 0, fat: 15, vegetarian: false, role: "protein", slots: [L, D], tags: ["beef"] },
   // USDA FNDDS: beef round steak, cooked, per 100g.
   { id: "lean_beef_steak", name: "Lean beef steak", region: "western", portion: "100g", calories: 166, protein: 29.7, carbs: 0, fat: 4.3, vegetarian: false, role: "protein", slots: [L, D], tags: ["beef"], aliases: ["lean steak", "round steak", "beef steak"], profileRegions: US_UK, maxAmount: 250 },
-  { id: "greek_yogurt", name: "Greek yogurt (plain)", region: "western", portion: "1 cup (170g)", calories: 100, protein: 17, carbs: 6, fat: 1, vegetarian: true, role: "dairy", slots: [B, S], tags: ["dairy"], maxAmount: 300 },
+  { id: "greek_yogurt", name: "Greek yogurt (plain)", region: "western", portion: "1 cup (170g)", calories: 100, protein: 17, carbs: 6, fat: 1, vegetarian: true, role: "dairy", slots: [B, S], tags: ["dairy"], aliases: ["greek yogurt", "low fat greek yogurt", "nonfat greek yogurt", "fat free greek yogurt"], profileRegions: ["us_canada", "uk_europe", "middle_east"], maxAmount: 300 },
   // USDA FNDDS: farmer's cottage cheese, per 100g.
   { id: "cottage_cheese", name: "Cottage cheese", region: "western", portion: "100g", calories: 148, protein: 11, carbs: 4.3, fat: 9.7, vegetarian: true, role: "protein", slots: [B, L, S], tags: ["dairy", "cheese"], aliases: ["farmers cheese", "farmer's cheese"], profileRegions: US_UK, maxAmount: 300 },
   { id: "scrambled", name: "Scrambled eggs", region: "western", portion: "2 eggs", calories: 180, protein: 12, carbs: 2, fat: 14, vegetarian: true, role: "protein", slots: [B], tags: ["egg"], maxAmount: 4 },
@@ -125,15 +125,17 @@ export const FOOD_CATALOG: CatalogFood[] = [
   { id: "banana", name: "Banana", region: "global", portion: "1 medium", calories: 105, protein: 1, carbs: 27, fat: 0, vegetarian: true, role: "fruit", slots: [B, S], tags: ["fruit"] },
   { id: "apple", name: "Apple", region: "global", portion: "1 medium", calories: 95, protein: 1, carbs: 25, fat: 0, vegetarian: true, role: "fruit", slots: [B, S], tags: ["fruit"] },
   { id: "orange", name: "Orange", region: "global", portion: "1 medium", calories: 62, protein: 1, carbs: 15, fat: 0, vegetarian: true, role: "fruit", slots: [S], tags: ["fruit"] },
-  { id: "almonds", name: "Almonds", region: "global", portion: "1 oz (28g)", calories: 165, protein: 6, carbs: 6, fat: 14, vegetarian: true, role: "snack", slots: [S], tags: ["nuts"] },
-  { id: "peanut_butter", name: "Peanut butter", region: "global", portion: "2 tbsp", calories: 190, protein: 7, carbs: 7, fat: 16, vegetarian: true, role: "snack", slots: [B, S], tags: ["nuts"] },
+  { id: "almonds", name: "Almonds", region: "global", portion: "1 oz (28g)", calories: 165, protein: 6, carbs: 6, fat: 14, vegetarian: true, role: "snack", slots: [S], tags: ["nuts"], minAmount: 15, maxAmount: 42 },
+  // "2 tbsp (32g)" makes the portion gram-scalable with a tight cap so this dense
+  // fat is used as a small calorie boost, never scaled toward 100g.
+  { id: "peanut_butter", name: "Peanut butter", region: "global", portion: "2 tbsp (32g)", calories: 190, protein: 7, carbs: 7, fat: 16, vegetarian: true, role: "snack", slots: [B, S], tags: ["nuts"], minAmount: 16, maxAmount: 32 },
   { id: "whey", name: "Whey protein shake", region: "global", portion: "1 scoop", calories: 120, protein: 24, carbs: 3, fat: 2, vegetarian: true, role: "protein", slots: [B, S], tags: ["dairy", "supplement"], maxAmount: 1, plannerUnit: "serving" },
   { id: "salad", name: "Green salad", region: "global", portion: "1 bowl", calories: 30, protein: 2, carbs: 6, fat: 0, vegetarian: true, role: "veg", slots: [L, D], tags: ["veg"] },
   { id: "boiled_egg1", name: "1 boiled egg", region: "global", portion: "1 egg", calories: 80, protein: 6, carbs: 1, fat: 5, vegetarian: true, role: "protein", slots: [B, S], tags: ["egg"], aliases: ["boiled egg", "boiled eggs", "ubla anda"], maxAmount: 4 },
 
   // ---- Phase 4: vegetarian proteins (fixes thin veg coverage) ----
   // Macros are the representative midpoint of a portion range (see Phase 4 notes).
-  { id: "paneer", name: "Paneer", region: "desi", portion: "1 serving (~100g)", calories: 260, protein: 18, carbs: 3, fat: 16, vegetarian: true, role: "protein", slots: [L, D, S], tags: ["dairy", "paneer"], aliases: ["panir"], profileRegions: ["india"] },
+  { id: "paneer", name: "Paneer", region: "desi", portion: "1 serving (~100g)", calories: 260, protein: 18, carbs: 3, fat: 16, vegetarian: true, role: "protein", slots: [L, D, S], tags: ["dairy", "paneer"], aliases: ["panir"], profileRegions: ["india"], maxAmount: 150 },
   { id: "rajma", name: "Rajma (kidney beans)", region: "desi", portion: "1 katori (~200g)", calories: 210, protein: 9, carbs: 30, fat: 4, vegetarian: true, role: "protein", slots: [L, D], tags: ["beans", "lentil"], aliases: ["lal lobia", "kidney beans", "red beans"], profileRegions: ["india"] },
   { id: "lobia", name: "Lobia (black-eyed peas)", region: "desi", portion: "1 katori (~200g)", calories: 190, protein: 11, carbs: 28, fat: 3, vegetarian: true, role: "protein", slots: [L, D], tags: ["beans", "lentil"], aliases: ["black eyed peas", "black-eyed peas", "cowpeas"] },
   { id: "soya", name: "Soya chunks", region: "global", portion: "1 cup cooked (~150g)", calories: 180, protein: 18, carbs: 12, fat: 4, vegetarian: true, role: "protein", slots: [L, D], tags: ["soya"], aliases: ["soy chunks", "soya chunks", "nutri"] },
@@ -166,10 +168,93 @@ export const FOOD_CATALOG: CatalogFood[] = [
   { id: "pizza_slice", name: "Pizza (1 slice)", region: "western", portion: "1 slice", calories: 285, protein: 12, carbs: 36, fat: 10, vegetarian: true, role: "carb", slots: [L, D, S], tags: ["dairy", "bread", "fastfood"], aliases: ["pizza"] },
   { id: "fries", name: "French fries", region: "western", portion: "1 medium (~110g)", calories: 310, protein: 4, carbs: 41, fat: 15, vegetarian: true, role: "snack", slots: [S], tags: ["fried", "fastfood"], aliases: ["french fries", "chips"] },
   { id: "cornflakes", name: "Cornflakes with milk", region: "western", portion: "1 bowl + milk", calories: 250, protein: 9, carbs: 40, fat: 6, vegetarian: true, role: "carb", slots: [B], tags: ["cereal", "dairy"], aliases: ["cereal", "corn flakes"] },
-  { id: "cheese", name: "Cheese slice", region: "western", portion: "1 slice (~20g)", calories: 70, protein: 4, carbs: 1, fat: 6, vegetarian: true, role: "dairy", slots: [B, S], tags: ["dairy", "cheese"], aliases: ["cheddar", "cheese slice"] },
+  { id: "cheese", name: "Cheese slice", region: "western", portion: "1 slice (~20g)", calories: 70, protein: 4, carbs: 1, fat: 6, vegetarian: true, role: "dairy", slots: [B, S], tags: ["dairy", "cheese"], aliases: ["cheddar", "cheese slice"], minAmount: 20, maxAmount: 40 },
   { id: "dates", name: "Dates", region: "global", portion: "3 dates", calories: 70, protein: 1, carbs: 18, fat: 0, vegetarian: true, role: "fruit", slots: [B, S], tags: ["fruit", "sweet"], aliases: ["khajoor", "khajur"] },
   { id: "banana_shake", name: "Banana shake", region: "global", portion: "1 glass", calories: 250, protein: 8, carbs: 40, fat: 6, vegetarian: true, role: "drink", slots: [B, S], tags: ["dairy", "sweet", "fruit"], aliases: ["milkshake", "banana milkshake"] },
   { id: "mango", name: "Mango", region: "global", portion: "1 medium", calories: 150, protein: 2, carbs: 38, fat: 1, vegetarian: true, role: "fruit", slots: [B, S], tags: ["fruit"], aliases: ["aam"] },
+
+  // ===========================================================================
+  // Phase 6B: verified catalog expansion. Macros are USDA FoodData Central
+  // standard reference values (per the stated portion), the same source family
+  // the rows above already cite; a couple reuse the app's curated seed-foods row.
+  // Region/profileRegions keep each food in cuisine-appropriate plans.
+  // ===========================================================================
+
+  // ---- lean dairy (high-protein levers) ----
+  // USDA FDC: cottage cheese, lowfat, 1% milkfat, per 100g.
+  { id: "lowfat_cottage_cheese", name: "Low-fat cottage cheese", region: "western", portion: "100g", calories: 72, protein: 12.4, carbs: 2.7, fat: 1, vegetarian: true, role: "protein", slots: [B, L, S], tags: ["dairy", "cheese"], aliases: ["low fat cottage cheese", "1% cottage cheese", "lowfat cottage cheese"], profileRegions: US_UK, maxAmount: 300 },
+  // USDA FDC: milk, reduced fat, 2% milkfat (per ~250ml glass).
+  { id: "milk_lowfat", name: "Low-fat milk", region: "global", portion: "1 glass (~250ml)", calories: 125, protein: 8, carbs: 12, fat: 5, vegetarian: true, role: "dairy", slots: [B, S], tags: ["dairy"], aliases: ["low fat milk", "skim milk", "2% milk", "skimmed milk", "low fat doodh"], profileRegions: ["pakistan", "india", "us_canada", "uk_europe"] },
+
+  // ---- vegetarian proteins (veg + flexitarian + high-protein variety) ----
+  // USDA FDC: edamame, frozen, prepared, per 100g.
+  { id: "edamame", name: "Edamame", region: "global", portion: "100g", calories: 121, protein: 11.9, carbs: 8.9, fat: 5.2, vegetarian: true, role: "protein", slots: [L, D, S], tags: ["soya", "beans"], aliases: ["soybeans", "green soybeans", "mukimame"], profileRegions: ["us_canada", "uk_europe", "india"], maxAmount: 250 },
+  // USDA FDC: beans, black, mature seeds, cooked, boiled, per 100g.
+  { id: "black_beans", name: "Black beans (cooked)", region: "global", portion: "100g", calories: 132, protein: 8.9, carbs: 23.7, fat: 0.5, vegetarian: true, role: "protein", slots: [L, D], tags: ["beans"], aliases: ["black bean", "frijoles negros"], profileRegions: US_UK, maxAmount: 250 },
+  // USDA FDC: lentils, mature seeds, cooked, boiled, per 100g.
+  { id: "lentils", name: "Lentils (cooked)", region: "global", portion: "100g", calories: 116, protein: 9, carbs: 20, fat: 0.4, vegetarian: true, role: "protein", slots: [L, D], tags: ["lentil", "beans"], aliases: ["brown lentils", "green lentils", "cooked lentils", "puy lentils"], profileRegions: US_UK, maxAmount: 250 },
+  // USDA FDC: tempeh, per 100g.
+  { id: "tempeh", name: "Tempeh", region: "western", portion: "100g", calories: 192, protein: 20, carbs: 8, fat: 11, vegetarian: true, role: "protein", slots: [L, D, S], tags: ["soya", "tempeh"], aliases: ["fermented soybean cake"], profileRegions: US_UK, maxAmount: 200 },
+
+  // ---- lean fish / seafood (flexitarian + non-veg + high-protein-low-cal) ----
+  // USDA FDC: fish, cod, Atlantic, cooked, dry heat, per 100g.
+  { id: "white_fish", name: "White fish (cod/tilapia)", region: "global", portion: "100g", calories: 105, protein: 22.8, carbs: 0, fat: 0.9, vegetarian: false, role: "protein", slots: [L, D], tags: ["fish"], aliases: ["cod", "tilapia", "white fish", "pollock", "haddock"], profileRegions: ["pakistan", "india", "us_canada", "uk_europe", "middle_east"], maxAmount: 250 },
+  // USDA FDC: crustaceans, shrimp, cooked, per 100g.
+  { id: "shrimp", name: "Shrimp / prawns (cooked)", region: "global", portion: "100g", calories: 99, protein: 24, carbs: 0.2, fat: 0.3, vegetarian: false, role: "protein", slots: [L, D, S], tags: ["seafood", "shellfish"], aliases: ["shrimp", "prawns", "jhinga", "grilled prawns"], profileRegions: ["us_canada", "uk_europe", "middle_east"], maxAmount: 250 },
+
+  // ---- carbs / staples ----
+  // USDA FDC: quinoa, cooked (per 1 cup, 185g).
+  { id: "quinoa", name: "Quinoa (cooked)", region: "global", portion: "1 cup (185g)", calories: 222, protein: 8, carbs: 39, fat: 4, vegetarian: true, role: "carb", slots: [B, L, D], tags: ["grain"], aliases: ["cooked quinoa"], profileRegions: ["us_canada", "uk_europe", "india"], maxAmount: 300 },
+  // USDA FDC: sweet potato, cooked, baked in skin (per ~150g).
+  { id: "sweet_potato", name: "Sweet potato (baked)", region: "global", portion: "1 medium (~150g)", calories: 135, protein: 3, carbs: 31, fat: 0, vegetarian: true, role: "carb", slots: [L, D], tags: ["veg", "potato"], aliases: ["sweet potatoes", "baked sweet potato", "shakarkandi"], profileRegions: US_UK, maxAmount: 300 },
+  // USDA FDC: pasta, whole-wheat, cooked (per 1 cup, 140g).
+  { id: "ww_pasta", name: "Whole wheat pasta", region: "western", portion: "1 cup (140g)", calories: 174, protein: 7, carbs: 37, fat: 1, vegetarian: true, role: "carb", slots: [L, D], tags: ["pasta"], aliases: ["whole wheat pasta", "wholemeal pasta", "whole grain pasta"], profileRegions: US_UK, maxAmount: 300 },
+  // USDA FDC: couscous, cooked (per 1 cup, 157g).
+  { id: "couscous", name: "Couscous (cooked)", region: "global", portion: "1 cup (157g)", calories: 176, protein: 6, carbs: 36, fat: 0, vegetarian: true, role: "carb", slots: [L, D], tags: ["grain"], aliases: ["cooked couscous"], profileRegions: ["middle_east", "us_canada", "uk_europe"], maxAmount: 300 },
+  // USDA FDC: bagel, whole grain (per 1 bagel, ~98g).
+  { id: "ww_bagel", name: "Whole wheat bagel", region: "western", portion: "1 bagel", calories: 250, protein: 10, carbs: 48, fat: 2, vegetarian: true, role: "carb", slots: [B], tags: ["bread"], aliases: ["wholemeal bagel", "whole grain bagel"], profileRegions: US_UK, maxAmount: 2 },
+
+  // ---- healthy fats / calorie repair (small, hard-capped) ----
+  // Verified curated row (scripts/seed-foods.mjs): avocado, half (100g).
+  { id: "avocado", name: "Avocado", region: "global", portion: "half (100g)", calories: 160, protein: 2, carbs: 9, fat: 15, vegetarian: true, role: "snack", slots: [B, L, S], tags: ["fat"], aliases: ["avo"], profileRegions: US_UK, minAmount: 50, maxAmount: 150 },
+  // USDA FDC: nuts, walnuts, english (per 1 oz, 28g).
+  { id: "walnuts", name: "Walnuts", region: "global", portion: "1 oz (28g)", calories: 185, protein: 4, carbs: 4, fat: 18, vegetarian: true, role: "snack", slots: [S], tags: ["nuts"], aliases: ["walnut", "akhrot"], minAmount: 15, maxAmount: 42 },
+  // USDA FDC: nuts, cashew, dry roasted (per 1 oz, 28g).
+  { id: "cashews", name: "Cashews", region: "global", portion: "1 oz (28g)", calories: 157, protein: 5, carbs: 9, fat: 12, vegetarian: true, role: "snack", slots: [S], tags: ["nuts"], aliases: ["cashew", "kaju"], minAmount: 15, maxAmount: 42 },
+  // USDA FDC: seeds, pumpkin/pepitas, roasted (per 1 oz, 28g).
+  { id: "pumpkin_seeds", name: "Pumpkin seeds", region: "global", portion: "1 oz (28g)", calories: 158, protein: 9, carbs: 4, fat: 14, vegetarian: true, role: "snack", slots: [S], tags: ["seeds"], aliases: ["pepitas", "kaddu ke beej"], minAmount: 15, maxAmount: 42 },
+  // USDA FDC: seeds, chia, dried (per 1 oz, 28g).
+  { id: "chia_seeds", name: "Chia seeds", region: "global", portion: "1 oz (28g)", calories: 138, protein: 5, carbs: 12, fat: 9, vegetarian: true, role: "snack", slots: [B, S], tags: ["seeds"], aliases: ["chia", "chia seed"], minAmount: 15, maxAmount: 42 },
+
+  // ---- fruit (snack rotation variety) ----
+  // USDA FDC: grapes, raw (per 1 cup, 151g).
+  { id: "grapes", name: "Grapes", region: "global", portion: "1 cup (151g)", calories: 104, protein: 1, carbs: 27, fat: 0, vegetarian: true, role: "fruit", slots: [B, S], tags: ["fruit"], aliases: ["grape", "angoor"] },
+  // USDA FDC: watermelon, raw (per 1 cup diced, 152g).
+  { id: "watermelon", name: "Watermelon", region: "global", portion: "1 cup (152g)", calories: 46, protein: 1, carbs: 12, fat: 0, vegetarian: true, role: "fruit", slots: [S], tags: ["fruit"], aliases: ["tarbooz"] },
+  // USDA FDC: guava, common, raw, per 100g.
+  { id: "guava", name: "Guava", region: "desi", portion: "100g", calories: 68, protein: 3, carbs: 14, fat: 1, vegetarian: true, role: "fruit", slots: [B, S], tags: ["fruit"], aliases: ["amrood"], profileRegions: PK_IN, maxAmount: 200 },
+  // USDA FDC: papaya, raw (per 1 cup cubes, 145g).
+  { id: "papaya", name: "Papaya", region: "global", portion: "1 cup (145g)", calories: 62, protein: 1, carbs: 16, fat: 0, vegetarian: true, role: "fruit", slots: [B, S], tags: ["fruit"], aliases: ["papita"], profileRegions: PK_IN },
+  // USDA FDC: pears, raw (per 1 medium, 178g).
+  { id: "pear", name: "Pear", region: "western", portion: "1 medium (~178g)", calories: 101, protein: 1, carbs: 27, fat: 0, vegetarian: true, role: "fruit", slots: [B, S], tags: ["fruit"], aliases: ["pears", "nashpati"], profileRegions: US_UK },
+  // USDA FDC: blueberries, raw (per 1 cup, 148g).
+  { id: "blueberries", name: "Blueberries", region: "western", portion: "1 cup (148g)", calories: 84, protein: 1, carbs: 21, fat: 0, vegetarian: true, role: "fruit", slots: [B, S], tags: ["fruit"], aliases: ["blueberry"], profileRegions: US_UK },
+  // USDA FDC: strawberries, raw (per 1 cup, 152g).
+  { id: "strawberries", name: "Strawberries", region: "western", portion: "1 cup (152g)", calories: 49, protein: 1, carbs: 12, fat: 0, vegetarian: true, role: "fruit", slots: [B, S], tags: ["fruit"], aliases: ["strawberry"], profileRegions: US_UK },
+
+  // ---- vegetables / sides (plain, low-cal) ----
+  // Verified curated row (scripts/seed-foods.mjs): broccoli, cooked, 1 cup (156g).
+  { id: "broccoli", name: "Broccoli (cooked)", region: "global", portion: "1 cup (156g)", calories: 55, protein: 4, carbs: 11, fat: 1, vegetarian: true, role: "veg", slots: [L, D], tags: ["veg"], aliases: ["steamed broccoli"], maxAmount: 300 },
+  // USDA FDC: spinach, cooked, boiled, drained (per 1 cup, 180g).
+  { id: "spinach_cooked", name: "Spinach (cooked, plain)", region: "global", portion: "1 cup (180g)", calories: 41, protein: 5, carbs: 7, fat: 0, vegetarian: true, role: "veg", slots: [L, D], tags: ["veg"], aliases: ["boiled spinach", "steamed spinach"], maxAmount: 300 },
+  // USDA FDC: carrots, cooked, boiled, drained (per 1 cup, 156g).
+  { id: "carrots", name: "Carrots (cooked)", region: "global", portion: "1 cup (156g)", calories: 55, protein: 1, carbs: 13, fat: 0, vegetarian: true, role: "veg", slots: [L, D], tags: ["veg"], aliases: ["carrot", "gajar"], maxAmount: 300 },
+  // USDA FDC: cucumber, with peel, raw (per ~120g).
+  { id: "cucumber", name: "Cucumber", region: "global", portion: "1 cup (~120g)", calories: 16, protein: 1, carbs: 4, fat: 0, vegetarian: true, role: "veg", slots: [L, D, S], tags: ["veg", "salad"], aliases: ["kheera", "cucumbers"], maxAmount: 300 },
+
+  // ---- Middle East legume ----
+  // USDA FDC: broad beans (fava), mature seeds, cooked, boiled (per ~150g bowl).
+  { id: "foul", name: "Ful medames (fava beans)", region: "global", portion: "1 bowl (~150g)", calories: 165, protein: 11, carbs: 30, fat: 1, vegetarian: true, role: "protein", slots: [B, L, D], tags: ["beans"], aliases: ["ful", "ful medames", "foul", "fava beans", "broad beans"], profileRegions: MIDDLE_EAST, maxAmount: 250 },
 
   // ---- coffee (macros verified against USDA/nutrition sources) ----
   { id: "black_coffee", name: "Black coffee", region: "global", portion: "1 cup", calories: 5, protein: 0, carbs: 0, fat: 0, vegetarian: true, role: "drink", slots: [B, S], tags: ["coffee"], aliases: ["coffee no milk", "kali coffee", "americano"] },
@@ -191,15 +276,27 @@ const STAPLES: Record<string, NonNullable<CatalogFood["staple"]>> = {
   daal: "protein", chana: "protein", paneer: "protein", tofu: "protein",
   soya: "protein", rajma: "protein", lobia: "protein", greek_yogurt: "protein",
   cottage_cheese: "protein", boiled_chickpeas: "protein",
+  // Phase 6B protein anchors
+  lowfat_cottage_cheese: "protein", edamame: "protein", black_beans: "protein",
+  lentils: "protein", tempeh: "protein", white_fish: "protein", shrimp: "protein",
+  foul: "protein",
   // carb bases
   roti1: "carb", roti2: "carb", rice: "carb", brown_rice: "carb",
   oats: "carb", bread2: "carb", pita: "carb", baked_potato: "carb",
   boiled_potato: "carb", mashed_potato: "carb",
+  // Phase 6B carb bases
+  quinoa: "carb", sweet_potato: "carb", ww_pasta: "carb", couscous: "carb", ww_bagel: "carb",
   // fruit snacks
   banana: "fruit", apple: "fruit", orange: "fruit", mango: "fruit", dates: "fruit",
+  // Phase 6B fruit
+  grapes: "fruit", watermelon: "fruit", guava: "fruit", papaya: "fruit",
+  pear: "fruit", blueberries: "fruit", strawberries: "fruit",
   // plain sides
   salad: "side", mix_sabzi: "side", palak: "side", dahi: "side",
   hummus: "side", raita: "side",
+  // NOTE: Phase 6B vegetables (broccoli, spinach_cooked, carrots, cucumber) are
+  // intentionally NOT staples — sides are already well-covered, so they stay as
+  // swap/search/log options without changing automatic generation.
 };
 for (const f of FOOD_CATALOG) {
   const s = STAPLES[f.id];
