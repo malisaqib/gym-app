@@ -248,3 +248,46 @@ test("regroundUnmatchedItems survives retrieval failures", async () => {
   assert.equal(out[0].calories, 200);
   assert.equal(out[0].matched_food_id, undefined);
 });
+
+// --- Phase 7B: bare base words ground to the plain food, not a compound one ---
+
+test("free-text 'banana' grounds to the plain Banana (not Banana shake)", () => {
+  const [item] = groundParsedFoodItems([parsed({ food_name: "banana" })]);
+  assert.equal(item.matched_food_id, "catalog:banana");
+  assert.equal(item.calories, 105); // plain banana, NOT the 250 kcal shake
+  assert.equal(item.nutrition_source, "verified");
+});
+
+test("free-text 'banana shake' still grounds to Banana shake", () => {
+  const [item] = groundParsedFoodItems([parsed({ food_name: "banana shake" })]);
+  assert.equal(item.matched_food_id, "catalog:banana_shake");
+  assert.equal(item.calories, 250);
+});
+
+test("free-text 'chana' grounds to plain Chana (not Chana chaat)", () => {
+  const [item] = groundParsedFoodItems([parsed({ food_name: "chana" })]);
+  assert.equal(item.matched_food_id, "catalog:chana");
+  assert.equal(item.nutrition_source, "verified");
+});
+
+test("free-text 'chana chaat' still grounds to Chana chaat", () => {
+  const [item] = groundParsedFoodItems([parsed({ food_name: "chana chaat" })]);
+  assert.equal(item.matched_food_id, "catalog:chana_chaat");
+});
+
+test("free-text 'oats' grounds to Oatmeal via the new alias", () => {
+  const [item] = groundParsedFoodItems([parsed({ food_name: "oats" })]);
+  assert.equal(item.matched_food_id, "catalog:oats");
+  assert.equal(item.nutrition_source, "verified");
+});
+
+test("free-text 'cottage cheese' does not ground to paneer", () => {
+  const [item] = groundParsedFoodItems([parsed({ food_name: "cottage cheese" })]);
+  assert.ok(item.matched_food_id !== "catalog:paneer", `grounded to paneer: ${item.matched_food_id}`);
+});
+
+test("a bare unknown word is still left as an estimate (no over-trust)", () => {
+  const [item] = groundParsedFoodItems([parsed({ food_name: "zorbatron", calories: 42 })]);
+  assert.equal(item.matched_food_id, undefined);
+  assert.equal(item.calories, 42);
+});

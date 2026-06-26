@@ -136,6 +136,39 @@ function hasSpecificObscureQuery(query: string, term: string): boolean {
   return wordsOf(term).every((word) => hasToken(queryWords, word));
 }
 
+// A bare single-word query ("banana", "chana", "fish") means the PLAIN food, not
+// a compound/derived dish that merely starts with it. These terms, when present
+// in a candidate's name/aliases but NOT in the query, drop that candidate below
+// the plain food — so "banana" wins over "Banana shake" and "chana" over "Chana
+// chaat", while "banana shake" / "chana chaat" (the term IS in the query) are
+// untouched. Only applies to single-token queries, so multi-word searches and
+// the grounding score bands are unaffected.
+const COMPOUND_TERMS = new Set([
+  "shake",
+  "milkshake",
+  "smoothie",
+  "chaat",
+  "fried",
+  "curry",
+  "salan",
+  "sandwich",
+  "burger",
+  "pizza",
+  "juice",
+]);
+const COMPOUND_PENALTY = 60;
+
+function compoundPenalty(query: string, food: RankableFood): number {
+  const queryWords = wordsOf(query);
+  if (queryWords.length !== 1) return 0; // only bare base-word queries
+  const querySet = new Set(queryWords);
+  const foodWords = [...wordsOf(food.name), ...(food.aliases ?? []).flatMap(wordsOf)];
+  const hasFoodOnlyCompound = foodWords.some(
+    (word) => COMPOUND_TERMS.has(word) && !querySet.has(word)
+  );
+  return hasFoodOnlyCompound ? -COMPOUND_PENALTY : 0;
+}
+
 function formAdjustment(query: string, food: RankableFood, lexical: number): number {
   if (lexical <= 0) return 0;
   const name = normalizeFoodText(food.name);
@@ -146,6 +179,7 @@ function formAdjustment(query: string, food: RankableFood, lexical: number): num
     const obscureTerm = OBSCURE_IMPORTED_TERMS.find((term) => hasSpecificObscureQuery(food.name, term));
     if (obscureTerm && !hasSpecificObscureQuery(query, obscureTerm)) score -= 40;
   }
+  score += compoundPenalty(query, food);
   return score;
 }
 

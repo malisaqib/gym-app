@@ -68,7 +68,7 @@ export const FOOD_CATALOG: CatalogFood[] = [
 
   // ---- desi vegetarian proteins / curries ----
   { id: "daal", name: "Daal (lentils)", region: "desi", portion: "1 katori (~200g)", calories: 150, protein: 9, carbs: 22, fat: 3, vegetarian: true, role: "protein", slots: [L, D], tags: ["lentil"], aliases: ["dal", "dhal", "lentils"], profileRegions: PK_IN },
-  { id: "chana", name: "Chana / cholay", region: "desi", portion: "1 katori (~200g)", calories: 190, protein: 9, carbs: 27, fat: 5, vegetarian: true, role: "protein", slots: [B, L, D], tags: ["lentil"], aliases: ["chickpea", "chickpeas", "chole", "cholay"], profileRegions: PK_IN },
+  { id: "chana", name: "Chana / cholay", region: "desi", portion: "1 katori (~200g)", calories: 190, protein: 9, carbs: 27, fat: 5, vegetarian: true, role: "protein", slots: [B, L, D], tags: ["lentil"], aliases: ["chana", "chickpea", "chickpeas", "chole", "cholay"], profileRegions: PK_IN },
   { id: "palak", name: "Palak / saag", region: "desi", portion: "1 katori (~200g)", calories: 180, protein: 6, carbs: 12, fat: 12, vegetarian: true, role: "veg", slots: [L, D], tags: ["veg"] },
   { id: "mix_sabzi", name: "Mixed vegetable sabzi", region: "desi", portion: "1 katori (~200g)", calories: 170, protein: 4, carbs: 18, fat: 10, vegetarian: true, role: "veg", slots: [L, D], tags: ["veg"] },
   { id: "aloo", name: "Aloo curry", region: "desi", portion: "1 katori (~200g)", calories: 200, protein: 4, carbs: 28, fat: 9, vegetarian: true, role: "veg", slots: [L, D], tags: ["veg"] },
@@ -109,7 +109,7 @@ export const FOOD_CATALOG: CatalogFood[] = [
   { id: "egg_white", name: "Egg white", region: "global", portion: "1 egg white", calories: 17, protein: 3.6, carbs: 0, fat: 0, vegetarian: true, role: "protein", slots: [B, L, D, S], tags: ["egg"], aliases: ["egg whites", "egg white only", "egg whites only", "andey ki safedi", "anda ki safedi", "safedi", "liquid egg white", "liquid egg whites"], maxAmount: 8 },
 
   // ---- western carbs ----
-  { id: "oats", name: "Oatmeal", region: "western", portion: "1 cup cooked", calories: 150, protein: 5, carbs: 27, fat: 3, vegetarian: true, role: "carb", slots: [B], tags: ["oats"] },
+  { id: "oats", name: "Oatmeal", region: "western", portion: "1 cup cooked", calories: 150, protein: 5, carbs: 27, fat: 3, vegetarian: true, role: "carb", slots: [B], tags: ["oats"], aliases: ["oats", "oatmeal", "porridge", "dalia"] },
   { id: "brown_rice", name: "Brown rice", region: "western", portion: "1 cup (195g)", calories: 215, protein: 5, carbs: 45, fat: 2, vegetarian: true, role: "carb", slots: [L, D], tags: ["rice"], maxAmount: 390 },
   { id: "pasta", name: "Pasta (cooked)", region: "western", portion: "1 cup (140g)", calories: 220, protein: 8, carbs: 43, fat: 1, vegetarian: true, role: "carb", slots: [L, D], tags: ["pasta"] },
   { id: "bread2", name: "2 whole wheat bread slices", region: "western", portion: "2 slices", calories: 150, protein: 4, carbs: 28, fat: 2, vegetarian: true, role: "carb", slots: [B], tags: ["bread"], aliases: ["whole wheat bread", "wholemeal bread", "whole wheat", "wholemeal", "toast"], profileRegions: US_UK, maxAmount: 4 },

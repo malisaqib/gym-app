@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { rankFoodsForSearch, qualityForFoodSource, labelForFoodQuality, expandFoodQueries, expandFoodQueryTerms } from "./searchRank.ts";
+import { rankFoodsForSearch, foodSearchScore, qualityForFoodSource, labelForFoodQuality, expandFoodQueries, expandFoodQueryTerms } from "./searchRank.ts";
 
 test("verified curated matches rank ahead of imported matches", () => {
   const ranked = rankFoodsForSearch("roti", [
@@ -78,4 +78,60 @@ test("expansion terms carry the right sourceWord (synonyms only, never the full 
   const beef = terms.find((t) => t.term === "beef");
   assert.equal(beef?.sourceWord, "beef");
   assert.ok(terms.every((t) => t.term === "beef kebab" || t.sourceWord !== "beef kebab"));
+});
+
+// --- Phase 7B: base food beats compound/derived food for a bare query --------
+
+const BANANA = { name: "Banana", aliases: [], source: "curated", score: 0 };
+const BANANA_SHAKE = { name: "Banana shake", aliases: ["milkshake", "banana milkshake"], source: "curated", score: 0 };
+const CHANA = { name: "Chana / cholay", aliases: ["chana", "chickpea", "chickpeas", "chole", "cholay"], source: "curated", score: 0 };
+const CHANA_CHAAT = { name: "Chana chaat", aliases: ["cholay chaat", "chickpea chaat", "chana chat"], source: "curated", score: 0 };
+const OATMEAL = { name: "Oatmeal", aliases: ["oats", "oatmeal", "porridge", "dalia"], source: "curated", score: 0 };
+const COTTAGE = { name: "Cottage cheese", aliases: ["farmers cheese"], source: "curated", score: 0 };
+const PANEER = { name: "Paneer", aliases: ["panir"], source: "curated", score: 0 };
+const FISH_CURRY = { name: "Fish curry", aliases: ["machli", "machli curry"], source: "curated", score: 0 };
+const WHITE_FISH = { name: "White fish (cod/tilapia)", aliases: ["cod", "tilapia", "white fish"], source: "curated", score: 0 };
+
+test("bare 'banana' ranks the plain fruit above Banana shake", () => {
+  assert.equal(rankFoodsForSearch("banana", [BANANA_SHAKE, BANANA])[0].name, "Banana");
+});
+
+test("'banana shake' still ranks the shake first", () => {
+  assert.equal(rankFoodsForSearch("banana shake", [BANANA, BANANA_SHAKE])[0].name, "Banana shake");
+});
+
+test("bare 'chana' ranks plain Chana above Chana chaat", () => {
+  assert.equal(rankFoodsForSearch("chana", [CHANA_CHAAT, CHANA])[0].name, "Chana / cholay");
+});
+
+test("'chana chaat' still ranks Chana chaat first", () => {
+  assert.equal(rankFoodsForSearch("chana chaat", [CHANA, CHANA_CHAAT])[0].name, "Chana chaat");
+});
+
+test("'oats' matches Oatmeal via the new alias", () => {
+  assert.equal(rankFoodsForSearch("oats", [BANANA, OATMEAL])[0].name, "Oatmeal");
+});
+
+test("'cottage cheese' finds cottage cheese, not paneer", () => {
+  assert.equal(rankFoodsForSearch("cottage cheese", [PANEER, COTTAGE])[0].name, "Cottage cheese");
+});
+
+test("'fish curry' still finds Fish curry (compound term is in the query)", () => {
+  assert.equal(rankFoodsForSearch("fish curry", [WHITE_FISH, FISH_CURRY])[0].name, "Fish curry");
+});
+
+test("'white fish' still finds white fish", () => {
+  assert.equal(rankFoodsForSearch("white fish", [FISH_CURRY, WHITE_FISH])[0].name, "White fish (cod/tilapia)");
+});
+
+test("bare 'fish' prefers plain white fish over a fried/curry compound", () => {
+  assert.equal(rankFoodsForSearch("fish", [FISH_CURRY, WHITE_FISH])[0].name, "White fish (cod/tilapia)");
+});
+
+test("compound penalty does not fire on multi-word queries (grounding score bands intact)", () => {
+  // A 2-word query never triggers the single-token compound penalty, so the
+  // crafted weak/medium/strong grounding fixtures keep their exact bands.
+  const before = foodSearchScore("zorba blarg", { name: "Zorba blarg shake", aliases: [], source: "usda_sr", score: 0 });
+  const baseline = foodSearchScore("zorba blarg", { name: "Zorba blarg stew", aliases: [], source: "usda_sr", score: 0 });
+  assert.equal(before, baseline); // "shake" did NOT subtract for a 2-word query
 });
