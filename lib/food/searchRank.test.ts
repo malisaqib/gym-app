@@ -91,6 +91,10 @@ const COTTAGE = { name: "Cottage cheese", aliases: ["farmers cheese"], source: "
 const PANEER = { name: "Paneer", aliases: ["panir"], source: "curated", score: 0 };
 const FISH_CURRY = { name: "Fish curry", aliases: ["machli", "machli curry"], source: "curated", score: 0 };
 const WHITE_FISH = { name: "White fish (cod/tilapia)", aliases: ["cod", "tilapia", "white fish"], source: "curated", score: 0 };
+const EGGS2 = { name: "2 eggs (boiled/fried)", aliases: ["anda", "anday", "andey", "eggs"], source: "curated", score: 0 };
+const BOILED_EGG = { name: "1 boiled egg", aliases: ["boiled egg", "boiled eggs", "ubla anda"], source: "curated", score: 0 };
+const EGG_WHITE = { name: "Egg white", aliases: ["egg whites", "anda ki safedi", "andey ki safedi"], source: "curated", score: 0 };
+const SCRAMBLED = { name: "Scrambled eggs", aliases: ["scrambled eggs"], source: "curated", score: 0 };
 
 test("bare 'banana' ranks the plain fruit above Banana shake", () => {
   assert.equal(rankFoodsForSearch("banana", [BANANA_SHAKE, BANANA])[0].name, "Banana");
@@ -126,6 +130,19 @@ test("'white fish' still finds white fish", () => {
 
 test("bare 'fish' prefers plain white fish over a fried/curry compound", () => {
   assert.equal(rankFoodsForSearch("fish", [FISH_CURRY, WHITE_FISH])[0].name, "White fish (cod/tilapia)");
+});
+
+test("bare egg terms prefer whole eggs over egg whites or prepared egg dishes", () => {
+  const pool = [EGG_WHITE, SCRAMBLED, EGGS2, BOILED_EGG];
+  assert.equal(rankFoodsForSearch("egg", pool)[0].name, "1 boiled egg");
+  assert.equal(rankFoodsForSearch("anda", pool)[0].name, "1 boiled egg");
+  assert.equal(rankFoodsForSearch("anday", pool)[0].name, "2 eggs (boiled/fried)");
+  assert.equal(rankFoodsForSearch("2 anday", pool)[0].name, "2 eggs (boiled/fried)");
+});
+
+test("specific egg white queries still find Egg white", () => {
+  assert.equal(rankFoodsForSearch("egg white", [BOILED_EGG, EGG_WHITE])[0].name, "Egg white");
+  assert.equal(rankFoodsForSearch("anda ki safedi", [BOILED_EGG, EGG_WHITE])[0].name, "Egg white");
 });
 
 test("compound penalty does not fire on multi-word queries (grounding score bands intact)", () => {

@@ -90,6 +90,7 @@ test("explicitQuantityFromText: weights, serving words, counts, kg/l scaling", (
   assert.deepEqual(explicitQuantityFromText("1 glass mango shake"), { quantity: 1, unit: "glass" });
   assert.deepEqual(explicitQuantityFromText("2 roti"), { quantity: 2, unit: "roti" });
   assert.deepEqual(explicitQuantityFromText("3 eggs"), { quantity: 3, unit: "egg" });
+  assert.deepEqual(explicitQuantityFromText("2 anday"), { quantity: 2, unit: "egg" });
   assert.equal(explicitQuantityFromText("chicken handi"), null); // no explicit amount
 });
 

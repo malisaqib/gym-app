@@ -77,6 +77,7 @@ function leadingCount(portion: string): number {
   // number is grams, NOT a piece count. Treating it as a count made
   // "3 pieces" against a 100g food scale by 3/100 → a 6 kcal beef kebab.
   if (/^\d+(?:\.\d+)?\s*(?:g|gram|grams|ml)\b/.test(text)) return 1;
+  if (/(?:~|\(|\s|^)\d+(?:\.\d+)?\s*(?:g|gram|grams|ml)\b/i.test(text)) return 1;
   const n = text.match(/^(\d+(?:\.\d+)?)/)?.[1];
   if (n) return Math.max(0.1, Number(n));
   if (text.startsWith("half ")) return 0.5;

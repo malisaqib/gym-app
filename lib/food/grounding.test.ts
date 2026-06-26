@@ -281,6 +281,26 @@ test("free-text 'oats' grounds to Oatmeal via the new alias", () => {
   assert.equal(item.nutrition_source, "verified");
 });
 
+test("free-text '2 anday' grounds to the verified 2-eggs catalog item", () => {
+  const [item] = groundParsedFoodItems([parsed({ food_name: "anday", quantity: 2, unit: "egg" })]);
+  assert.equal(item.matched_food_id, "catalog:eggs2");
+  assert.equal(item.calories, 160);
+  assert.equal(item.protein_g, 12);
+  assert.equal(item.nutrition_source, "verified");
+});
+
+test("bare gram-anchored serving labels ground as one serving, not a fractional count", () => {
+  const [peanutButter] = groundParsedFoodItems([parsed({ food_name: "peanut butter" })]);
+  assert.equal(peanutButter.matched_food_id, "catalog:peanut_butter");
+  assert.equal(peanutButter.calories, 190);
+  assert.equal(peanutButter.protein_g, 7);
+
+  const [avocado] = groundParsedFoodItems([parsed({ food_name: "avocado" })]);
+  assert.equal(avocado.matched_food_id, "catalog:avocado");
+  assert.equal(avocado.calories, 160);
+  assert.equal(avocado.protein_g, 2);
+});
+
 test("free-text 'cottage cheese' does not ground to paneer", () => {
   const [item] = groundParsedFoodItems([parsed({ food_name: "cottage cheese" })]);
   assert.ok(item.matched_food_id !== "catalog:paneer", `grounded to paneer: ${item.matched_food_id}`);

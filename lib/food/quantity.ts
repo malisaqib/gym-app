@@ -64,6 +64,12 @@ const SERVING_GRAMS: Record<string, number> = {
   scoops: 30,
 };
 
+function normalizeCountUnit(unit: string): string {
+  const u = unit.trim().toLowerCase();
+  if (u === "anda" || u === "anday" || u === "andey") return "egg";
+  return u;
+}
+
 const safeDiv = (total: number, denom: number) => (denom > 0 ? total / denom : total);
 
 export function isGramUnit(unit: string): boolean {
@@ -107,9 +113,9 @@ export function explicitQuantityFromText(text: string): { quantity: number; unit
     if (n > 0) return { quantity: n, unit: "g" };
   }
   const serving = t.match(
-    /(\d+(?:\.\d+)?)\s*(katori|pyali|plate|bowl|glass|cup|mug|serving|portion|can|scoop|slice|piece|egg|roti|chapati|paratha|naan|kabab|kebab)s?\b/
+    /(\d+(?:\.\d+)?)\s*(katori|pyali|plate|bowl|glass|cup|mug|serving|portion|can|scoop|slice|piece|egg|anda|anday|andey|roti|chapati|paratha|naan|kabab|kebab)s?\b/
   );
-  if (serving && parseFloat(serving[1]) > 0) return { quantity: parseFloat(serving[1]), unit: serving[2] };
+  if (serving && parseFloat(serving[1]) > 0) return { quantity: parseFloat(serving[1]), unit: normalizeCountUnit(serving[2]) };
   // Bare leading count ("2 roti", "3 eggs") — a number directly before a word.
   const lead = text.trim().match(/^(\d+(?:\.\d+)?)\s+[a-z]/i);
   if (lead && parseFloat(lead[1]) > 0) return { quantity: parseFloat(lead[1]), unit: "" };

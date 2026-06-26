@@ -158,6 +158,26 @@ const COMPOUND_TERMS = new Set([
 ]);
 const COMPOUND_PENALTY = 60;
 
+const WHOLE_EGG_QUERY_TERMS = new Set(["egg", "eggs", "anda", "anday", "andey"]);
+const EGG_FORM_TERMS = new Set(["white", "safedi", "omelette", "omelet", "scrambled"]);
+
+function eggFormAdjustment(query: string, food: RankableFood): number {
+  const queryWords = wordsOf(query);
+  if (!queryWords.some((word) => WHOLE_EGG_QUERY_TERMS.has(word))) return 0;
+  if (queryWords.some((word) => EGG_FORM_TERMS.has(word))) return 0;
+
+  const name = normalizeFoodText(food.name);
+  const hay = normalizeFoodText([food.name, ...(food.aliases ?? [])].join(" "));
+  if (/\b(egg white|egg whites|liquid egg|safedi)\b/.test(hay)) return -90;
+  if (/\b(omelette|omelet|scrambled)\b/.test(hay)) return -30;
+  if (/\bboiled egg\b/.test(hay)) return 25;
+  if (/^2 eggs\b/.test(name) && queryWords.some((word) => word === "2" || word === "eggs" || word === "anday" || word === "andey")) {
+    return 45;
+  }
+  if (/^2 eggs\b/.test(name)) return 5;
+  return 0;
+}
+
 function compoundPenalty(query: string, food: RankableFood): number {
   const queryWords = wordsOf(query);
   if (queryWords.length !== 1) return 0; // only bare base-word queries
@@ -179,6 +199,7 @@ function formAdjustment(query: string, food: RankableFood, lexical: number): num
     const obscureTerm = OBSCURE_IMPORTED_TERMS.find((term) => hasSpecificObscureQuery(food.name, term));
     if (obscureTerm && !hasSpecificObscureQuery(query, obscureTerm)) score -= 40;
   }
+  score += eggFormAdjustment(query, food);
   score += compoundPenalty(query, food);
   return score;
 }
