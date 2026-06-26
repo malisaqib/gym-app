@@ -1,7 +1,10 @@
-// Backfills embeddings for catalog rows that don't have one yet (e.g. imported
-// USDA foods). RESUMABLE: only touches embedding IS NULL rows, so you can run it
-// repeatedly across Gemini quota windows until everything is embedded.
-//   node --env-file=.env.local scripts/embed-foods.mjs
+// Backfills embeddings for rows that don't have one yet. RESUMABLE: only touches
+// embedding IS NULL rows, so you can run it repeatedly across Gemini quota
+// windows until the chosen scope is embedded.
+//
+//   DRY RUN catalog foods: SCOPE=catalog DRY_RUN=1 node --env-file=.env.local scripts/embed-foods.mjs
+//   APPLY catalog foods:   node --env-file=.env.local scripts/embed-foods.mjs
+//   Broad backfill:        SCOPE=all node --env-file=.env.local scripts/embed-foods.mjs
 import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -10,13 +13,33 @@ const GEMINI_KEY = process.env.GEMINI_API_KEY;
 const MODEL = "gemini-embedding-001";
 const DIM = 768; // must match the vector(768) column + lib/embeddings.ts
 const BATCH = 200;
+const SCOPE = (process.env.SCOPE ?? "catalog").toLowerCase();
+const DRY_RUN = process.env.DRY_RUN === "1" || process.argv.includes("--dry-run") || process.argv.includes("--list");
+const VALID_SCOPES = new Set(["all", "curated", "catalog"]);
 
 if (!SUPABASE_URL || !SERVICE_ROLE || !GEMINI_KEY) {
   console.error("Missing env: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, GEMINI_API_KEY");
   process.exit(1);
 }
+if (!VALID_SCOPES.has(SCOPE)) {
+  console.error("Invalid SCOPE. Use one of: all, curated, catalog");
+  process.exit(1);
+}
 
 class QuotaError extends Error {}
+
+function scopedMissingEmbeddingQuery(query) {
+  const scoped = query.is("embedding", null);
+  if (SCOPE === "catalog") return scoped.eq("source", "curated").like("source_id", "catalog:%");
+  if (SCOPE === "curated") return scoped.eq("source", "curated");
+  return scoped;
+}
+
+function scopedUpdateQuery(query) {
+  if (SCOPE === "catalog") return query.eq("source", "curated").like("source_id", "catalog:%");
+  if (SCOPE === "curated") return query.eq("source", "curated");
+  return query;
+}
 
 async function embed(text, attempt = 0) {
   const res = await fetch(
@@ -44,23 +67,46 @@ async function main() {
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
   let done = 0;
 
+  const { count: startCount, error: countError } = await scopedMissingEmbeddingQuery(
+    supabase.from("foods").select("id", { count: "exact", head: true })
+  );
+  if (countError) throw new Error(countError.message);
+
+  console.log(`Scope: ${SCOPE} | rows missing embeddings: ${startCount ?? 0}${DRY_RUN ? " | DRY RUN" : ""}`);
+  if (DRY_RUN) {
+    const { data: rows, error } = await scopedMissingEmbeddingQuery(
+      supabase
+        .from("foods")
+        .select("id,name,source,source_id,search_text")
+        .order("source_id", { ascending: true })
+        .limit(BATCH)
+    );
+    if (error) throw new Error(error.message);
+    console.log(JSON.stringify(rows ?? [], null, 2));
+    return;
+  }
+
   try {
     for (;;) {
-      const { data: rows, error } = await supabase
-        .from("foods")
-        .select("id, search_text")
-        .is("embedding", null)
-        .limit(BATCH);
+      const { data: rows, error } = await scopedMissingEmbeddingQuery(
+        supabase
+          .from("foods")
+          .select("id, search_text")
+          .limit(BATCH)
+      );
       if (error) throw new Error(error.message);
       if (!rows || rows.length === 0) break;
 
       for (const row of rows) {
         const values = await embed(row.search_text ?? row.id);
-        const upd = await supabase
-          .from("foods")
-          .update({ embedding: JSON.stringify(values) })
-          .eq("id", row.id);
+        const upd = await scopedUpdateQuery(
+          supabase
+            .from("foods")
+            .update({ embedding: JSON.stringify(values) })
+            .eq("id", row.id)
+        ).select("id");
         if (upd.error) throw new Error(upd.error.message);
+        if (!upd.data || upd.data.length !== 1) throw new Error(`scoped update skipped row ${row.id}`);
         done++;
         if (done % 50 === 0) console.log(`  embedded ${done}…`);
       }
@@ -74,11 +120,10 @@ async function main() {
     throw e;
   }
 
-  const { count } = await supabase
-    .from("foods")
-    .select("id", { count: "exact", head: true })
-    .is("embedding", null);
-  console.log(`Remaining without embeddings: ${count}`);
+  const { count } = await scopedMissingEmbeddingQuery(
+    supabase.from("foods").select("id", { count: "exact", head: true })
+  );
+  console.log(`Remaining without embeddings in scope "${SCOPE}": ${count}`);
 }
 
 main().catch((e) => {
