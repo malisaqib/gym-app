@@ -159,7 +159,8 @@ export const FOOD_CATALOG: CatalogFood[] = [
   { id: "beef_karahi", name: "Beef/mutton karahi", region: "desi", portion: "1 serving (~250g)", calories: 420, protein: 30, carbs: 8, fat: 30, vegetarian: false, role: "protein", slots: [L, D], tags: ["beef"], aliases: ["mutton karahi", "beef karahi", "gosht karahi"] },
   { id: "fried_fish", name: "Fried fish", region: "desi", portion: "1 piece (~120g)", calories: 280, protein: 22, carbs: 8, fat: 18, vegetarian: false, role: "protein", slots: [L, D, S], tags: ["fish", "fried"], aliases: ["fish fry", "tali machli"] },
   { id: "samosa", name: "Samosa", region: "desi", portion: "1 piece", calories: 150, protein: 3, carbs: 17, fat: 8, vegetarian: true, role: "snack", slots: [S], tags: ["fried", "snack"], aliases: ["samose", "samosay"] },
-  { id: "pakora", name: "Pakora", region: "desi", portion: "1 plate (~100g)", calories: 180, protein: 5, carbs: 18, fat: 10, vegetarian: true, role: "snack", slots: [S], tags: ["fried", "snack"], aliases: ["pakore", "bhajia", "pakoray"] },
+  // Verified curated row (scripts/seed-foods.mjs): deep-fried, ~300 kcal/100g plate.
+  { id: "pakora", name: "Pakora", region: "desi", portion: "1 plate (~100g)", calories: 300, protein: 8, carbs: 28, fat: 18, vegetarian: true, role: "snack", slots: [S], tags: ["fried", "snack"], aliases: ["pakore", "bhajia", "pakoray"] },
   { id: "namkeen_lassi", name: "Namkeen lassi", region: "desi", portion: "1 glass", calories: 120, protein: 6, carbs: 8, fat: 6, vegetarian: true, role: "drink", slots: [B, S], tags: ["dairy"], aliases: ["salty lassi", "chaas"] },
 
   // ---- Phase 4: western / fast food / snacks ----
