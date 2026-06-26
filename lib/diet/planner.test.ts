@@ -1684,3 +1684,83 @@ test("hybrid: plans use only simple curated catalog foods, never fancy ingredien
     assert.ok(new Set(items.map((i) => i.name)).size <= 14, "plan grew too fancy (too many distinct dishes)");
   }
 });
+
+// --- Phase 6C: Middle East region tightening ---------------------------------
+// ME used to draw from the FULL pool (desi + western leaked in). It now admits
+// only ME-tagged foods + neutral global basics. These guard that fix without
+// disturbing the other regions.
+
+function regionPool(region: "pakistan" | "india" | "us_canada" | "uk_europe" | "middle_east") {
+  const regionFocus =
+    region === "pakistan" || region === "india"
+      ? ("desi" as const)
+      : region === "us_canada" || region === "uk_europe"
+        ? ("western" as const)
+        : null;
+  const filter = filterFromPreference("normal_desi", { regionFocus, profileRegion: region });
+  return { filter, pool: buildMealCandidatePool({ filter, region, foodPreference: "normal_desi", allowProteinPowder: false }) };
+}
+
+test("Middle East pool admits only ME-tagged or global-basic foods (no desi/western leakage)", () => {
+  const { pool } = regionPool("middle_east");
+  for (const f of pool) {
+    const okFood = f.profileRegions?.includes("middle_east") || f.region === "global";
+    assert.ok(okFood, `region-inappropriate food leaked into ME: ${f.id} (${f.region})`);
+  }
+  // Sanity: the pool is still comfortably large (no starvation).
+  assert.ok(pool.length >= 25, `ME pool too small: ${pool.length}`);
+});
+
+test("Middle East pool keeps the expected neutral basics", () => {
+  const ids = new Set(regionPool("middle_east").pool.map((f) => f.id));
+  for (const id of ["eggs2", "rice", "dahi", "chicken_breast", "white_fish", "shrimp", "lentils", "boiled_chickpeas", "cucumber", "dates", "pita", "hummus"]) {
+    assert.ok(ids.has(id), `ME pool is missing the basic: ${id}`);
+  }
+  // …and excludes desi-only / western-only dishes that used to leak in.
+  for (const id of ["chicken_karahi", "biryani", "naan", "nihari", "oats", "scrambled", "pasta", "cheese"]) {
+    assert.ok(!ids.has(id), `desi/western dish still leaks into ME: ${id}`);
+  }
+});
+
+test("Middle East generation builds an ME-appropriate plan from the tightened pool", () => {
+  const { filter, pool } = regionPool("middle_east");
+  for (const seed of [1, 7, 26, 4100]) {
+    const plan = buildPlan({ calorieTarget: 2100, proteinTargetG: 120, filter, pool, seed, foodPreference: "normal_desi" });
+    for (const item of plan.meals.flatMap((m) => m.items)) {
+      const f = CATALOG_BY_ID[item.id];
+      assert.ok(
+        f.profileRegions?.includes("middle_east") || f.region === "global",
+        `ME plan (seed ${seed}) used a region-inappropriate food: ${item.id}`
+      );
+    }
+    assert.ok(plan.meals.every((m) => m.items.length > 0), `empty meal in ME plan (seed ${seed})`);
+  }
+});
+
+test("Pakistan/India plans still use desi foods; US/UK still use western foods", () => {
+  const pk = new Set(regionPool("pakistan").pool.map((f) => f.id));
+  assert.ok(["chicken_karahi", "roti2", "daal", "fish_curry"].some((id) => pk.has(id)), "PK lost its desi foods");
+  assert.ok(!pk.has("turkey_breast") && !pk.has("oats"), "western food leaked into PK");
+
+  const us = new Set(regionPool("us_canada").pool.map((f) => f.id));
+  assert.ok(["turkey_breast", "oats", "brown_rice"].every((id) => us.has(id)), "US lost its western foods");
+  assert.ok(!us.has("chicken_karahi") && !us.has("naan"), "desi food leaked into US");
+
+  // The two basics we extended to ME stay available in their original regions.
+  assert.ok(pk.has("eggs2"), "eggs2 must remain a PK food");
+  assert.ok(us.has("lentils"), "lentils must remain a US/UK food");
+});
+
+test("Middle East flexitarian still honors the one meat/fish main cap", () => {
+  const region = "middle_east" as const;
+  const filter = filterFromPreference("normal_desi", { regionFocus: null, profileRegion: region }, "flexitarian");
+  const pool = buildMealCandidatePool({ filter, region, foodPreference: "normal_desi", allowProteinPowder: false });
+  for (const seed of [1, 7, 26, 4100]) {
+    const plan = buildPlan({ calorieTarget: 2100, proteinTargetG: 120, filter, pool, seed, foodPreference: "normal_desi" });
+    const animalMainItems = plan.meals
+      .filter((m) => m.slot === "lunch" || m.slot === "dinner")
+      .flatMap((m) => m.items)
+      .filter((i) => CATALOG_BY_ID[i.id] && !CATALOG_BY_ID[i.id].vegetarian).length;
+    assert.ok(animalMainItems <= 1, `ME flexitarian exceeded one meat/fish main (seed ${seed})`);
+  }
+});

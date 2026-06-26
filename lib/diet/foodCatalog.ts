@@ -56,7 +56,7 @@ const MIDDLE_EAST: Region[] = ["middle_east"];
 
 export const FOOD_CATALOG: CatalogFood[] = [
   // ---- desi proteins ----
-  { id: "eggs2", name: "2 eggs (boiled/fried)", region: "desi", portion: "2 eggs", calories: 160, protein: 12, carbs: 2, fat: 11, vegetarian: true, role: "protein", slots: [B, S], tags: ["egg"], aliases: ["anda", "anday", "andey", "eggs"], profileRegions: PK_IN, maxAmount: 4 },
+  { id: "eggs2", name: "2 eggs (boiled/fried)", region: "desi", portion: "2 eggs", calories: 160, protein: 12, carbs: 2, fat: 11, vegetarian: true, role: "protein", slots: [B, S], tags: ["egg"], aliases: ["anda", "anday", "andey", "eggs"], profileRegions: ["pakistan", "india", "middle_east"], maxAmount: 4 },
   { id: "omelette", name: "Omelette (2 eggs)", region: "desi", portion: "2 eggs", calories: 200, protein: 12, carbs: 2, fat: 16, vegetarian: true, role: "protein", slots: [B], tags: ["egg"], maxAmount: 4 },
   { id: "chicken_salan", name: "Chicken salan", region: "desi", portion: "1 serving (~200g)", calories: 300, protein: 28, carbs: 8, fat: 18, vegetarian: false, role: "protein", slots: [L, D], tags: ["chicken"], aliases: ["chicken curry", "chicken salan", "murgh", "murghi"], profileRegions: PK_IN, maxAmount: 300 },
   { id: "chicken_karahi", name: "Chicken karahi", region: "desi", portion: "1 serving (~250g)", calories: 400, protein: 35, carbs: 8, fat: 26, vegetarian: false, role: "protein", slots: [L, D], tags: ["chicken"], maxAmount: 350 },
@@ -192,7 +192,7 @@ export const FOOD_CATALOG: CatalogFood[] = [
   // USDA FDC: beans, black, mature seeds, cooked, boiled, per 100g.
   { id: "black_beans", name: "Black beans (cooked)", region: "global", portion: "100g", calories: 132, protein: 8.9, carbs: 23.7, fat: 0.5, vegetarian: true, role: "protein", slots: [L, D], tags: ["beans"], aliases: ["black bean", "frijoles negros"], profileRegions: US_UK, maxAmount: 250 },
   // USDA FDC: lentils, mature seeds, cooked, boiled, per 100g.
-  { id: "lentils", name: "Lentils (cooked)", region: "global", portion: "100g", calories: 116, protein: 9, carbs: 20, fat: 0.4, vegetarian: true, role: "protein", slots: [L, D], tags: ["lentil", "beans"], aliases: ["brown lentils", "green lentils", "cooked lentils", "puy lentils"], profileRegions: US_UK, maxAmount: 250 },
+  { id: "lentils", name: "Lentils (cooked)", region: "global", portion: "100g", calories: 116, protein: 9, carbs: 20, fat: 0.4, vegetarian: true, role: "protein", slots: [L, D], tags: ["lentil", "beans"], aliases: ["brown lentils", "green lentils", "cooked lentils", "puy lentils"], profileRegions: ["us_canada", "uk_europe", "middle_east"], maxAmount: 250 },
   // USDA FDC: tempeh, per 100g.
   { id: "tempeh", name: "Tempeh", region: "western", portion: "100g", calories: 192, protein: 20, carbs: 8, fat: 11, vegetarian: true, role: "protein", slots: [L, D, S], tags: ["soya", "tempeh"], aliases: ["fermented soybean cake"], profileRegions: US_UK, maxAmount: 200 },
 

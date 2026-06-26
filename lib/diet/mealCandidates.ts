@@ -41,8 +41,15 @@ function regionAllowed(food: CatalogFood, region: Region | null): boolean {
   if (region === "us_canada" || region === "uk_europe") {
     return food.region === "western" || food.region === "global";
   }
-  // Middle East and Other do not yet have reliable catalog tags. Keep the full
-  // curated pool available and let the prompt use region as a soft preference.
+  if (region === "middle_east") {
+    // ME-specific foods (pita, hummus, foul, shrimp, white_fish, chicken, rice,
+    // yogurt…) are already admitted by the profileRegions branch above. Beyond
+    // those, allow only neutral GLOBAL basics (eggs, salad, fruit, nuts, soya) —
+    // never desi-only or western-only dishes. This stops desi/western leakage
+    // while keeping the pool comfortably large.
+    return food.region === "global";
+  }
+  // Other / unknown region: keep the full curated pool as a safe catch-all.
   return true;
 }
 
