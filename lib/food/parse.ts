@@ -1,8 +1,9 @@
-import { retrieveFoods, lexicalRetrieveFoods, type RetrievedFood } from "@/lib/food/retrieve";
-import { groundParsedFoodItems, regroundUnmatchedItems } from "@/lib/food/grounding";
-import { enforcePerItemQuantities, sanitizeParsedMacros } from "@/lib/food/quantity";
-import { aiConfigError, aiHttpError } from "@/lib/ai/errors";
-import type { NutritionSource } from "@/lib/database.types";
+import { retrieveFoods, lexicalRetrieveFoods, type RetrievedFood } from "./retrieve.ts";
+import { groundParsedFoodItems, regroundUnmatchedItems } from "./grounding.ts";
+import { enforcePerItemQuantities, sanitizeParsedMacros } from "./quantity.ts";
+import { splitObviousFoodCombo } from "./comboSplit.ts";
+import { aiConfigError, aiHttpError } from "../ai/errors.ts";
+import type { NutritionSource } from "../database.types.ts";
 
 /**
  * Phase 4 + RAG R3 — Food text parser (Groq / Llama, grounded by retrieval).
@@ -117,6 +118,14 @@ export async function parseFoodText(text: string): Promise<ParsedFoodItem[]> {
     candidates = await retrieveFoods(text, 12);
   } catch {
     candidates = [];
+  }
+
+  const deterministicItems = splitObviousFoodCombo(text);
+  if (deterministicItems) {
+    const items = enforcePerItemQuantities(deterministicItems, text);
+    const grounded = groundParsedFoodItems(items, { candidates, rawText: text });
+    const final = grounded.length < 2 ? grounded : await regroundUnmatchedItems(grounded, lexicalRetrieveFoods);
+    return final.map(sanitizeParsedMacros);
   }
 
   // Abort if Groq doesn't respond in time, so the UI never hangs.
