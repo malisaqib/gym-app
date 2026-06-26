@@ -8,6 +8,15 @@ import { listContainer, listItem, fadeUp } from "@/lib/motion";
 import { sumMacros } from "@/lib/food/totals";
 import { itemMacros } from "@/lib/food/quantity";
 import { displayNameForQuantity } from "@/lib/food/displayName";
+import {
+  createOptimisticLog,
+  failOptimisticLog,
+  optimisticLogKey,
+  releaseOptimisticLog,
+  removeOptimisticLog,
+  reserveOptimisticLog,
+  type OptimisticLog,
+} from "@/lib/food/optimisticLog";
 import { localDateString } from "@/lib/localDate";
 import { redirectIfSignedOut } from "@/lib/clientAuth";
 import {
@@ -79,12 +88,6 @@ const BADGE_TITLES: Record<string, string> = {
   corrected: "Edited — you set these numbers yourself",
 };
 
-// A meal being parsed by the LLM — shown immediately so logging feels instant.
-interface PendingLog {
-  tempId: string;
-  text: string;
-}
-
 function localDateOffset(days: number): string {
   const d = new Date();
   d.setDate(d.getDate() + days);
@@ -108,7 +111,9 @@ export default function FoodLogger({
 
   // Seeded from the server — no mount fetch, so the list is there on first paint.
   const [items, setItems] = useState<FoodLog[]>(initialItems);
-  const [pending, setPending] = useState<PendingLog[]>([]);
+  // Optimistic rows for logs still saving (or failed). Several can be in flight
+  // at once — totals only move when the server confirms each one.
+  const [pending, setPending] = useState<OptimisticLog[]>([]);
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [foodSearching, setFoodSearching] = useState(false);
@@ -121,7 +126,9 @@ export default function FoodLogger({
   const [savingMealOpen, setSavingMealOpen] = useState(false);
   const [mealName, setMealName] = useState("");
   const [mealSaving, setMealSaving] = useState(false);
-  const [pickPending, setPickPending] = useState(false);
+  // Which search/recent options are mid-save — disables ONLY the tapped chip,
+  // never the whole logger, so other foods stay one tap away.
+  const [pickPendingIds, setPickPendingIds] = useState<Set<string>>(() => new Set());
   const [copyPending, setCopyPending] = useState(false);
   // The last meal the parser couldn't recognise — offers a "report missing" CTA.
   const [unrecognized, setUnrecognized] = useState<string | null>(null);
@@ -142,16 +149,50 @@ export default function FoodLogger({
   }
   // Tracks in-flight logs so a focus-refetch doesn't clobber an optimistic add.
   const inFlight = useRef(0);
-  // SYNCHRONOUS double-submit latch. React state guards (e.g. pickPending) are
-  // set asynchronously — two fast taps both pass the check before the re-render
-  // and insert duplicate rows. A ref flips immediately; released in finally.
-  const submitLock = useRef(false);
+  // Per-log double-submit latch. React state updates are async, so two fast
+  // taps of the SAME food both pass a state check and insert duplicate rows.
+  // This set reserves a key per in-flight request synchronously — it blocks the
+  // exact duplicate while letting different foods log in parallel (no global lock).
+  const activePendingKeys = useRef(new Set<string>());
   // Per-item debounce timers for quantity edits (coalesce rapid +/- taps).
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Totals are computed on the fly (base × amount) — never a frozen number.
+  // Only server-confirmed `items` count toward totals; pending rows never do,
+  // so nothing is ever double-counted.
   const eaten = sumMacros(items.map(itemMacros));
+
+  // Mark/unmark a single search-or-recent option as saving (so only the tapped
+  // chip is disabled, not the whole logger).
+  function setSearchOptionPending(optionId: string, isPending: boolean) {
+    setPickPendingIds((prev) => {
+      const next = new Set(prev);
+      if (isPending) next.add(optionId);
+      else next.delete(optionId);
+      return next;
+    });
+  }
+
+  // Reserve the de-dupe key and show the optimistic row. Returns false when an
+  // identical request is already in flight (blocks ONLY the exact duplicate).
+  function queuePendingLog(entry: OptimisticLog): boolean {
+    if (!reserveOptimisticLog(activePendingKeys.current, optimisticLogKey(entry))) return false;
+    setPending((prev) => [...prev, entry]);
+    return true;
+  }
+
+  // Server confirmed: drop the pending row and append the real saved row(s).
+  // One pending row can become several rows (e.g. "2 roti 2 eggs" → 2 rows).
+  function replacePendingLog(tempId: string, rows: FoodLog[]) {
+    setItems((prev) => [...prev, ...rows]);
+    setPending((prev) => removeOptimisticLog(prev, tempId));
+  }
+
+  // User dismissed a failed row.
+  function removePendingLog(tempId: string) {
+    setPending((prev) => removeOptimisticLog(prev, tempId));
+  }
 
   const refreshRecentQuick = useCallback(async () => {
     // Best-effort background sync — never let a failure (e.g. a stale-bundle
@@ -180,8 +221,8 @@ export default function FoodLogger({
 
   // One tap: log every item of a saved meal into today.
   async function handleLogSavedMeal(id: string) {
-    if (submitLock.current || mealLogging) return;
-    submitLock.current = true;
+    // mealLogging already guards this specific meal; no global lock needed.
+    if (mealLogging) return;
     setMealLogging(id);
     setError(null);
     inFlight.current += 1;
@@ -194,7 +235,6 @@ export default function FoodLogger({
     } finally {
       inFlight.current -= 1;
       setMealLogging(null);
-      submitLock.current = false;
     }
   }
 
@@ -296,74 +336,90 @@ export default function FoodLogger({
     };
   }, [today, refreshRecentQuick]);
 
-  async function handleLog(e: React.FormEvent) {
+  // Submit a typed meal: show an optimistic row immediately and clear the input
+  // so the user can start logging the next food without waiting for this save.
+  function handleLog(e: React.FormEvent) {
     e.preventDefault();
     const meal = text.trim();
     if (!meal) return;
-    if (submitLock.current) return; // double-Enter = one log, not two
-    submitLock.current = true;
-
-    // OPTIMISTIC: show a "reading…" row and clear the input right away.
-    const tempId = crypto.randomUUID();
-    setPending((p) => [...p, { tempId, text: meal }]);
+    const entry = createOptimisticLog({ kind: "text", text: meal });
+    if (!queuePendingLog(entry)) return; // exact same text already saving
     setText("");
     setError(null);
     setUnrecognized(null);
-    inFlight.current += 1;
+    void runPendingLog(entry);
+  }
 
+  // One tap from search/recent logs that exact food. Only the tapped chip shows
+  // a saving state; the input and every other chip stay usable.
+  function handlePickSearchResult(optionId: string) {
+    const option = [...searchResults, ...recentQuick].find((food) => food.id === optionId);
+    const entry = createOptimisticLog({
+      kind: "search",
+      text: option?.name ?? "Selected food",
+      optionId,
+    });
+    if (!queuePendingLog(entry)) return; // same option already saving
+    setError(null);
+    setUnrecognized(null);
+    setText("");
+    setSearchResults([]);
+    void runPendingLog(entry);
+  }
+
+  // Shared save path for typed + tapped logs (and retries). Each call resolves
+  // independently, so several foods can be in flight at once. The pending row is
+  // only ever replaced by SERVER-confirmed rows — totals never count an estimate.
+  async function runPendingLog(entry: OptimisticLog) {
+    const key = optimisticLogKey(entry);
+    const isSearch = entry.kind === "search" && Boolean(entry.optionId);
+    if (isSearch && entry.optionId) setSearchOptionPending(entry.optionId, true);
+    inFlight.current += 1;
     try {
       // Write with the user's LIVE local day (not the stale render-time prop),
       // so the item lands on the day the dashboard will query next.
-      const res = await logFood({ text: meal, date: localDateString() });
+      const res =
+        isSearch && entry.optionId
+          ? await logSearchedFood({ optionId: entry.optionId, date: localDateString() })
+          : await logFood({ text: entry.text, date: localDateString() });
       if (res.ok) {
-        setItems((prev) => [...prev, ...res.items]);
+        replacePendingLog(entry.tempId, res.items);
         void refreshRecentQuick();
       } else {
-        surfaceError(res.error);
-        setText(meal); // never silently drop the user's input — let them retry
+        // An expired session redirects to login; otherwise keep the failed row
+        // in place (with Retry/Remove) instead of clobbering whatever the user
+        // may already be typing for the next food.
+        if (redirectIfSignedOut(res.error)) return;
+        setPending((prev) => failOptimisticLog(prev, entry.tempId, res.error));
         // Only offer "report missing food" when the parser genuinely found
-        // nothing (not for network/parse errors).
-        if (res.reason === "no_match") setUnrecognized(meal);
+        // nothing (text logs only; a tapped food always matches).
+        if (!isSearch && res.reason === "no_match") setUnrecognized(entry.text);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
-      setText(meal);
+      const message = err instanceof Error ? err.message : "Something went wrong. Please try again.";
+      setPending((prev) => failOptimisticLog(prev, entry.tempId, message));
     } finally {
-      setPending((p) => p.filter((x) => x.tempId !== tempId));
       inFlight.current -= 1;
-      submitLock.current = false;
+      releaseOptimisticLog(activePendingKeys.current, key);
+      if (isSearch && entry.optionId) setSearchOptionPending(entry.optionId, false);
     }
   }
 
-  async function handlePickSearchResult(optionId: string) {
-    if (submitLock.current) return;
-    submitLock.current = true;
-    setPickPending(true);
+  // Re-run a failed row in place. The key was released on failure, so reserving
+  // it again here guards against a double retry while one is already running.
+  function retryPendingLog(tempId: string) {
+    const existing = pending.find((p) => p.tempId === tempId);
+    if (!existing || existing.status === "logging") return;
+    const retryEntry: OptimisticLog = { ...existing, status: "logging", error: undefined };
+    if (!reserveOptimisticLog(activePendingKeys.current, optimisticLogKey(retryEntry))) return;
+    setPending((prev) => prev.map((p) => (p.tempId === tempId ? retryEntry : p)));
     setError(null);
     setUnrecognized(null);
-    inFlight.current += 1;
-    try {
-      const res = await logSearchedFood({ optionId, date: localDateString() });
-      if (res.ok) {
-        setItems((prev) => [...prev, ...res.items]);
-        setText("");
-        setSearchResults([]);
-        void refreshRecentQuick();
-      } else {
-        surfaceError(res.error);
-      }
-    } catch {
-      setError("Couldn't log that food. Please try again.");
-    } finally {
-      inFlight.current -= 1;
-      setPickPending(false);
-      submitLock.current = false;
-    }
+    void runPendingLog(retryEntry);
   }
 
   async function copyYesterday() {
-    if (submitLock.current || copyPending || count > 0) return;
-    submitLock.current = true;
+    if (copyPending || count > 0) return;
     setCopyPending(true);
     setError(null);
     setUnrecognized(null);
@@ -381,7 +437,6 @@ export default function FoodLogger({
     } finally {
       inFlight.current -= 1;
       setCopyPending(false);
-      submitLock.current = false;
     }
   }
 
@@ -549,7 +604,7 @@ export default function FoodLogger({
                   <button
                     key={food.id}
                     type="button"
-                    disabled={pickPending || copyPending}
+                    disabled={pickPendingIds.has(food.id) || copyPending}
                     onClick={() => handlePickSearchResult(food.id)}
                     className="min-h-[74px] w-40 shrink-0 rounded-field border border-border bg-background px-3 py-2 text-left transition hover:border-primary/50 hover:bg-muted active:scale-[0.98] disabled:opacity-50"
                   >
@@ -574,7 +629,7 @@ export default function FoodLogger({
                 <li key={food.id}>
                   <button
                     type="button"
-                    disabled={pickPending}
+                    disabled={pickPendingIds.has(food.id)}
                     onClick={() => handlePickSearchResult(food.id)}
                     className="flex w-full items-center justify-between gap-3 rounded-field px-2.5 py-2 text-left transition hover:bg-muted active:scale-[0.99] disabled:opacity-50"
                   >
@@ -657,7 +712,11 @@ export default function FoodLogger({
               ))}
               {pending.map((p) => (
                 <motion.div key={p.tempId} variants={listItem} exit="exit" layout>
-                  <PendingRow text={p.text} />
+                  <PendingRow
+                    log={p}
+                    onRetry={() => retryPendingLog(p.tempId)}
+                    onRemove={() => removePendingLog(p.tempId)}
+                  />
                 </motion.div>
               ))}
             </AnimatePresence>
@@ -785,13 +844,45 @@ function NutritionSourceBadge({ item }: { item: FoodLog }) {
   return null;
 }
 
-function PendingRow({ text }: { text: string }) {
+// An in-flight (or failed) log. While saving it spins; on failure it turns into
+// a clear error row with Retry / Remove — the user never loses the food and the
+// input is left untouched so they can keep logging other things.
+function PendingRow({
+  log,
+  onRetry,
+  onRemove,
+}: {
+  log: OptimisticLog;
+  onRetry: () => void;
+  onRemove: () => void;
+}) {
+  const failed = log.status === "failed";
   return (
-    <div className="flex items-center gap-3 rounded-card-lg border border-border bg-card p-4 opacity-70">
-      <Spinner size="sm" className="text-primary" label="Reading your meal" />
-      <div className="min-w-0">
-        <p className="truncate text-sm font-medium text-foreground">{text}</p>
-        <p className="text-xs text-muted-foreground">Reading…</p>
+    <div
+      className={`flex items-start gap-3 rounded-card-lg border p-4 ${
+        failed ? "border-destructive/40 bg-destructive/10" : "border-border bg-card opacity-70"
+      }`}
+    >
+      {failed ? (
+        <X size={16} aria-hidden className="mt-0.5 shrink-0 text-destructive" />
+      ) : (
+        <Spinner size="sm" className="mt-0.5 text-primary" label="Logging your food" />
+      )}
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-foreground">{log.text}</p>
+        <p className={`text-xs ${failed ? "text-destructive" : "text-muted-foreground"}`}>
+          {failed ? (log.error ?? "Couldn't log this food.") : "Logging…"}
+        </p>
+        {failed && (
+          <div className="mt-2 flex gap-2">
+            <Button type="button" size="sm" variant="secondary" onClick={onRetry}>
+              Retry
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={onRemove}>
+              Remove
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );
