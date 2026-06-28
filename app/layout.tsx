@@ -15,13 +15,31 @@ const inter = Inter({
   variable: "--font-inter",
 });
 
+// Shared brand copy so the <title>, meta description, and social cards all stay
+// in sync (and so a branded "Zorfit" search shows one consistent message).
+const SITE_TITLE = "Zorfit — Simple Calorie & Protein Tracker";
+const SITE_DESCRIPTION =
+  "Zorfit helps beginners track calories and protein in plain language, with support for foods like roti, daal, eggs, rice, and everyday meals.";
+
 export const metadata: Metadata = {
   // Resolves relative icon/OG URLs to absolute ones on the live domain so link
   // previews (WhatsApp, iMessage, X, etc.) load the icon correctly.
   metadataBase: new URL("https://www.zorfit.app"),
-  title: "Zorfit",
-  description:
-    "A simple fitness coach for beginners — calorie & protein targets and easy food logging.",
+  applicationName: "Zorfit",
+  // `default` is the fallback title for any page that doesn't set its own;
+  // `template` appends the brand to child-page titles (e.g. "Settings · Zorfit").
+  // The homepage sets its own absolute title for the full branded headline.
+  title: {
+    default: "Zorfit",
+    template: "%s · Zorfit",
+  },
+  description: SITE_DESCRIPTION,
+  // Public pages are indexable; private app pages are auth-gated (they redirect
+  // to /login) and additionally blocked in robots.ts, so they never get indexed.
+  robots: {
+    index: true,
+    follow: true,
+  },
   appleWebApp: {
     capable: true,
     // Deep-black app: let content draw under a translucent status bar.
@@ -38,22 +56,20 @@ export const metadata: Metadata = {
     shortcut: "/icon-192.png",
     apple: "/apple-touch-icon.png",
   },
-  // Link-share preview (the app icon + name). A dedicated 1200×630 banner would
-  // look nicer later, but the square icon is a clean, correct default.
+  // Link-share preview. Uses the square app icon for now — a dedicated 1200×630
+  // banner would look nicer and should be added later (see Phase 9A report).
   openGraph: {
     type: "website",
     siteName: "Zorfit",
-    title: "Zorfit — fitness made simple",
-    description:
-      "Calorie & protein targets, easy food logging (desi + western, Roman Urdu), simple meal & workout plans.",
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
     url: "https://www.zorfit.app",
     images: [{ url: "/icon-512.png", width: 512, height: 512, alt: "Zorfit" }],
   },
   twitter: {
     card: "summary",
-    title: "Zorfit — fitness made simple",
-    description:
-      "Calorie & protein targets, easy food logging (desi + western, Roman Urdu), simple meal & workout plans.",
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
     images: ["/icon-512.png"],
   },
 };

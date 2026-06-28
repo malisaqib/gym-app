@@ -7,9 +7,10 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Run on all routes EXCEPT static assets and image files, where auth work
-  // would just be wasted effort.
+  // Run on all routes EXCEPT static assets, image files, and the public SEO
+  // metadata routes (sitemap.xml / robots.txt), where auth/session work would
+  // just be wasted effort on crawler traffic.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };
