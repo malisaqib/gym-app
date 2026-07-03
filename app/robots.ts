@@ -1,11 +1,12 @@
 import type { MetadataRoute } from "next";
+import { getPublicSiteUrl } from "@/lib/site/url";
 
 // Served by Next at /robots.txt. Crawlers may index the public homepage; the
 // signed-in app, auth/API endpoints, and auth utility pages are kept out of the
 // index (the app routes are auth-gated anyway). Points crawlers at the sitemap.
-const siteUrl = "https://www.zorfit.app";
-
 export default function robots(): MetadataRoute.Robots {
+  const siteUrl = getPublicSiteUrl();
+
   return {
     rules: [
       {

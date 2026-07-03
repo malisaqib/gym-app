@@ -1,8 +1,14 @@
-import { type NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
 
 // Next.js runs this on every request that matches the `matcher` below.
 export async function middleware(request: NextRequest) {
+  if (request.nextUrl.pathname === "/$" || request.nextUrl.pathname === "/%24") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/";
+    return NextResponse.redirect(url, 308);
+  }
+
   return await updateSession(request);
 }
 
